@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 
-const fetcher = (url: string) => fetch(`https://ai-trading-backend.onrender.com${url}`).then(res => res.json());
+const fetcher = (url: string) => fetch(`https://ai-trading-backend-jhcl.onrender.com${url}`).then(res => res.json());
 export default function Home() {
   const [ticker, setTicker] = useState('RELIANCE.NS');
   const [input, setInput] = useState('RELIANCE.NS');
