@@ -30,21 +30,25 @@ def get_historical_data(ticker: str, days: int = 365):
     if db_data.data and len(db_data.data) > 30:
         return pd.DataFrame(db_data.data)
 
-    # Step 3: Fetch from yfinance — FIX for MultiIndex columns
+    # Step 3: Fetch from yfinance
     raw = yf.download(ticker, period=f"{days}d", progress=False, auto_adjust=True)
-    
-    # yfinance returns MultiIndex columns like ('Close', 'RELIANCE.NS')
-    # This flattens it to just ['Close', 'Open', etc.]
+
+    # Guard: if no data returned, raise a clean error
+    if raw is None or len(raw) == 0:
+        raise ValueError(f"No data found for ticker '{ticker}'. It may be delisted or invalid.")
+
+    # Fix MultiIndex columns
     if isinstance(raw.columns, pd.MultiIndex):
         raw.columns = raw.columns.get_level_values(0)
-    
+
     raw.reset_index(inplace=True)
-    
-    # Now safely lowercase
     raw.columns = [str(c).lower() for c in raw.columns]
-    
     df = raw[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
-    df = df.dropna()  # remove any rows with missing values
+    df = df.dropna()
+
+    # Guard: if after cleaning we have no rows, raise error
+    if len(df) == 0:
+        raise ValueError(f"No valid data for ticker '{ticker}'.")
 
     # Step 4: Save to Supabase
     records = []
@@ -58,6 +62,9 @@ def get_historical_data(ticker: str, days: int = 365):
             "close": float(row['close']),
             "volume": int(row['volume'])
         })
-    supabase.table("daily_ohlcv").upsert(records).execute()
+
+    # Guard: only upsert if we actually have records
+    if records:
+        supabase.table("daily_ohlcv").upsert(records).execute()
 
     return df
