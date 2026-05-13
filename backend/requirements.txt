@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+pandas
+pandas-ta
+yfinance
+supabase
+python-dotenv
+slowapi
