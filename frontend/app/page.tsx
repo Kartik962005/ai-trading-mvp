@@ -4,36 +4,86 @@ import useSWR from 'swr';
 
 const fetcher = (url: string) => fetch(`https://ai-trading-backend-jhcl.onrender.com${url}`).then(res => res.json());
 
-// Company name to ticker mapping
-const COMPANY_MAP: Record<string, string> = {
-  'tcs': 'TCS', 'tata consultancy': 'TCS', 'infosys': 'INFY', 'infy': 'INFY',
-  'wipro': 'WIPRO', 'hdfc bank': 'HDFCBANK', 'hdfc': 'HDFCBANK',
-  'reliance': 'RELIANCE', 'sbi': 'SBIN', 'state bank': 'SBIN',
-  'icici': 'ICICIBANK', 'icici bank': 'ICICIBANK', 'axis bank': 'AXISBANK',
-  'bajaj finance': 'BAJFINANCE', 'adani': 'ADANIENT', 'maruti': 'MARUTI',
-  'hindustan unilever': 'HINDUNILVR', 'hul': 'HINDUNILVR', 'itc': 'ITC',
-  'kotak': 'KOTAKBANK', 'kotak bank': 'KOTAKBANK', 'ongc': 'ONGC',
-  'ntpc': 'NTPC', 'powergrid': 'POWERGRID', 'apple': 'AAPL',
-  'tesla': 'TSLA', 'google': 'GOOGL', 'microsoft': 'MSFT',
-  'nvidia': 'NVDA', 'amazon': 'AMZN', 'meta': 'META', 'netflix': 'NFLX',
-};
-
-const EXCHANGE_OPTIONS = [
-  { label: 'NSE (India)', value: '.NS' },
-  { label: 'BSE (India)', value: '.BO' },
-  { label: 'US Market', value: '' },
+// Stock database with name, symbol, exchange, currency
+const STOCKS = [
+  // Indian Stocks - NSE
+  { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'NSE', ticker: 'RELIANCE.NS', currency: '₹' },
+  { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'NSE', ticker: 'TCS.NS', currency: '₹' },
+  { name: 'Infosys', symbol: 'INFY', exchange: 'NSE', ticker: 'INFY.NS', currency: '₹' },
+  { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'NSE', ticker: 'HDFCBANK.NS', currency: '₹' },
+  { name: 'ICICI Bank', symbol: 'ICICIBANK', exchange: 'NSE', ticker: 'ICICIBANK.NS', currency: '₹' },
+  { name: 'Wipro', symbol: 'WIPRO', exchange: 'NSE', ticker: 'WIPRO.NS', currency: '₹' },
+  { name: 'State Bank of India', symbol: 'SBIN', exchange: 'NSE', ticker: 'SBIN.NS', currency: '₹' },
+  { name: 'Bajaj Finance', symbol: 'BAJFINANCE', exchange: 'NSE', ticker: 'BAJFINANCE.NS', currency: '₹' },
+  { name: 'Kotak Mahindra Bank', symbol: 'KOTAKBANK', exchange: 'NSE', ticker: 'KOTAKBANK.NS', currency: '₹' },
+  { name: 'Axis Bank', symbol: 'AXISBANK', exchange: 'NSE', ticker: 'AXISBANK.NS', currency: '₹' },
+  { name: 'Adani Enterprises', symbol: 'ADANIENT', exchange: 'NSE', ticker: 'ADANIENT.NS', currency: '₹' },
+  { name: 'Maruti Suzuki', symbol: 'MARUTI', exchange: 'NSE', ticker: 'MARUTI.NS', currency: '₹' },
+  { name: 'Hindustan Unilever', symbol: 'HINDUNILVR', exchange: 'NSE', ticker: 'HINDUNILVR.NS', currency: '₹' },
+  { name: 'ITC', symbol: 'ITC', exchange: 'NSE', ticker: 'ITC.NS', currency: '₹' },
+  { name: 'ONGC', symbol: 'ONGC', exchange: 'NSE', ticker: 'ONGC.NS', currency: '₹' },
+  { name: 'NTPC', symbol: 'NTPC', exchange: 'NSE', ticker: 'NTPC.NS', currency: '₹' },
+  { name: 'Tata Motors', symbol: 'TATAMOTORS', exchange: 'NSE', ticker: 'TATAMOTORS.NS', currency: '₹' },
+  { name: 'Sun Pharma', symbol: 'SUNPHARMA', exchange: 'NSE', ticker: 'SUNPHARMA.NS', currency: '₹' },
+  { name: 'Tech Mahindra', symbol: 'TECHM', exchange: 'NSE', ticker: 'TECHM.NS', currency: '₹' },
+  { name: 'HCL Technologies', symbol: 'HCLTECH', exchange: 'NSE', ticker: 'HCLTECH.NS', currency: '₹' },
+  { name: 'Power Grid', symbol: 'POWERGRID', exchange: 'NSE', ticker: 'POWERGRID.NS', currency: '₹' },
+  { name: 'Larsen & Toubro', symbol: 'LT', exchange: 'NSE', ticker: 'LT.NS', currency: '₹' },
+  { name: 'Asian Paints', symbol: 'ASIANPAINT', exchange: 'NSE', ticker: 'ASIANPAINT.NS', currency: '₹' },
+  { name: 'Nestle India', symbol: 'NESTLEIND', exchange: 'NSE', ticker: 'NESTLEIND.NS', currency: '₹' },
+  // Indian Stocks - BSE
+  { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'BSE', ticker: '500325.BO', currency: '₹' },
+  { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'BSE', ticker: '532540.BO', currency: '₹' },
+  { name: 'Infosys', symbol: 'INFY', exchange: 'BSE', ticker: '500209.BO', currency: '₹' },
+  { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'BSE', ticker: '500180.BO', currency: '₹' },
+  { name: 'Wipro', symbol: 'WIPRO', exchange: 'BSE', ticker: '507685.BO', currency: '₹' },
+  { name: 'State Bank of India', symbol: 'SBIN', exchange: 'BSE', ticker: '500112.BO', currency: '₹' },
+  // US Stocks
+  { name: 'Apple', symbol: 'AAPL', exchange: 'NASDAQ', ticker: 'AAPL', currency: '$' },
+  { name: 'Microsoft', symbol: 'MSFT', exchange: 'NASDAQ', ticker: 'MSFT', currency: '$' },
+  { name: 'Google', symbol: 'GOOGL', exchange: 'NASDAQ', ticker: 'GOOGL', currency: '$' },
+  { name: 'Amazon', symbol: 'AMZN', exchange: 'NASDAQ', ticker: 'AMZN', currency: '$' },
+  { name: 'Tesla', symbol: 'TSLA', exchange: 'NASDAQ', ticker: 'TSLA', currency: '$' },
+  { name: 'Nvidia', symbol: 'NVDA', exchange: 'NASDAQ', ticker: 'NVDA', currency: '$' },
+  { name: 'Meta', symbol: 'META', exchange: 'NASDAQ', ticker: 'META', currency: '$' },
+  { name: 'Netflix', symbol: 'NFLX', exchange: 'NASDAQ', ticker: 'NFLX', currency: '$' },
+  { name: 'AMD', symbol: 'AMD', exchange: 'NASDAQ', ticker: 'AMD', currency: '$' },
+  { name: 'Intel', symbol: 'INTC', exchange: 'NASDAQ', ticker: 'INTC', currency: '$' },
+  { name: 'JPMorgan Chase', symbol: 'JPM', exchange: 'NYSE', ticker: 'JPM', currency: '$' },
+  { name: 'Berkshire Hathaway', symbol: 'BRK-B', exchange: 'NYSE', ticker: 'BRK-B', currency: '$' },
 ];
 
 export default function Home() {
   const [ticker, setTicker] = useState('TCS.NS');
-  const [input, setInput] = useState('TCS');
-  const [exchange, setExchange] = useState('.NS');
+  const [currency, setCurrency] = useState('₹');
+  const [input, setInput] = useState('');
+  const [suggestions, setSuggestions] = useState<typeof STOCKS>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: quote } = useSWR(`/api/v1/quote/${ticker}`, fetcher, { refreshInterval: 30000 });
   const { data: chartData } = useSWR(`/api/v1/chart/${ticker}`, fetcher);
   const { data: analysis } = useSWR(`/api/v1/analyze/${ticker}`, fetcher);
 
+  // Filter suggestions as user types
+  useEffect(() => {
+    if (input.trim().length < 1) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    const q = input.trim().toLowerCase();
+    const filtered = STOCKS.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.symbol.toLowerCase().includes(q) ||
+      s.ticker.toLowerCase().includes(q)
+    ).slice(0, 8); // max 8 results
+    setSuggestions(filtered);
+    setShowSuggestions(true);
+  }, [input]);
+
+  // Chart
   useEffect(() => {
     if (!chartData || !chartRef.current) return;
     if (!Array.isArray(chartData) || chartData.length === 0) return;
@@ -54,7 +104,6 @@ export default function Home() {
       });
 
       const candleSeries = chart.addSeries(CandlestickSeries);
-
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
         .map((d: any) => ({
@@ -70,17 +119,12 @@ export default function Home() {
     });
   }, [chartData]);
 
-  const handleSearch = () => {
-    const raw = input.trim().toLowerCase();
-    // Check company name map first
-    const mapped = COMPANY_MAP[raw];
-    const symbol = mapped || input.trim().toUpperCase();
-    const finalTicker = `${symbol}${exchange}`;
-    setTicker(finalTicker);
+  const selectStock = (stock: typeof STOCKS[0]) => {
+    setTicker(stock.ticker);
+    setCurrency(stock.currency);
+    setInput(`${stock.name} (${stock.exchange})`);
+    setShowSuggestions(false);
   };
-
-  // Currency symbol based on exchange
-  const currencySymbol = exchange === '' ? '$' : '₹';
 
   const verdictColor =
     analysis?.verdict?.includes('Buy') ? 'text-green-400' :
@@ -93,43 +137,54 @@ export default function Home() {
       <p className="text-gray-400 mb-8">Search any stock by name or symbol</p>
 
       {/* Search Bar */}
-      <div className="flex flex-wrap gap-3 mb-8">
+      <div className="relative w-full max-w-lg mb-8">
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          className="bg-gray-900 border border-gray-700 px-4 py-3 rounded-lg text-lg w-64 outline-none focus:border-blue-500"
-          placeholder="e.g. Infosys, TCS, AAPL"
+          onFocus={() => input.length > 0 && setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+          className="w-full bg-gray-900 border border-gray-700 px-4 py-3 rounded-lg text-lg outline-none focus:border-blue-500"
+          placeholder="Search: Infosys, Apple, TCS, NVDA..."
         />
 
-        {/* Exchange Selector */}
-        <select
-          value={exchange}
-          onChange={(e) => setExchange(e.target.value)}
-          className="bg-gray-900 border border-gray-700 px-4 py-3 rounded-lg text-lg outline-none focus:border-blue-500 cursor-pointer"
-        >
-          {EXCHANGE_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-
-        <button
-          onClick={handleSearch}
-          className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold transition-colors"
-        >
-          Analyze
-        </button>
+        {/* Dropdown suggestions */}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute z-10 w-full bg-gray-800 border border-gray-700 rounded-lg mt-1 shadow-xl">
+            {suggestions.map((stock, i) => (
+              <div
+                key={i}
+                onMouseDown={() => selectStock(stock)}
+                className="flex justify-between items-center px-4 py-3 hover:bg-gray-700 cursor-pointer border-b border-gray-700 last:border-0"
+              >
+                <div>
+                  <span className="font-semibold">{stock.name}</span>
+                  <span className="text-gray-400 text-sm ml-2">{stock.symbol}</span>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded font-mono ${
+                  stock.exchange === 'NSE' ? 'bg-blue-900 text-blue-300' :
+                  stock.exchange === 'BSE' ? 'bg-orange-900 text-orange-300' :
+                  'bg-green-900 text-green-300'
+                }`}>
+                  {stock.exchange}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Ticker being shown */}
-      <p className="text-gray-500 text-sm mb-4">Showing: <span className="text-blue-400 font-mono">{ticker}</span></p>
+      {/* Currently viewing */}
+      <p className="text-gray-500 text-sm mb-4">
+        Viewing: <span className="text-blue-400 font-mono">{ticker}</span>
+      </p>
 
       {/* Live Price */}
       {quote && quote.price && (
         <div className="mb-6">
           <span className="text-3xl font-bold">{ticker} </span>
           <span className="text-3xl text-green-400 font-mono">
-            {currencySymbol}{quote.price}
+            {currency}{quote.price}
           </span>
           {quote.change_percent != null && (
             <span className={`text-xl ml-3 ${quote.change_percent > 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -142,7 +197,7 @@ export default function Home() {
       {/* Chart */}
       {!chartData && (
         <div className="w-full h-[400px] bg-gray-900 rounded-xl flex items-center justify-center mb-8">
-          <p className="text-gray-500 text-lg">Loading chart...</p>
+          <p className="text-gray-500 text-lg">Select a stock to view chart</p>
         </div>
       )}
       <div ref={chartRef} className="w-full mb-8 rounded-xl overflow-hidden" />
@@ -162,23 +217,22 @@ export default function Home() {
             />
           </div>
           <p className="text-right text-sm text-gray-400 mb-6">{analysis.fiso_score} / 90</p>
-
           <div className="space-y-3 text-lg">
             <div className="flex justify-between">
               <span className="text-gray-400">Current Price</span>
-              <span className="font-mono">{currencySymbol}{analysis.current_price}</span>
+              <span className="font-mono">{currency}{analysis.current_price}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Entry</span>
-              <span className="font-mono text-blue-300">{currencySymbol}{analysis.entry}</span>
+              <span className="font-mono text-blue-300">{currency}{analysis.entry}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Stop Loss</span>
-              <span className="font-mono text-red-400">{currencySymbol}{analysis.stop_loss}</span>
+              <span className="font-mono text-red-400">{currency}{analysis.stop_loss}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Target</span>
-              <span className="font-mono text-green-400">{currencySymbol}{analysis.target}</span>
+              <span className="font-mono text-green-400">{currency}{analysis.target}</span>
             </div>
             <div className="flex justify-between border-t border-gray-700 pt-3">
               <span className="text-gray-400">Risk-Reward</span>
@@ -190,7 +244,7 @@ export default function Home() {
 
       {!analysis && (
         <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-md">
-          <p className="text-gray-500">Calculating analysis...</p>
+          <p className="text-gray-500">Select a stock above to see analysis...</p>
         </div>
       )}
 
