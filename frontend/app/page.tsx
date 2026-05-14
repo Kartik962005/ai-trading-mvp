@@ -148,6 +148,10 @@ export default function Home() {
   const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-cyan-500/40 bg-cyan-950/20' :
     analysis?.verdict === 'Hold' ? 'border-amber-500/40 bg-amber-950/20' : 'border-rose-500/40 bg-rose-950/20';
 
+  // Calculate pointer position (0% to 100%) based on -1.0 to +1.0 score
+  const sentimentScore = analysis?.sentiment?.score || 0;
+  const pointerPosition = Math.max(5, Math.min(95, ((sentimentScore + 1) / 2) * 100));
+
   return (
     <div className="min-h-screen bg-[#030305] text-gray-200 selection:bg-cyan-500/30" style={{ fontFamily: "'Space Grotesk', 'Inter', sans-serif" }}>
       
@@ -231,23 +235,44 @@ export default function Home() {
 
           <div className="lg:col-span-4 flex flex-col gap-8">
             <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 relative overflow-hidden">
-              <h3 className="text-sm font-mono text-purple-400 tracking-widest uppercase mb-6 flex items-center gap-2">
+              <h3 className="text-sm font-mono text-purple-400 tracking-widest uppercase mb-4 flex items-center gap-2">
                 <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
                 Global News NLP
               </h3>
-              <div className="mb-6">
-                <span className={`inline-flex px-4 py-2 rounded-xl text-sm sm:text-lg font-bold tracking-widest uppercase border ${
-                  analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' :
-                  analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-white/5 border-white/10 text-gray-300'
-                }`}>
-                  {analysis?.sentiment?.label || 'ANALYZING...'} 
-                  <span className="ml-2 opacity-50">[{analysis?.sentiment?.score || 0}]</span>
-                </span>
+              
+              {/* --- NEW VISUAL SCALE FOR SENTIMENT --- */}
+              <div className="mb-8 mt-12">
+                <div className="relative w-full h-3 rounded-full border border-white/10 bg-black/50">
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500 via-gray-500 to-cyan-500 opacity-80" />
+                  
+                  <div 
+                    className="absolute top-[-36px] -translate-x-1/2 flex flex-col items-center transition-all duration-1000 ease-out"
+                    style={{ left: `${pointerPosition}%` }}
+                  >
+                    <div className={`px-2 py-1 rounded text-[10px] font-bold tracking-wider mb-1 uppercase whitespace-nowrap ${
+                      analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.3)]' :
+                      analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.3)]' : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                    }`}>
+                      {analysis?.sentiment?.label || 'ANALYZING...'}
+                    </div>
+                    {/* Downward pointing arrow */}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 21L1 3H23L12 21Z" fill="currentColor"/>
+                    </svg>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between text-[10px] font-mono text-gray-500 mt-2 px-1 tracking-widest uppercase">
+                  <span>Bearish</span>
+                  <span>Neutral</span>
+                  <span>Bullish</span>
+                </div>
               </div>
+              {/* -------------------------------------- */}
+
               <div className="space-y-4">
                 <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Recent Scans</span>
                 
-                {/* Robust frontend display for headlines */}
                 {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
                   <ul className="space-y-3">
                     {analysis.sentiment.headlines.map((headline: string, idx: number) => (
