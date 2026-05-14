@@ -91,22 +91,22 @@ function getLevenshteinDistance(s: string, t: string) {
   return arr[t.length][s.length];
 }
 
-// Mini Component to fetch and display Live Market Indices
+// Compact Market Index Card
 const MarketIndexCard = ({ title, symbol, currency }: { title: string, symbol: string, currency: string }) => {
   const { data } = useSWR(`/api/v1/quote/${symbol}`, fetcher, { refreshInterval: 60000 });
   return (
-    <div className="bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col items-center justify-center shadow-lg transition-transform hover:scale-105">
-      <span className="text-gray-500 font-mono text-xs uppercase tracking-widest mb-2">{title}</span>
+    <div className="bg-black/60 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center shadow-lg transition-transform hover:scale-105 hover:bg-white/[0.02]">
+      <span className="text-gray-400 font-medium text-[10px] uppercase tracking-[0.2em] mb-1">{title}</span>
       {data && data.price ? (
-        <>
-          <span className="text-2xl font-bold text-white tracking-tighter">{currency}{data.price.toLocaleString()}</span>
-          <span className={`text-xs font-mono mt-1 px-2 py-0.5 rounded ${data.change_percent > 0 ? 'bg-cyan-500/20 text-cyan-400' : 'bg-rose-500/20 text-rose-400'}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-xl font-bold text-white tracking-tight">{currency}{data.price.toLocaleString()}</span>
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${data.change_percent > 0 ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
             {data.change_percent > 0 ? '▲' : '▼'} {Math.abs(data.change_percent).toFixed(2)}%
           </span>
-        </>
+        </div>
       ) : (
-        <div className="h-10 flex items-center justify-center">
-          <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+        <div className="h-7 flex items-center justify-center">
+          <div className="w-4 h-4 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin"></div>
         </div>
       )}
     </div>
@@ -124,7 +124,6 @@ export default function Home() {
   
   const chartRef = useRef<HTMLDivElement>(null);
 
-  // Only fetch analysis and chart if a ticker is selected
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 30000 });
   const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}` : null, fetcher);
   const { data: analysis } = useSWR(ticker ? `/api/v1/analyze/${ticker}` : null, fetcher);
@@ -160,14 +159,14 @@ export default function Home() {
     import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
       const chart = createChart(chartRef.current!, {
         width: chartRef.current!.clientWidth || 800,
-        height: 450,
-        layout: { background: { color: 'transparent' }, textColor: '#64748b' },
-        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+        height: 400,
+        layout: { background: { color: 'transparent' }, textColor: '#9ca3af' },
+        grid: { vertLines: { color: 'rgba(255,255,255,0.02)' }, horzLines: { color: 'rgba(255,255,255,0.02)' } },
         crosshair: { mode: 1 },
       });
       const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#22d3ee', downColor: '#f43f5e', 
-        borderVisible: false, wickUpColor: '#22d3ee', wickDownColor: '#f43f5e'
+        upColor: '#a78bfa', downColor: '#fb7185', // Pastel Purple & Pastel Rose
+        borderVisible: false, wickUpColor: '#a78bfa', wickDownColor: '#fb7185'
       });
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
@@ -196,42 +195,42 @@ export default function Home() {
     return [];
   };
 
-  const verdictColor = analysis?.verdict?.includes('Buy') ? 'text-cyan-400 shadow-cyan-400/50' :
-    analysis?.verdict === 'Hold' ? 'text-amber-400 shadow-amber-400/50' : 'text-rose-400 shadow-rose-400/50';
+  // Pastel AMOLED Palette Mapping
+  const verdictColor = analysis?.verdict?.includes('Buy') ? 'text-emerald-300 drop-shadow-[0_0_15px_rgba(110,231,183,0.3)]' :
+    analysis?.verdict === 'Hold' ? 'text-amber-300 drop-shadow-[0_0_15px_rgba(252,211,77,0.3)]' : 'text-rose-400 drop-shadow-[0_0_15px_rgba(251,113,133,0.3)]';
 
-  const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-cyan-500/40 bg-cyan-950/20' :
-    analysis?.verdict === 'Hold' ? 'border-amber-500/40 bg-amber-950/20' : 'border-rose-500/40 bg-rose-950/20';
+  const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-emerald-500/20 bg-emerald-950/10' :
+    analysis?.verdict === 'Hold' ? 'border-amber-500/20 bg-amber-950/10' : 'border-rose-500/20 bg-rose-950/10';
 
   const sentimentScore = analysis?.sentiment?.score || 0;
   const pointerPosition = Math.max(5, Math.min(95, ((sentimentScore + 1) / 2) * 100));
 
   return (
-    <div className="min-h-screen bg-[#030305] text-gray-200 selection:bg-cyan-500/30" style={{ fontFamily: "'Space Grotesk', 'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-black text-gray-200 selection:bg-indigo-500/30 font-sans" style={{ fontFamily: "'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif" }}>
       
+      {/* AMOLED Pastel Orbs Background */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:2rem_2rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-600/20 blur-[150px] rounded-full mix-blend-screen animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 blur-[150px] rounded-full mix-blend-screen" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-pink-600/10 blur-[150px] rounded-full mix-blend-screen" />
+        <div className="absolute top-[40%] left-[60%] w-[30%] h-[30%] bg-emerald-600/5 blur-[120px] rounded-full mix-blend-screen" />
       </div>
 
-      <div className="relative z-10 p-4 sm:p-6 md:p-12 max-w-7xl mx-auto">
+      <div className="relative z-10 p-4 sm:p-6 max-w-6xl mx-auto flex flex-col justify-center min-h-screen">
         
         {/* --- HEADER --- */}
-        <div className="pt-8 text-center flex flex-col items-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 backdrop-blur-md mb-6">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-            <span className="text-[10px] md:text-xs font-mono text-cyan-300 tracking-[0.2em] uppercase">System Online // v2.0</span>
-          </div>
-          <h1 className="text-5xl sm:text-7xl md:text-8xl lg:text-9xl font-black mb-4 tracking-tighter bg-gradient-to-br from-white via-cyan-100 to-cyan-800 bg-clip-text text-transparent filter drop-shadow-[0_0_15px_rgba(34,211,238,0.2)] break-words leading-tight px-2 w-full cursor-pointer" onClick={() => setTicker(null)}>
-            SignalX
+        <div className="text-center flex flex-col items-center mb-6">
+          <h1 className="text-5xl sm:text-6xl md:text-7xl font-black mb-2 tracking-tighter cursor-pointer" onClick={() => setTicker(null)}>
+            <span className="bg-clip-text text-transparent bg-gradient-to-br from-pink-300 via-purple-300 to-indigo-400 drop-shadow-[0_0_25px_rgba(216,180,254,0.4)]">Signal</span>
+            <span className="text-white">X</span>
           </h1>
-          <p className="text-gray-400 text-xs sm:text-sm md:text-base font-mono tracking-[0.1em] uppercase max-w-2xl px-4 mb-12">
-            Wall Street Has Competition
+          <p className="text-purple-200/70 text-[10px] sm:text-xs font-medium tracking-[0.2em] uppercase">
+            Because “Trust Me Bro” Isn’t a Strategy.
           </p>
         </div>
 
         {/* --- GLOBAL SEARCH BAR --- */}
-        <div className="relative w-full max-w-3xl mx-auto mb-16 px-4 sm:px-0">
-          <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full blur opacity-20"></div>
+        <div className="relative w-full max-w-2xl mx-auto mb-6 px-2 sm:px-0">
+          <div className="absolute inset-0 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-indigo-500/20 rounded-2xl blur-lg opacity-50"></div>
           <div className="relative">
              <input
               value={input}
@@ -239,23 +238,23 @@ export default function Home() {
               onFocus={() => input.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={handleKeyDown}
-              className="w-full bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 px-6 sm:px-8 py-4 sm:py-5 rounded-full text-lg sm:text-xl text-white outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder-gray-600 font-mono text-center sm:text-left"
-              placeholder="e.g. Apple, TCS, Bitcoin"
+              className="w-full bg-[#09090b]/90 backdrop-blur-xl border border-white/10 px-6 py-4 rounded-2xl text-lg text-white outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all placeholder-gray-600 font-mono text-center sm:text-left shadow-2xl"
+              placeholder="> INITIATE TERMINAL [ASSET/TICKER]"
             />
           </div>
           
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-50 w-[calc(100%-2rem)] sm:w-full mx-4 sm:mx-0 bg-[#0a0a0c]/95 backdrop-blur-2xl border border-white/10 rounded-2xl mt-4 shadow-[0_0_30px_rgba(0,0,0,0.8)] overflow-hidden">
+            <div className="absolute z-50 w-full bg-[#09090b]/95 backdrop-blur-2xl border border-white/10 rounded-2xl mt-3 shadow-2xl overflow-hidden">
               {suggestions.map((stock, i) => (
                 <div key={i} onMouseDown={() => selectStock(stock)}
-                  className="flex justify-between items-center px-6 py-4 hover:bg-cyan-500/10 hover:pl-8 cursor-pointer border-b border-white/5 last:border-0 transition-all duration-200">
+                  className="flex justify-between items-center px-6 py-4 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 transition-colors">
                   <div className="flex flex-col text-left">
                     <span className="font-bold text-gray-100">{stock.name}</span>
-                    <span className="text-cyan-500/70 text-xs font-mono">{stock.symbol}</span>
+                    <span className="text-purple-400/70 text-[10px] font-mono tracking-wider">{stock.symbol}</span>
                   </div>
-                  <span className={`text-xs px-3 py-1 rounded-full font-mono backdrop-blur-sm ${
-                    stock.exchange === 'CRYPTO' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 
-                    'bg-white/5 border border-white/10 text-gray-300'
+                  <span className={`text-[10px] px-2 py-1 rounded-md font-mono tracking-wider font-bold ${
+                    stock.exchange === 'CRYPTO' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' : 
+                    'bg-white/5 border border-white/10 text-gray-400'
                   }`}>
                     {stock.exchange}
                   </span>
@@ -266,57 +265,56 @@ export default function Home() {
         </div>
 
         {/* ========================================= */}
-        {/* VIEW 1: HOME MARKET OVERVIEW (When No Ticker Selected) */}
+        {/* VIEW 1: HOME MARKET OVERVIEW */}
         {/* ========================================= */}
         {!ticker && (
-          <div className="animate-in fade-in duration-500">
-            {/* Live Indices */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto mb-16">
+          <div className="animate-in fade-in duration-700 flex-1 flex flex-col justify-start">
+            {/* 4-Column Compact Indices */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto w-full mb-8 px-2 sm:px-0">
                <MarketIndexCard title="NIFTY 50" symbol="^NSEI" currency="" />
                <MarketIndexCard title="SENSEX" symbol="^BSESN" currency="" />
                <MarketIndexCard title="NASDAQ" symbol="^IXIC" currency="" />
+               <MarketIndexCard title="BITCOIN" symbol="BTC-USD" currency="$" />
             </div>
 
             {/* Category Selector */}
-            <h2 className="text-center text-xl font-bold mb-6 tracking-tight text-white">Explore Markets</h2>
-            <div className="flex flex-col sm:flex-row justify-center gap-4 mb-10 max-w-3xl mx-auto px-4">
+            <div className="flex justify-center gap-3 max-w-2xl mx-auto w-full px-2 sm:px-0 mb-6">
                <button 
                   onClick={() => setActiveCategory(activeCategory === 'INDIA' ? null : 'INDIA')}
-                  className={`flex-1 py-4 px-6 rounded-2xl font-mono font-bold tracking-widest text-sm transition-all border ${
-                    activeCategory === 'INDIA' ? 'bg-blue-500/20 border-blue-500 text-blue-300 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                  className={`flex-1 py-3 rounded-xl font-semibold tracking-wide text-xs sm:text-sm transition-all border ${
+                    activeCategory === 'INDIA' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 shadow-[0_0_20px_rgba(99,102,241,0.2)]' : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
                   }`}>
-                 Indian Stocks
+                 India
                </button>
                <button 
                   onClick={() => setActiveCategory(activeCategory === 'US' ? null : 'US')}
-                  className={`flex-1 py-4 px-6 rounded-2xl font-mono font-bold tracking-widest text-sm transition-all border ${
-                    activeCategory === 'US' ? 'bg-purple-500/20 border-purple-500 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                  className={`flex-1 py-3 rounded-xl font-semibold tracking-wide text-xs sm:text-sm transition-all border ${
+                    activeCategory === 'US' ? 'bg-pink-500/20 border-pink-500/50 text-pink-300 shadow-[0_0_20px_rgba(236,72,153,0.2)]' : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
                   }`}>
-                 US Stocks
+                 Global
                </button>
                <button 
                   onClick={() => setActiveCategory(activeCategory === 'CRYPTO' ? null : 'CRYPTO')}
-                  className={`flex-1 py-4 px-6 rounded-2xl font-mono font-bold tracking-widest text-sm transition-all border ${
-                    activeCategory === 'CRYPTO' ? 'bg-yellow-500/20 border-yellow-500 text-yellow-300 shadow-[0_0_20px_rgba(234,179,8,0.3)]' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
+                  className={`flex-1 py-3 rounded-xl font-semibold tracking-wide text-xs sm:text-sm transition-all border ${
+                    activeCategory === 'CRYPTO' ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
                   }`}>
-                 Cryptocurrency
+                 Crypto
                </button>
             </div>
 
             {/* Expanded Category Grid */}
             {activeCategory && (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 max-w-5xl mx-auto animate-in slide-in-from-top-4 fade-in duration-300">
+              <div className="grid grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3 max-w-4xl mx-auto w-full px-2 sm:px-0 animate-in fade-in duration-300">
                 {getCategoryStocks().map((stock, i) => (
                   <button 
                     key={i} 
                     onClick={() => selectStock(stock)}
-                    className="bg-black/40 border border-white/10 rounded-2xl p-4 text-left hover:bg-white/10 hover:border-cyan-500/50 hover:-translate-y-1 transition-all group"
+                    className="bg-[#09090b]/80 border border-white/5 rounded-xl p-3 text-left hover:bg-white/5 hover:border-purple-500/30 transition-all group"
                   >
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-mono text-gray-500 group-hover:text-cyan-400 transition-colors">{stock.symbol}</span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-500/50"></span>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[10px] font-mono text-gray-500 group-hover:text-purple-300 transition-colors">{stock.symbol}</span>
                     </div>
-                    <span className="font-bold text-sm text-gray-200 line-clamp-1">{stock.name}</span>
+                    <span className="font-bold text-xs text-gray-200 line-clamp-1">{stock.name}</span>
                   </button>
                 ))}
               </div>
@@ -328,29 +326,24 @@ export default function Home() {
         {/* VIEW 2: DASHBOARD (When Ticker Selected) */}
         {/* ========================================= */}
         {ticker && (
-          <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-            
-            {/* Back Button */}
-            <div className="mb-6">
-              <button 
-                onClick={() => setTicker(null)}
-                className="text-gray-500 font-mono text-sm hover:text-cyan-400 transition-colors flex items-center gap-2"
-              >
-                ← Back to Market Overview
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="mb-4">
+              <button onClick={() => setTicker(null)} className="text-gray-500 font-medium text-xs hover:text-purple-300 transition-colors flex items-center gap-2">
+                ← Return to Hub
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
-              <div className="lg:col-span-8 border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-6 shadow-2xl relative overflow-hidden group">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-white/5 pb-4">
-                  <div className="mb-4 sm:mb-0">
-                    <p className="text-cyan-500 text-xs font-mono tracking-widest mb-1 uppercase">Live Data Stream</p>
-                    <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">{ticker}</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+              {/* Chart Terminal */}
+              <div className="lg:col-span-8 border border-white/5 bg-[#09090b]/60 backdrop-blur-2xl rounded-3xl p-5 shadow-2xl relative overflow-hidden group">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 border-b border-white/5 pb-4">
+                  <div>
+                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">{ticker}</h2>
                   </div>
                   {quote && quote.price && (
-                    <div className="text-left sm:text-right">
-                      <span className="text-3xl sm:text-4xl font-mono tracking-tighter text-white">{currency}{quote.price}</span>
-                      <div className={`text-sm sm:text-lg font-mono flex items-center justify-start sm:justify-end gap-1 mt-1 ${quote.change_percent > 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
+                    <div className="text-left sm:text-right mt-2 sm:mt-0">
+                      <span className="text-3xl font-bold tracking-tighter text-white">{currency}{quote.price}</span>
+                      <div className={`text-sm font-semibold flex items-center justify-start sm:justify-end gap-1 ${quote.change_percent > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent).toFixed(2)}%
                       </div>
                     </div>
@@ -358,165 +351,121 @@ export default function Home() {
                 </div>
 
                 {!chartData ? (
-                  <div className="h-[450px] flex flex-col items-center justify-center font-mono text-cyan-400/50 gap-4">
-                    <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-                    FETCHING ALGORITHMIC DATA...
+                  <div className="h-[400px] flex flex-col items-center justify-center text-purple-400/50 gap-4">
+                    <div className="w-8 h-8 border-2 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
+                    <span className="text-xs font-mono tracking-widest">FETCHING DATA...</span>
                   </div>
                 ) : (
-                  <div ref={chartRef} className="w-full h-[300px] sm:h-[450px]" />
+                  <div ref={chartRef} className="w-full h-[300px] sm:h-[400px]" />
                 )}
               </div>
 
-              <div className="lg:col-span-4 flex flex-col gap-8">
-                <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 relative overflow-hidden flex-1 shadow-2xl">
-                  <div className="absolute top-0 left-0 w-64 h-64 bg-purple-500/10 blur-[100px] pointer-events-none"></div>
-                  <h3 className="text-sm font-mono text-purple-400 tracking-widest uppercase mb-4 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
-                    Global News NLP
+              {/* Global News NLP */}
+              <div className="lg:col-span-4 flex flex-col gap-6">
+                <div className="border border-white/5 bg-[#09090b]/60 backdrop-blur-2xl rounded-3xl p-6 relative overflow-hidden flex-1 shadow-2xl">
+                  <h3 className="text-xs font-bold text-indigo-300 tracking-widest uppercase mb-4 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse"></span>
+                    Live NLP Sentinel
                   </h3>
                   
-                  <div className="mb-8 mt-12">
-                    <div className="relative w-full h-3 rounded-full border border-white/10 bg-black/50">
-                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500 via-gray-500 to-cyan-500 opacity-80" />
-                      <div 
-                        className="absolute top-[-36px] -translate-x-1/2 flex flex-col items-center transition-all duration-1000 ease-out"
-                        style={{ left: `${pointerPosition}%` }}
-                      >
-                        <div className={`px-2 py-1 rounded text-[10px] font-bold tracking-wider mb-1 uppercase whitespace-nowrap ${
-                          analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.3)]' :
-                          analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.3)]' : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                  <div className="mb-6 mt-10">
+                    <div className="relative w-full h-2 rounded-full bg-white/5">
+                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-400 via-gray-500 to-emerald-400 opacity-60" />
+                      <div className="absolute top-[-30px] -translate-x-1/2 flex flex-col items-center transition-all duration-1000 ease-out" style={{ left: `${pointerPosition}%` }}>
+                        <div className={`px-2 py-1 rounded text-[9px] font-black tracking-widest uppercase shadow-xl ${
+                          analysis?.sentiment?.label === 'Bullish' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' :
+                          analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/10 text-rose-300 border border-rose-500/20' : 'bg-white/5 text-gray-300 border border-white/10'
                         }`}>
                           {analysis?.sentiment?.label || 'ANALYZING...'}
                         </div>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12 21L1 3H23L12 21Z" fill="currentColor"/>
-                        </svg>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="white" className="mt-0.5"><path d="M12 21L1 3H23L12 21Z" fill="currentColor"/></svg>
                       </div>
-                    </div>
-                    
-                    <div className="flex justify-between text-[10px] font-mono text-gray-500 mt-2 px-1 tracking-widest uppercase">
-                      <span>Bearish</span><span>Neutral</span><span>Bullish</span>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Latest Verified Scans</span>
+                  <div className="space-y-3">
                     {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
-                      <ul className="space-y-3">
+                      <ul className="space-y-2">
                         {analysis.sentiment.headlines.map((headline: string, idx: number) => (
-                          <li key={idx} className="text-xs sm:text-sm text-gray-300 font-sans leading-relaxed border-l-[3px] border-purple-500/50 pl-4 py-2 bg-white/[0.03] rounded-r-lg">
-                            {headline || "Unknown Headline"}
+                          <li key={idx} className="text-xs text-gray-400 leading-snug border-l-2 border-indigo-500/30 pl-3 py-1">
+                            {headline}
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-xs sm:text-sm text-gray-500 font-sans italic p-4 bg-white/5 rounded-xl border border-white/10">
-                        No verified news data available for this asset.
-                      </div>
+                      <div className="text-xs text-gray-500 italic p-3 bg-white/5 rounded-xl text-center">No verified news detected.</div>
                     )}
                   </div>
                 </div>
               </div>
             </div>
 
+            {/* UNIFIED DASHBOARD: ALGORITHM VERDICT & FORECAST */}
             {analysis && !analysis.error && (
-              <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-10 mb-12 relative overflow-hidden shadow-2xl ${verdictBg}`}>
-                 <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 blur-[100px] pointer-events-none"></div>
-                 
-                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 border-b border-white/10 pb-8">
+              <div className={`border backdrop-blur-2xl rounded-3xl p-6 sm:p-8 mb-8 shadow-2xl ${verdictBg}`}>
+                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-white/5 pb-6">
                     <div>
-                      <h3 className="text-sm font-mono text-gray-400 tracking-widest uppercase mb-1">Algorithm Verdict & Forecast</h3>
-                      <div className={`text-5xl sm:text-7xl font-black tracking-tight ${verdictColor}`}>{analysis.verdict}</div>
+                      <h3 className="text-xs font-bold text-gray-400 tracking-widest uppercase mb-1">Algorithm Verdict</h3>
+                      <div className={`text-4xl sm:text-6xl font-black tracking-tight ${verdictColor}`}>{analysis.verdict}</div>
                     </div>
                     
-                    <div className="mt-6 md:mt-0 text-left md:text-right">
-                       <span className="text-xs font-mono text-gray-500 tracking-widest uppercase block mb-2">AI Confidence Level</span>
-                       <div className="flex items-center gap-4">
-                         <div className="text-4xl font-mono text-white">{analysis.confidence}%</div>
-                         <div className="flex gap-1.5">
+                    <div className="mt-4 md:mt-0 text-left md:text-right">
+                       <span className="text-[10px] font-bold text-gray-500 tracking-widest uppercase block mb-2">AI Confidence</span>
+                       <div className="flex items-center gap-3">
+                         <div className="text-3xl font-bold text-white tracking-tight">{analysis.confidence}%</div>
+                         <div className="flex gap-1">
                             {[1,2,3,4,5].map(i => (
-                              <div key={i} className={`w-8 h-2 rounded-full ${i <= Math.ceil(analysis.confidence / 20) ? 'bg-cyan-400' : 'bg-white/10'}`} />
+                              <div key={i} className={`w-6 h-1.5 rounded-full ${i <= Math.ceil(analysis.confidence / 20) ? 'bg-indigo-400' : 'bg-white/10'}`} />
                             ))}
                          </div>
                        </div>
                     </div>
                  </div>
 
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-                    <div className="bg-black/30 rounded-2xl p-5 border border-white/5">
-                      <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Entry Vector</span>
-                      <p className="text-3xl font-mono text-white">{currency}{analysis.entry}</p>
-                      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
-                        <span className="text-[10px] font-mono text-gray-500 uppercase">Profile</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
-                          analysis.risk_level === 'High Risk' ? 'bg-rose-500/20 text-rose-400' :
-                          analysis.risk_level === 'Medium Risk' ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'
-                        }`}>{analysis.risk_level}</span>
-                      </div>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+                    <div className="bg-[#000000]/40 rounded-2xl p-4 border border-white/5">
+                      <span className="text-gray-500 text-[10px] font-bold uppercase tracking-widest block mb-1">Entry Vector</span>
+                      <p className="text-2xl font-bold text-white tracking-tight">{currency}{analysis.entry}</p>
                     </div>
 
-                    <div className="bg-black/30 rounded-2xl p-5 border border-white/5 relative overflow-hidden group">
-                      <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                      <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Target Price</span>
-                      <p className="text-4xl font-mono text-cyan-400">{currency}{analysis.target}</p>
-                      <p className="text-cyan-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Take Profit Zone</p>
+                    <div className="bg-[#000000]/40 rounded-2xl p-4 border border-emerald-500/10">
+                      <span className="text-gray-500 text-[10px] font-bold uppercase tracking-widest block mb-1">Take Profit Target</span>
+                      <p className="text-3xl font-bold text-emerald-300 tracking-tight">{currency}{analysis.target}</p>
                     </div>
 
-                    <div className="bg-black/30 rounded-2xl p-5 border border-white/5">
-                      <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Hard Stop-Loss</span>
-                      <p className="text-4xl font-mono text-rose-400">{currency}{analysis.stop_loss}</p>
-                      <p className="text-rose-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Max Risk Tolerance</p>
+                    <div className="bg-[#000000]/40 rounded-2xl p-4 border border-rose-500/10">
+                      <span className="text-gray-500 text-[10px] font-bold uppercase tracking-widest block mb-1">Hard Stop-Loss</span>
+                      <p className="text-3xl font-bold text-rose-300 tracking-tight">{currency}{analysis.stop_loss}</p>
                     </div>
 
-                    <div className="bg-cyan-500/10 rounded-2xl p-5 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.1)]">
-                      <span className="text-cyan-400 text-xs font-mono uppercase tracking-wider block mb-1">Expected Timeframe</span>
-                      <p className="text-3xl font-mono text-white">{analysis.estimated_days} Days</p>
-                      <p className="text-cyan-300 text-sm font-mono mt-1 border-t border-cyan-500/20 pt-2">By {analysis.target_date}</p>
+                    <div className="bg-indigo-500/10 rounded-2xl p-4 border border-indigo-500/20">
+                      <span className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest block mb-1">Est. Timeframe</span>
+                      <p className="text-2xl font-bold text-white tracking-tight">{analysis.estimated_days} Days</p>
+                      <p className="text-indigo-300/70 text-[10px] font-mono mt-1">By {analysis.target_date}</p>
                     </div>
                  </div>
                  
-                 <div className="bg-black/30 rounded-2xl p-6 md:p-8 border border-white/5">
-                    <div className="flex justify-between items-end mb-4">
-                       <div className="flex items-center gap-2">
-                         <span className="text-sm font-mono text-gray-400 uppercase tracking-widest">FISO Score</span>
-                         <div className="group relative">
-                            <span className="cursor-help w-4 h-4 rounded-full border border-gray-600 text-gray-400 flex items-center justify-center text-[10px] hover:bg-white/10 hover:text-white transition-colors">?</span>
-                            <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-black/90 border border-white/10 rounded-xl text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                              <strong>Fundamental Indicator Strength Oscillator</strong><br/><br/>Synthesizes Trend (SMA), Momentum (RSI), Volume (MACD), and Live News into a single 0-100 mathematical score.
-                            </div>
-                         </div>
-                       </div>
-                       <span className="text-3xl font-mono text-white">{analysis.fiso_score}<span className="text-lg text-gray-600">/100</span></span>
+                 <div className="bg-[#000000]/30 rounded-2xl p-5 border border-white/5">
+                    <div className="flex justify-between items-end mb-3">
+                       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">FISO Score Synthesis</span>
+                       <span className="text-2xl font-bold text-white">{analysis.fiso_score}<span className="text-sm text-gray-500">/100</span></span>
                     </div>
-                    <div className="w-full bg-black/40 rounded-full h-2 mb-6 overflow-hidden border border-white/5">
-                      <div className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-cyan-500 transition-all duration-1000" style={{ width: `${analysis.fiso_score}%` }} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                       <div className="bg-white/5 p-3 rounded-xl text-center border border-white/5">
-                         <div className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">Trend Base</div>
-                         <div className="text-base font-mono text-cyan-300">{analysis.components.trend}/35</div>
-                       </div>
-                       <div className="bg-white/5 p-3 rounded-xl text-center border border-white/5">
-                         <div className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">Momentum</div>
-                         <div className="text-base font-mono text-amber-300">{analysis.components.momentum}/35</div>
-                       </div>
-                       <div className="bg-white/5 p-3 rounded-xl text-center border border-white/5">
-                         <div className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">Signal Hash</div>
-                         <div className="text-base font-mono text-purple-300">{analysis.components.signal}/30</div>
-                       </div>
+                    <div className="w-full bg-white/5 rounded-full h-1.5 mb-4 overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-rose-400 via-amber-400 to-emerald-400" style={{ width: `${analysis.fiso_score}%` }} />
                     </div>
                  </div>
               </div>
             )}
 
+            {/* TACTICAL STRATEGY MATRIX */}
             {analysis && !analysis.error && (
-              <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-8 lg:p-12 mb-12">
-                <div className="mb-10 text-center sm:text-left">
-                  <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2">Tactical Strategy Matrix</h2>
-                  <p className="text-cyan-500/70 font-mono text-xs sm:text-sm uppercase tracking-widest">Validating 20 mathematical models. Hover/Tap to expand.</p>
+              <div className="border border-white/5 bg-[#09090b]/60 backdrop-blur-2xl rounded-3xl p-6 sm:p-10 mb-8">
+                <div className="mb-8">
+                  <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mb-1">Tactical Strategy Matrix</h2>
+                  <p className="text-gray-500 text-[10px] sm:text-xs uppercase tracking-widest">Hover or tap to expand 20 validated models</p>
                 </div>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-12">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {STRATEGIES.map((strategy) => {
                     const evalData = analysis?.strategy_evals?.[strategy.id];
                     const isBest = analysis?.best_strategy_id === strategy.id;
@@ -528,40 +477,34 @@ export default function Home() {
                         onMouseEnter={() => setExpandedStrategyId(strategy.id)}
                         onMouseLeave={() => setExpandedStrategyId(null)}
                         onClick={() => setExpandedStrategyId(isExpanded ? null : strategy.id)}
-                        className={`relative p-5 rounded-2xl border transition-all duration-300 cursor-pointer ${
-                          isBest ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'border-white/5 hover:border-white/20'
-                        } ${
-                          isExpanded ? 'bg-black/80 z-20 scale-105' : 'bg-black/30'
-                        }`}
+                        className={`relative p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                          isBest ? 'border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'border-white/5 hover:border-white/20'
+                        } ${isExpanded ? 'bg-black/80 z-20 scale-105' : 'bg-black/40'}`}
                       >
-                        <div className="flex justify-between items-start mb-3">
-                          <span className={`font-mono text-[10px] tracking-widest uppercase block ${
-                            isBest ? 'text-cyan-400 font-bold' : 'text-gray-500'
-                          }`}>MODEL {String(strategy.id).padStart(2, '0')}</span>
-                          
-                          {isExpanded && (
-                            <button className="sm:hidden text-gray-400 hover:text-white">✕</button>
-                          )}
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={`text-[9px] tracking-widest uppercase block ${isBest ? 'text-purple-400 font-bold' : 'text-gray-600'}`}>
+                            MODEL {String(strategy.id).padStart(2, '0')}
+                          </span>
                         </div>
 
-                        <span className="font-bold text-sm leading-tight block text-white mb-3">{strategy.name}</span>
+                        <span className="font-bold text-sm text-gray-200 mb-2 block">{strategy.name}</span>
                         
                         {evalData && (
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`text-xs font-mono px-2 py-0.5 rounded ${
-                               evalData.score > 75 ? 'bg-cyan-500/20 text-cyan-400' : 
-                               evalData.score > 40 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                               evalData.score > 75 ? 'bg-emerald-500/10 text-emerald-400' : 
+                               evalData.score > 40 ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'
                             }`}>
                               SCORE: {evalData.score}
                             </span>
-                            {isBest && <span className="text-[10px] bg-cyan-400 text-black px-1.5 py-0.5 rounded font-bold uppercase">Best Fit</span>}
+                            {isBest && <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold uppercase">Best Fit</span>}
                           </div>
                         )}
 
-                        <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-96 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0'}`}>
-                          <p className="text-xs text-gray-400 mb-2 font-mono">Overview: {strategy.description}</p>
-                          <p className="text-sm text-gray-200 leading-relaxed font-sans border-l-2 border-cyan-500/50 pl-2">
-                            {evalData?.desc || "Awaiting mathematical evaluation..."}
+                        <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-64 opacity-100 mt-3 border-t border-white/10 pt-3' : 'max-h-0 opacity-0'}`}>
+                          <p className="text-[10px] text-gray-500 mb-2">{strategy.description}</p>
+                          <p className="text-xs text-gray-300 leading-snug border-l-2 border-purple-500/50 pl-2">
+                            {evalData?.desc || "Awaiting calculation..."}
                           </p>
                         </div>
                       </div>
@@ -570,7 +513,6 @@ export default function Home() {
                 </div>
               </div>
             )}
-
           </div>
         )}
       </div>
