@@ -143,7 +143,7 @@ export const STOCKS = [
   { name: 'Adani Wilmar', symbol: 'AWL', exchange: 'NSE', ticker: 'AWL.NS', currency: '₹' },
   { name: 'Adani Total Gas', symbol: 'ATGL', exchange: 'NSE', ticker: 'ATGL.NS', currency: '₹' },
   { name: 'Trent', symbol: 'TRENT', exchange: 'NSE', ticker: 'TRENT.NS', currency: '₹' },
-  { name: 'Avenue Supermarts (DMart)', symbol: 'DMART', exchange: 'NSE', ticker: 'DMART.NS', currency: '₹' }
+  { name: 'Avenue Supermarts (DMart)', symbol: 'DMART', exchange: 'NSE', ticker: 'DMART.NS', currency: '₹' },
   // frontend/app/stocks.ts
 // NSE BATCH 2 (125 Stocks)
 
@@ -290,7 +290,7 @@ export const STOCKS = [
   { name: 'FACT', symbol: 'FACT', exchange: 'NSE', ticker: 'FACT.NS', currency: '₹' },
   { name: 'Atul Ltd', symbol: 'ATUL', exchange: 'NSE', ticker: 'ATUL.NS', currency: '₹' },
   { name: 'Gujarat Fluorochem', symbol: 'FLUOROCHEM', exchange: 'NSE', ticker: 'FLUOROCHEM.NS', currency: '₹' },
-  { name: 'Castrol India', symbol: 'CASTROLIND', exchange: 'NSE', ticker: 'CASTROLIND.NS', currency: '₹' }
+  { name: 'Castrol India', symbol: 'CASTROLIND', exchange: 'NSE', ticker: 'CASTROLIND.NS', currency: '₹' },
   // frontend/app/stocks.ts
 // BSE BATCH 1 (125 Stocks)
 
@@ -413,7 +413,7 @@ export const STOCKS = [
   { name: 'Shree Cement', symbol: 'SHREECEM', exchange: 'BSE', ticker: 'SHREECEM.BO', currency: '₹' },
   { name: 'ACC', symbol: 'ACC', exchange: 'BSE', ticker: 'ACC.BO', currency: '₹' },
   { name: 'Dalmia Bharat', symbol: 'DALBHARAT', exchange: 'BSE', ticker: 'DALBHARAT.BO', currency: '₹' },
-  { name: 'Ramco Cements', symbol: 'RAMCOCEM', exchange: 'BSE', ticker: 'RAMCOCEM.BO', currency: '₹' }
+  { name: 'Ramco Cements', symbol: 'RAMCOCEM', exchange: 'BSE', ticker: 'RAMCOCEM.BO', currency: '₹' },
   // frontend/app/stocks.ts
 // BSE BATCH 2 (125 Stocks)
 
@@ -560,7 +560,7 @@ export const STOCKS = [
   { name: 'FACT', symbol: 'FACT', exchange: 'BSE', ticker: 'FACT.BO', currency: '₹' },
   { name: 'Atul Ltd', symbol: 'ATUL', exchange: 'BSE', ticker: 'ATUL.BO', currency: '₹' },
   { name: 'Gujarat Fluorochem', symbol: 'FLUOROCHEM', exchange: 'BSE', ticker: 'FLUOROCHEM.BO', currency: '₹' },
-  { name: 'Castrol India', symbol: 'CASTROLIND', exchange: 'BSE', ticker: 'CASTROLIND.BO', currency: '₹' }
+  { name: 'Castrol India', symbol: 'CASTROLIND', exchange: 'BSE', ticker: 'CASTROLIND.BO', currency: '₹' },
   // frontend/app/stocks.ts
 // NASDAQ BATCH 1 (125 Stocks)
 
@@ -694,7 +694,7 @@ export const STOCKS = [
   { name: 'NetEase', symbol: 'NTES', exchange: 'NASDAQ', ticker: 'NTES', currency: '$' },
   { name: 'Trip.com', symbol: 'TCOM', exchange: 'NASDAQ', ticker: 'TCOM', currency: '$' },
   { name: 'Bilibili', symbol: 'BILI', exchange: 'NASDAQ', ticker: 'BILI', currency: '$' },
-  { name: 'MercadoLibre', symbol: 'MELI', exchange: 'NASDAQ', ticker: 'MELI', currency: '$' }
+  { name: 'MercadoLibre', symbol: 'MELI', exchange: 'NASDAQ', ticker: 'MELI', currency: '$' },
   // frontend/app/stocks.ts
 // US STOCKS BATCH 2 (125 Stocks)
 
