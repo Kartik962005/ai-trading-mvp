@@ -13,7 +13,8 @@ from datetime import datetime, timedelta
 def fetch_news_sentiment(ticker: str):
     try:
         base_ticker = ticker.split('.')[0]
-        search_query = urllib.parse.quote(f"{base_ticker} stock market news")
+        # Adding -share -price to the query to filter out SEO spam aggregators natively
+        search_query = urllib.parse.quote(f"{base_ticker} company news -share -price -target")
         url = f"https://news.google.com/rss/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
         
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
@@ -26,16 +27,29 @@ def fetch_news_sentiment(ticker: str):
         headlines = []
         total_polarity = 0
         
+        # Aggressive Anti-Spam Filter for Indian SEO Aggregators
+        spam_patterns = [
+            r'share latest news', r'share news today', r'result today', 
+            r'share price today', r'l tcs', r'l \w+', r'live updates',
+            r'buy or sell', r'target price'
+        ]
+        
         for item in items:
             title_element = item.find('title')
             if title_element is not None and title_element.text:
                 raw_title = html.unescape(title_element.text)
                 clean_title = raw_title.rsplit(' - ', 1)[0] if ' - ' in raw_title else raw_title
                 clean_title = clean_title.strip()
-                clean_title = re.sub(r'\s*\([A-Za-z0-9_-]{10,12}\)$', '', clean_title)
+                clean_title = re.sub(r'\s*\([A-Za-z0-9_-]{10,12}\)$', '', clean_title) # Remove YT IDs
                 
                 lower_title = clean_title.lower()
-                if " l " in lower_title or "share price today" in lower_title:
+                
+                # If title contains multiple pipe symbols, it's 100% SEO keyword spam
+                if clean_title.count('|') > 1:
+                    continue
+                    
+                # Check against spam regex patterns
+                if any(re.search(pattern, lower_title) for pattern in spam_patterns):
                     continue
                 
                 if clean_title and clean_title not in headlines:
@@ -143,29 +157,35 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     elif fiso >= 20: verdict = "Sell"
     else: verdict = "Strong Sell"
 
-    # Price Targets & Risk Management
+    # Risk Profiling
     atr_val = float(latest['ATR_14']) if pd.notna(latest['ATR_14']) else (float(latest['close']) * 0.02)
     entry = float(latest['close'])
     
-    # Calculate Risk Level based on Volatility (ATR %)
     volatility_pct = (atr_val / entry) * 100
     if volatility_pct > 3.5: risk_level = "High Risk"
     elif volatility_pct > 1.5: risk_level = "Medium Risk"
     else: risk_level = "Low Risk"
     
-    # Adjust Targets based on Verdict
+    # Dynamic Math: Target scales based on Trend Strength
+    fiso_strength = abs(fiso - 50) / 50.0  # 0.0 to 1.0
+    reward_ratio = 1.5 + (fiso_strength * 2.0) # Varies dynamically between 1.5 and 3.5
+
     if fiso >= 50: # Bullish
         stop_loss = entry - (1.5 * atr_val)
-        target = entry + (3.0 * atr_val) # 1:2 Risk Reward
+        target = entry + (reward_ratio * atr_val) 
     else: # Bearish
         stop_loss = entry + (1.5 * atr_val)
-        target = entry - (3.0 * atr_val)
+        target = entry - (reward_ratio * atr_val)
 
-    # Date Prediction Math (Target distance divided by daily average move)
+    # Dynamic Date Prediction Math (No longer stuck at 3 days)
     price_distance = abs(target - entry)
-    estimated_days = math.ceil(price_distance / atr_val) if atr_val > 0 else 5
-    # Add roughly 1.4x days to account for weekends in the calendar
-    target_date_obj = datetime.now() + timedelta(days=(estimated_days * 1.4))
+    
+    # Velocity Multiplier: High RSI momentum = faster move
+    momentum_velocity = 1.0 + (abs(latest['RSI_14'] - 50) / 50.0) 
+    estimated_days = math.ceil((price_distance / atr_val) / momentum_velocity * 1.4)
+    estimated_days = max(1, min(estimated_days, 21)) # Cap between 1 and 21 trading days
+    
+    target_date_obj = datetime.now() + timedelta(days=(estimated_days * 1.4)) # Factor in weekends
     target_date = target_date_obj.strftime('%b %d, %Y')
     
     # Confidence Score Calculation
@@ -180,7 +200,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "entry": round(entry, 2),
         "stop_loss": round(stop_loss, 2),
         "target": round(target, 2),
-        "risk_reward": "1:2",
+        "risk_reward": f"1:{round(reward_ratio, 1)}",
         "current_price": round(float(latest['close']), 2),
         "sentiment": sentiment,
         "strategy_evals": strategy_evals,
