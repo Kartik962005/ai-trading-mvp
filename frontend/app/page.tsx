@@ -474,37 +474,65 @@ export default function Home() {
                     </ul>
                   </div>
 
-                  {/* Strategy Matrix */}
+                    {/* Strategy Matrix */}
                   <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-                    <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-6 border-b border-white/10 pb-4 font-['Space_Grotesk']">Tactical Strategy Matrix</h3>
-                    
+                    <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-6 border-b border-white/10 pb-4 font-['Space_Grotesk']">
+                      Tactical Strategy Matrix
+                    </h3>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {STRATEGIES.map((strategy) => {
-                        const evalData = analysis?.strategy_evals?.[strategy.id];
-                        const isBest = analysis?.best_strategy_id === strategy.id;
+                      {(analysis?.strategy_evals ?? []).map((strategy: {
+                        id: number; name: string; score: number; desc: string;
+                      }, rank: number) => {
+                        const isBest = rank === 0;   // first item is always the top scorer
 
                         return (
                           <div
                             key={strategy.id}
                             className={`relative border rounded-2xl p-5 transition-all ${
-                              isBest ? 'bg-cyan-900/20 border-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]' : 'bg-black/50 border-white/5 hover:border-white/20'
+                              isBest
+                                ? 'bg-cyan-900/20 border-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]'
+                                : 'bg-black/50 border-white/5 hover:border-white/20'
                             }`}
                           >
+                            {/* Rank badge */}
                             <div className="flex justify-between items-start mb-3">
-                              <span className="font-['JetBrains_Mono'] text-[9px] font-bold opacity-50 uppercase text-white tracking-widest">MDL-{strategy.id}</span>
-                              {isBest && <span className="text-[8px] bg-cyan-400 text-black px-1.5 py-0.5 uppercase font-black rounded-sm tracking-widest">Optimal</span>}
-                            </div>
-                            
-                            <span className="font-bold text-sm uppercase block mb-2 font-['Space_Grotesk'] text-white">{strategy.name}</span>
-                            
-                            {evalData && (
-                              <span className="text-[10px] font-['JetBrains_Mono'] font-bold text-zinc-300 uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded inline-block mb-3">
-                                SCR: {evalData.score}
+                              <span className="font-['JetBrains_Mono'] text-[9px] font-bold opacity-50 uppercase text-white tracking-widest">
+                                #{String(rank + 1).padStart(2, '0')}
                               </span>
-                            )}
+                              {isBest && (
+                                <span className="text-[8px] bg-cyan-400 text-black px-1.5 py-0.5 uppercase font-black rounded-sm tracking-widest">
+                                  Optimal
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="font-bold text-sm uppercase block mb-2 font-['Space_Grotesk'] text-white">
+                              {strategy.name}
+                            </span>
+
+                            {/* Score pill + bar */}
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="text-[10px] font-['JetBrains_Mono'] font-bold text-zinc-300 uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded inline-block">
+                                SCR: {strategy.score}
+                              </span>
+                              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-700"
+                                  style={{
+                                    width: `${strategy.score}%`,
+                                    background:
+                                      strategy.score >= 80 ? '#22d3ee'
+                                      : strategy.score >= 60 ? '#86efac'
+                                      : strategy.score >= 40 ? '#fbbf24'
+                                      : '#d946ef',
+                                  }}
+                                />
+                              </div>
+                            </div>
 
                             <p className="text-xs text-zinc-500 leading-relaxed border-t border-white/5 pt-3">
-                              {evalData?.desc || strategy.desc}
+                              {strategy.desc}
                             </p>
                           </div>
                         );
