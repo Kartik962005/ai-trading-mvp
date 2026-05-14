@@ -293,7 +293,7 @@ export default function Home() {
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={handleKeyDown}
               className="relative z-10 w-full bg-black/60 backdrop-blur-2xl border border-white/10 hover:border-cyan-500/50 px-8 py-5 rounded-2xl text-base font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all placeholder-zinc-500 shadow-2xl tracking-widest uppercase"
-              placeholder="SEARCH ASSETS.NOT HOPIUM."
+              placeholder="SEARCH ASSETS.NOT HOPE."
             />
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute z-50 w-full bg-black/95 backdrop-blur-3xl border border-white/10 rounded-2xl mt-3 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
