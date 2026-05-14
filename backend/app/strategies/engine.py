@@ -6,9 +6,10 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 import html
+import re
 
 def fetch_news_sentiment(ticker: str):
-    """Fetches reliable live news from Google News RSS, sanitizes it, and calculates NLP sentiment."""
+    """Fetches reliable live news from Google News RSS, filters out SEO spam, and calculates NLP sentiment."""
     try:
         # Clean the ticker for a better search query
         base_ticker = ticker.split('.')[0]
@@ -28,24 +29,37 @@ def fetch_news_sentiment(ticker: str):
         headlines = []
         total_polarity = 0
         
-        # Grab the top 5 most recent headlines
-        for item in items[:5]:
+        # Loop through items until we find 5 HIGH QUALITY headlines
+        for item in items:
             title_element = item.find('title')
             if title_element is not None and title_element.text:
-                # Sanitize the XML text into clean HTML string
+                # Sanitize the XML text
                 raw_title = html.unescape(title_element.text)
                 
                 # Remove the publisher name from the end
                 clean_title = raw_title.rsplit(' - ', 1)[0] if ' - ' in raw_title else raw_title
                 clean_title = clean_title.strip()
                 
-                if clean_title:
+                # 1. CLEANER: Remove YouTube video IDs usually enclosed in brackets at the end e.g., (07OUPGTYDo)
+                clean_title = re.sub(r'\s*\([A-Za-z0-9_-]{10,12}\)$', '', clean_title)
+                
+                # 2. SPAM FILTER: Skip SEO spam titles that keyword stuff with " L " or "Share Price Today"
+                lower_title = clean_title.lower()
+                if " l " in lower_title or "share price today" in lower_title:
+                    continue # Skip this garbage article entirely
+                
+                # If the title is clean and not a duplicate, add it
+                if clean_title and clean_title not in headlines:
                     headlines.append(clean_title)
                     polarity = TextBlob(clean_title).sentiment.polarity
                     total_polarity += polarity
+            
+            # Stop once we have 5 good headlines
+            if len(headlines) == 5:
+                break
                 
         if not headlines:
-            return {"score": 0, "label": "Neutral", "headlines": [f"No recent news found for {ticker}."]}
+            return {"score": 0, "label": "Neutral", "headlines": [f"No high-quality news found for {ticker}."]}
             
         avg_polarity = total_polarity / len(headlines)
         
