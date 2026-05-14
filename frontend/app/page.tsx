@@ -5,7 +5,7 @@ import useSWR from 'swr';
 const fetcher = (url: string) => fetch(`https://ai-trading-backend-jhcl.onrender.com${url}`).then(res => res.json());
 
 const STOCKS = [
-  // ---------------- NSE ----------------
+  // NSE
   { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'NSE', ticker: 'RELIANCE.NS', currency: '₹' },
   { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'NSE', ticker: 'TCS.NS', currency: '₹' },
   { name: 'Tata Motors (Commercial Vehicles)', symbol: 'TATAMOTORS', exchange: 'NSE', ticker: 'TATAMOTORS.NS', currency: '₹' },
@@ -19,22 +19,19 @@ const STOCKS = [
   { name: 'Adani Enterprises', symbol: 'ADANIENT', exchange: 'NSE', ticker: 'ADANIENT.NS', currency: '₹' },
   { name: 'ITC', symbol: 'ITC', exchange: 'NSE', ticker: 'ITC.NS', currency: '₹' },
   { name: 'Larsen & Toubro', symbol: 'LT', exchange: 'NSE', ticker: 'LT.NS', currency: '₹' },
-  
-  // ---------------- BSE ----------------
+  // BSE
   { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'BSE', ticker: '500325.BO', currency: '₹' },
   { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'BSE', ticker: '532540.BO', currency: '₹' },
   { name: 'Infosys', symbol: 'INFY', exchange: 'BSE', ticker: '500209.BO', currency: '₹' },
   { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'BSE', ticker: '500180.BO', currency: '₹' },
-  
-  // ---------------- NASDAQ / US ----------------
+  // US
   { name: 'Apple', symbol: 'AAPL', exchange: 'NASDAQ', ticker: 'AAPL', currency: '$' },
   { name: 'Microsoft', symbol: 'MSFT', exchange: 'NASDAQ', ticker: 'MSFT', currency: '$' },
   { name: 'Google', symbol: 'GOOGL', exchange: 'NASDAQ', ticker: 'GOOGL', currency: '$' },
   { name: 'Amazon', symbol: 'AMZN', exchange: 'NASDAQ', ticker: 'AMZN', currency: '$' },
   { name: 'Tesla', symbol: 'TSLA', exchange: 'NASDAQ', ticker: 'TSLA', currency: '$' },
   { name: 'Nvidia', symbol: 'NVDA', exchange: 'NASDAQ', ticker: 'NVDA', currency: '$' },
-  
-  // ---------------- CRYPTO ----------------
+  // CRYPTO
   { name: 'Bitcoin', symbol: 'BTC', exchange: 'CRYPTO', ticker: 'BTC-USD', currency: '$' },
   { name: 'Ethereum', symbol: 'ETH', exchange: 'CRYPTO', ticker: 'ETH-USD', currency: '$' },
   { name: 'Solana', symbol: 'SOL', exchange: 'CRYPTO', ticker: 'SOL-USD', currency: '$' },
@@ -63,6 +60,23 @@ const STRATEGIES = [
   { id: 20, name: 'Fibonacci Retracement',  description: 'Buy at key Fibonacci levels during a pullback' },
 ];
 
+function getLevenshteinDistance(s: string, t: string) {
+  if (!s.length) return t.length;
+  if (!t.length) return s.length;
+  const arr = [];
+  for (let i = 0; i <= t.length; i++) {
+    arr[i] = [i];
+    for (let j = 1; j <= s.length; j++) {
+      arr[i][j] = i === 0 ? j : Math.min(
+        arr[i - 1][j] + 1,
+        arr[i][j - 1] + 1,
+        arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1)
+      );
+    }
+  }
+  return arr[t.length][s.length];
+}
+
 export default function Home() {
   const [ticker, setTicker] = useState('TCS.NS');
   const [currency, setCurrency] = useState('₹');
@@ -81,14 +95,27 @@ export default function Home() {
   useEffect(() => {
     if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     const q = input.trim().toLowerCase();
-    const filtered = STOCKS.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.symbol.toLowerCase().includes(q) ||
-      s.ticker.toLowerCase().includes(q)
-    ).slice(0, 8);
+    
+    const mapped = STOCKS.map(s => {
+      const nameDist = getLevenshteinDistance(q, s.name.toLowerCase());
+      const symDist = getLevenshteinDistance(q, s.symbol.toLowerCase());
+      const exactMatch = s.name.toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q) ? 0 : 100;
+      const bestScore = Math.min(nameDist, symDist, exactMatch);
+      return { ...s, score: bestScore };
+    });
+    
+    const filtered = mapped.filter(s => s.score < 5).sort((a, b) => a.score - b.score).slice(0, 8);
     setSuggestions(filtered);
     setShowSuggestions(true);
   }, [input]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      if (suggestions.length > 0) {
+        selectStock(suggestions[0]);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!chartData || !chartRef.current || !Array.isArray(chartData) || chartData.length === 0) return;
@@ -149,10 +176,10 @@ export default function Home() {
             <span className="text-[10px] md:text-xs font-mono text-cyan-300 tracking-[0.2em] uppercase">System Online // v2.0</span>
           </div>
           <h1 className="text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-black mb-4 tracking-tighter bg-gradient-to-br from-white via-cyan-100 to-cyan-800 bg-clip-text text-transparent filter drop-shadow-[0_0_15px_rgba(34,211,238,0.2)] break-words leading-tight px-2 w-full">
-            QUANTUM.TRADE
+            SignalX
           </h1>
           <p className="text-gray-400 text-xs sm:text-sm md:text-base font-mono tracking-[0.1em] uppercase max-w-2xl px-4">
-            Algorithmic Pattern Recognition & NLP Market Sentiment
+            Wall Street Has Competition
           </p>
         </div>
 
@@ -164,8 +191,9 @@ export default function Home() {
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => input.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              onKeyDown={handleKeyDown}
               className="w-full bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 px-6 sm:px-8 py-4 sm:py-5 rounded-full text-lg sm:text-xl text-white outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder-gray-600 font-mono"
-              placeholder="> INIT QUERY (e.g., AAPL, TMPV, BTC)"
+              placeholder="e.g. apple, tcs, bitcoin"
             />
           </div>
           
@@ -190,10 +218,10 @@ export default function Home() {
           )}
         </div>
 
-        {/* 1. CHART & FISO SECTION */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+        {/* --- MAIN UNIFIED DASHBOARD: CHART + VERDICT + FORECAST --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
           
-          {/* Main Chart Terminal */}
+          {/* Top Left: Main Chart Terminal */}
           <div className="lg:col-span-8 border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-6 shadow-2xl relative overflow-hidden group">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-white/5 pb-4">
               <div className="mb-4 sm:mb-0">
@@ -220,63 +248,89 @@ export default function Home() {
             )}
           </div>
 
-          {/* FISO Core & Explanation */}
+          {/* Top Right: Global News NLP */}
           <div className="lg:col-span-4 flex flex-col gap-8">
-            {analysis && !analysis.error && (
-              <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 flex-1 ${verdictBg} relative overflow-hidden`}>
-                <h3 className="text-xs sm:text-sm font-mono text-gray-400 tracking-widest uppercase mb-2">Algorithm Verdict</h3>
-                <div className={`text-3xl sm:text-4xl font-black tracking-tight mb-6 ${verdictColor}`}>{analysis.verdict}</div>
-                <div className="mb-2 flex justify-between items-end">
-                   <span className="text-[10px] sm:text-xs font-mono text-gray-500">FISO SCORE</span>
-                   <span className="text-2xl sm:text-3xl font-mono text-white">{analysis.fiso_score}<span className="text-sm sm:text-lg text-gray-600">/100</span></span>
-                </div>
-                <div className="w-full bg-black/40 rounded-full h-2 mb-6 overflow-hidden border border-white/5">
-                  <div className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-all duration-1000" style={{ width: `${analysis.fiso_score}%` }} />
+            <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 relative overflow-hidden flex-1 shadow-2xl">
+              <div className="absolute top-0 left-0 w-64 h-64 bg-purple-500/10 blur-[100px] pointer-events-none"></div>
+              <h3 className="text-sm font-mono text-purple-400 tracking-widest uppercase mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
+                Global News NLP
+              </h3>
+              
+              <div className="mb-8 mt-12">
+                <div className="relative w-full h-3 rounded-full border border-white/10 bg-black/50">
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500 via-gray-500 to-cyan-500 opacity-80" />
+                  <div 
+                    className="absolute top-[-36px] -translate-x-1/2 flex flex-col items-center transition-all duration-1000 ease-out"
+                    style={{ left: `${pointerPosition}%` }}
+                  >
+                    <div className={`px-2 py-1 rounded text-[10px] font-bold tracking-wider mb-1 uppercase whitespace-nowrap ${
+                      analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(34,211,238,0.3)]' :
+                      analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.3)]' : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                    }`}>
+                      {analysis?.sentiment?.label || 'ANALYZING...'}
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 21L1 3H23L12 21Z" fill="currentColor"/>
+                    </svg>
+                  </div>
                 </div>
                 
-                {/* NEW: FISO EXPLANATION CARD */}
-                <div className="bg-[#050508]/80 rounded-xl p-5 border border-cyan-500/20 shadow-inner">
-                  <h4 className="text-cyan-400 font-bold text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
-                    What is FISO?
-                  </h4>
-                  <p className="text-gray-400 text-[11px] sm:text-xs leading-relaxed font-sans">
-                    The <strong>Fundamental Indicator Strength Oscillator</strong> is our proprietary AI model. It synthesizes <span className="text-white">Trend (SMA)</span>, <span className="text-white">Momentum (RSI)</span>, <span className="text-white">Volume (MACD)</span>, and <span className="text-white">Live News Sentiment</span> into a single 0-100 predictive score.
-                  </p>
+                <div className="flex justify-between text-[10px] font-mono text-gray-500 mt-2 px-1 tracking-widest uppercase">
+                  <span>Bearish</span><span>Neutral</span><span>Bullish</span>
                 </div>
               </div>
-            )}
+
+              <div className="space-y-4">
+                <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Latest Verified Scans</span>
+                {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
+                  <ul className="space-y-3">
+                    {analysis.sentiment.headlines.map((headline: string, idx: number) => (
+                      <li key={idx} className="text-xs sm:text-sm text-gray-300 font-sans leading-relaxed border-l-[3px] border-purple-500/50 pl-4 py-2 bg-white/[0.03] rounded-r-lg">
+                        {headline || "Unknown Headline"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-xs sm:text-sm text-gray-500 font-sans italic p-4 bg-white/5 rounded-xl border border-white/10">
+                    No verified news data available for this asset.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* 2. PREDICTIVE FORECAST SECTION */}
+        {/* --- UNIFIED DASHBOARD: ALGORITHM VERDICT & PREDICTIVE FORECAST --- */}
         {analysis && !analysis.error && (
-          <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-10 mb-8 relative overflow-hidden shadow-2xl ${verdictBg}`}>
+          <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-10 mb-12 relative overflow-hidden shadow-2xl ${verdictBg}`}>
              <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 blur-[100px] pointer-events-none"></div>
              
-             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-white/10 pb-6">
+             {/* Header: Unified Verdict & Confidence */}
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 border-b border-white/10 pb-8">
                 <div>
-                  <h3 className="text-sm font-mono text-gray-400 tracking-widest uppercase mb-1">Predictive Forecast</h3>
-                  <div className={`text-4xl sm:text-6xl font-black tracking-tight ${verdictColor}`}>{analysis.verdict}</div>
+                  <h3 className="text-sm font-mono text-gray-400 tracking-widest uppercase mb-1">Algorithm Verdict & Forecast</h3>
+                  <div className={`text-5xl sm:text-7xl font-black tracking-tight ${verdictColor}`}>{analysis.verdict}</div>
                 </div>
                 
                 <div className="mt-6 md:mt-0 text-left md:text-right">
-                   <span className="text-xs font-mono text-gray-500 tracking-widest uppercase block mb-1">AI Confidence Level</span>
-                   <div className="flex items-center gap-3">
-                     <div className="text-3xl font-mono text-white">{analysis.confidence}%</div>
-                     <div className="flex gap-1">
+                   <span className="text-xs font-mono text-gray-500 tracking-widest uppercase block mb-2">AI Confidence Level</span>
+                   <div className="flex items-center gap-4">
+                     <div className="text-4xl font-mono text-white">{analysis.confidence}%</div>
+                     <div className="flex gap-1.5">
                         {[1,2,3,4,5].map(i => (
-                          <div key={i} className={`w-6 h-1.5 rounded-full ${i <= Math.ceil(analysis.confidence / 20) ? 'bg-cyan-400' : 'bg-white/10'}`} />
+                          <div key={i} className={`w-8 h-2 rounded-full ${i <= Math.ceil(analysis.confidence / 20) ? 'bg-cyan-400' : 'bg-white/10'}`} />
                         ))}
                      </div>
                    </div>
                 </div>
              </div>
 
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+             {/* Forecast Data Grid */}
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
                 <div className="bg-black/30 rounded-2xl p-5 border border-white/5">
                   <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Entry Vector</span>
-                  <p className="text-2xl font-mono text-white">{currency}{analysis.entry}</p>
+                  <p className="text-3xl font-mono text-white">{currency}{analysis.entry}</p>
                   <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
                     <span className="text-[10px] font-mono text-gray-500 uppercase">Profile</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
@@ -289,88 +343,59 @@ export default function Home() {
                 <div className="bg-black/30 rounded-2xl p-5 border border-white/5 relative overflow-hidden group">
                   <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                   <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Target Price</span>
-                  <p className="text-3xl font-mono text-cyan-400">{currency}{analysis.target}</p>
+                  <p className="text-4xl font-mono text-cyan-400">{currency}{analysis.target}</p>
                   <p className="text-cyan-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Take Profit Zone</p>
-                </div>
-
-                <div className="bg-cyan-500/10 rounded-2xl p-5 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.1)]">
-                  <span className="text-cyan-400 text-xs font-mono uppercase tracking-wider block mb-1">Expected Timeframe</span>
-                  <p className="text-2xl font-mono text-white">{analysis.estimated_days} Trading Days</p>
-                  <p className="text-cyan-300 text-sm font-mono mt-1 border-t border-cyan-500/20 pt-2">By {analysis.target_date}</p>
                 </div>
 
                 <div className="bg-black/30 rounded-2xl p-5 border border-white/5">
                   <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Hard Stop-Loss</span>
-                  <p className="text-3xl font-mono text-rose-400">{currency}{analysis.stop_loss}</p>
-                  <p className="text-rose-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Maximum Risk Tolerance</p>
+                  <p className="text-4xl font-mono text-rose-400">{currency}{analysis.stop_loss}</p>
+                  <p className="text-rose-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Max Risk Tolerance</p>
+                </div>
+
+                <div className="bg-cyan-500/10 rounded-2xl p-5 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.1)]">
+                  <span className="text-cyan-400 text-xs font-mono uppercase tracking-wider block mb-1">Expected Timeframe</span>
+                  <p className="text-3xl font-mono text-white">{analysis.estimated_days} Days</p>
+                  <p className="text-cyan-300 text-sm font-mono mt-1 border-t border-cyan-500/20 pt-2">By {analysis.target_date}</p>
+                </div>
+             </div>
+             
+             {/* FISO Bar & Components */}
+             <div className="bg-black/30 rounded-2xl p-6 md:p-8 border border-white/5">
+                <div className="flex justify-between items-end mb-4">
+                   <div className="flex items-center gap-2">
+                     <span className="text-sm font-mono text-gray-400 uppercase tracking-widest">FISO Score</span>
+                     <div className="group relative">
+                        <span className="cursor-help w-4 h-4 rounded-full border border-gray-600 text-gray-400 flex items-center justify-center text-[10px] hover:bg-white/10 hover:text-white transition-colors">?</span>
+                        <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-black/90 border border-white/10 rounded-xl text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                          <strong>Fundamental Indicator Strength Oscillator</strong><br/><br/>Synthesizes Trend (SMA), Momentum (RSI), Volume (MACD), and Live News into a single 0-100 mathematical score.
+                        </div>
+                     </div>
+                   </div>
+                   <span className="text-3xl font-mono text-white">{analysis.fiso_score}<span className="text-lg text-gray-600">/100</span></span>
+                </div>
+                <div className="w-full bg-black/40 rounded-full h-2 mb-6 overflow-hidden border border-white/5">
+                  <div className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-cyan-500 transition-all duration-1000" style={{ width: `${analysis.fiso_score}%` }} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                   <div className="bg-white/5 p-3 rounded-xl text-center border border-white/5">
+                     <div className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">Trend Base</div>
+                     <div className="text-base font-mono text-cyan-300">{analysis.components.trend}/35</div>
+                   </div>
+                   <div className="bg-white/5 p-3 rounded-xl text-center border border-white/5">
+                     <div className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">Momentum</div>
+                     <div className="text-base font-mono text-amber-300">{analysis.components.momentum}/35</div>
+                   </div>
+                   <div className="bg-white/5 p-3 rounded-xl text-center border border-white/5">
+                     <div className="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-1">Signal Hash</div>
+                     <div className="text-base font-mono text-purple-300">{analysis.components.signal}/30</div>
+                   </div>
                 </div>
              </div>
           </div>
         )}
 
-        {/* 3. MOVED: GLOBAL NEWS SECTION */}
-        {analysis && !analysis.error && (
-            <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-6 sm:p-10 relative overflow-hidden mb-12 shadow-2xl">
-              <div className="absolute top-0 left-0 w-64 h-64 bg-purple-500/10 blur-[100px] pointer-events-none"></div>
-              
-              <h3 className="text-lg font-mono text-purple-400 tracking-widest uppercase mb-8 flex items-center gap-3">
-                <span className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></span>
-                Global News NLP Sentinel
-              </h3>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                {/* Visual Scale on the left */}
-                <div className="lg:col-span-4 flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-white/10 pb-8 lg:pb-0 lg:pr-8">
-                  <div className="mb-10 mt-6">
-                    <div className="relative w-full h-4 rounded-full border border-white/10 bg-black/50">
-                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500 via-gray-500 to-cyan-500 opacity-80" />
-                      <div 
-                        className="absolute top-[-40px] -translate-x-1/2 flex flex-col items-center transition-all duration-1000 ease-out"
-                        style={{ left: `${pointerPosition}%` }}
-                      >
-                        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-widest uppercase whitespace-nowrap shadow-xl ${
-                          analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
-                          analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
-                        }`}>
-                          {analysis?.sentiment?.label || 'ANALYZING...'}
-                        </div>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg" className="mt-1">
-                          <path d="M12 21L1 3H23L12 21Z" fill="currentColor"/>
-                        </svg>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-between text-[11px] font-mono text-gray-500 mt-3 px-1 tracking-widest uppercase font-bold">
-                      <span className="text-rose-400/70">Bearish</span>
-                      <span>Neutral</span>
-                      <span className="text-cyan-400/70">Bullish</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Scraped Headlines on the right */}
-                <div className="lg:col-span-8">
-                  <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-3 mb-4">Latest Verified Scans</span>
-                  
-                  {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
-                    <ul className="space-y-3">
-                      {analysis.sentiment.headlines.map((headline: string, idx: number) => (
-                        <li key={idx} className="text-sm md:text-base text-gray-200 font-sans leading-relaxed border-l-[4px] border-purple-500/50 pl-5 py-3 bg-white/[0.03] rounded-r-xl hover:bg-white/5 transition-colors">
-                          {headline || "Unknown Headline"}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="text-sm text-gray-500 font-sans italic p-6 bg-white/5 rounded-2xl border border-white/10 text-center">
-                      No verified, high-quality news data available for this asset.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-        )}
-
-        {/* 4. TACTICAL STRATEGY MATRIX */}
+        {/* --- TACTICAL STRATEGY MATRIX --- */}
         {analysis && !analysis.error && (
           <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-8 lg:p-12 mb-12">
             <div className="mb-10 text-center sm:text-left">
