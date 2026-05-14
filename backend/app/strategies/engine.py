@@ -2,46 +2,57 @@ import pandas as pd
 import ta
 import yfinance as yf
 from textblob import TextBlob
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 
 def fetch_news_sentiment(ticker: str):
+    """Fetches reliable live news from Google News RSS and calculates NLP sentiment."""
     try:
-        tkr = yf.Ticker(ticker)
-        news = tkr.news
+        # Clean the ticker for a better search query (e.g., "TCS.NS" -> "TCS stock")
+        base_ticker = ticker.split('.')[0]
+        search_query = urllib.parse.quote(f"{base_ticker} stock financial news")
         
-        # Fallback: yfinance often returns empty lists for Indian/international stocks.
-        # If empty, strip the exchange suffix (e.g., .NS or .BO) and try the base ticker.
-        if not news or len(news) == 0:
-            base_ticker = ticker.split('.')[0]
-            if base_ticker != ticker:
-                news = yf.Ticker(base_ticker).news
+        # Google News RSS URL
+        url = f"https://news.google.com/rss/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
         
-        # If still empty, return a clean fallback message
-        if not news or len(news) == 0:
-            return {"score": 0, "label": "Neutral", "headlines": [f"No recent news found on Yahoo Finance for {ticker}."]}
-
-        total_polarity = 0
+        # We use a standard User-Agent so Google doesn't block the request
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req)
+        xml_data = response.read()
+        
+        # Parse the XML data
+        root = ET.fromstring(xml_data)
+        items = root.findall('.//item')
+        
         headlines = []
+        total_polarity = 0
         
-        # Analyze top 4 recent news headlines
-        for item in news[:4]:
-            title = item.get('title', '')
+        # Grab the top 5 most recent headlines
+        for item in items[:5]:
+            title = item.find('title').text
             if title:
-                polarity = TextBlob(title).sentiment.polarity
+                # Remove the publisher name from the end of the Google News title
+                clean_title = title.rsplit(' - ', 1)[0] if ' - ' in title else title
+                headlines.append(clean_title)
+                
+                # Analyze sentiment
+                polarity = TextBlob(clean_title).sentiment.polarity
                 total_polarity += polarity
-                headlines.append(title)
-
+                
         if not headlines:
-            return {"score": 0, "label": "Neutral", "headlines": ["News format unreadable."]}
-
+            return {"score": 0, "label": "Neutral", "headlines": [f"No recent news found for {ticker}."]}
+            
         avg_polarity = total_polarity / len(headlines)
-
-        if avg_polarity > 0.15:
+        
+        # Determine the final label
+        if avg_polarity > 0.10:
             label = "Bullish"
-        elif avg_polarity < -0.15:
+        elif avg_polarity < -0.10:
             label = "Bearish"
         else:
             label = "Neutral"
-
+            
         return {
             "score": round(avg_polarity, 2), 
             "label": label, 
