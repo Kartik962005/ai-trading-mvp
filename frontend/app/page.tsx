@@ -29,14 +29,12 @@ const STOCKS = [
   { name: 'ONGC', symbol: 'ONGC', exchange: 'NSE', ticker: 'ONGC.NS', currency: '₹' },
   { name: 'NTPC', symbol: 'NTPC', exchange: 'NSE', ticker: 'NTPC.NS', currency: '₹' },
   { name: 'Power Grid', symbol: 'POWERGRID', exchange: 'NSE', ticker: 'POWERGRID.NS', currency: '₹' },
-  // BSE
   { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'BSE', ticker: '500325.BO', currency: '₹' },
   { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'BSE', ticker: '532540.BO', currency: '₹' },
   { name: 'Infosys', symbol: 'INFY', exchange: 'BSE', ticker: '500209.BO', currency: '₹' },
   { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'BSE', ticker: '500180.BO', currency: '₹' },
   { name: 'Wipro', symbol: 'WIPRO', exchange: 'BSE', ticker: '507685.BO', currency: '₹' },
   { name: 'State Bank of India', symbol: 'SBIN', exchange: 'BSE', ticker: '500112.BO', currency: '₹' },
-  // US
   { name: 'Apple', symbol: 'AAPL', exchange: 'NASDAQ', ticker: 'AAPL', currency: '$' },
   { name: 'Microsoft', symbol: 'MSFT', exchange: 'NASDAQ', ticker: 'MSFT', currency: '$' },
   { name: 'Google', symbol: 'GOOGL', exchange: 'NASDAQ', ticker: 'GOOGL', currency: '$' },
@@ -153,7 +151,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#030305] text-gray-200 selection:bg-cyan-500/30" style={{ fontFamily: "'Space Grotesk', 'Inter', sans-serif" }}>
       
-      {/* High-Tech Animated Background */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:2rem_2rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-600/20 blur-[150px] rounded-full mix-blend-screen animate-pulse" style={{ animationDuration: '4s' }} />
@@ -161,7 +158,6 @@ export default function Home() {
 
       <div className="relative z-10 p-4 sm:p-6 md:p-12 max-w-7xl mx-auto">
         
-        {/* Responsive Header */}
         <div className="mb-12 md:mb-16 pt-8 text-center flex flex-col items-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 backdrop-blur-md mb-6">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
@@ -175,7 +171,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Global Search Bar */}
         <div className="relative w-full max-w-3xl mx-auto mb-16 px-4 sm:px-0">
           <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full blur opacity-20"></div>
           <div className="relative">
@@ -207,9 +202,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* Dynamic Display Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-16">
-          {/* Main Chart Terminal */}
           <div className="lg:col-span-8 border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-6 shadow-2xl relative overflow-hidden group">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-white/5 pb-4">
               <div className="mb-4 sm:mb-0">
@@ -236,7 +229,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Right Column: NLP & FISO */}
           <div className="lg:col-span-4 flex flex-col gap-8">
             <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 relative overflow-hidden">
               <h3 className="text-sm font-mono text-purple-400 tracking-widest uppercase mb-6 flex items-center gap-2">
@@ -254,21 +246,24 @@ export default function Home() {
               </div>
               <div className="space-y-4">
                 <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Recent Scans</span>
+                
+                {/* Robust frontend display for headlines */}
                 {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
-                  analysis.sentiment.headlines.map((headline: string, idx: number) => (
-                    <div key={idx} className="text-xs sm:text-sm text-gray-400 font-sans leading-relaxed border-l-[3px] border-purple-500/30 pl-4 py-1">
-                      {headline}
-                    </div>
-                  ))
+                  <ul className="space-y-3">
+                    {analysis.sentiment.headlines.map((headline: string, idx: number) => (
+                      <li key={idx} className="text-xs sm:text-sm text-gray-300 font-sans leading-relaxed border-l-[3px] border-purple-500/50 pl-4 py-2 bg-white/[0.03] rounded-r-lg">
+                        {headline || "Unknown Headline"}
+                      </li>
+                    ))}
+                  </ul>
                 ) : (
-                  <div className="text-xs sm:text-sm text-gray-500 font-sans italic">
-                    No news data available for this asset.
+                  <div className="text-xs sm:text-sm text-gray-500 font-sans italic p-4 bg-white/5 rounded-xl border border-white/10">
+                    No news data available for this asset at this time.
                   </div>
                 )}
               </div>
             </div>
             
-            {/* FISO Core */}
             {analysis && !analysis.error && (
               <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 flex-1 ${verdictBg} relative overflow-hidden`}>
                 <h3 className="text-xs sm:text-sm font-mono text-gray-400 tracking-widest uppercase mb-2">Algorithm Verdict</h3>
@@ -285,7 +280,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Tactical Strategy Matrix - Fully Interactive UI */}
         {analysis && !analysis.error && (
           <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-8 lg:p-12 mb-12">
             <div className="mb-10 text-center sm:text-left">
@@ -311,13 +305,11 @@ export default function Home() {
                       isExpanded ? 'bg-black/80 z-20 scale-105' : 'bg-black/30'
                     }`}
                   >
-                    {/* Header of Box */}
                     <div className="flex justify-between items-start mb-3">
                       <span className={`font-mono text-[10px] tracking-widest uppercase block ${
                         isBest ? 'text-cyan-400 font-bold' : 'text-gray-500'
                       }`}>MODEL {String(strategy.id).padStart(2, '0')}</span>
                       
-                      {/* Mobile Close X button */}
                       {isExpanded && (
                         <button className="sm:hidden text-gray-400 hover:text-white">
                           ✕
@@ -327,7 +319,6 @@ export default function Home() {
 
                     <span className="font-bold text-sm leading-tight block text-white mb-3">{strategy.name}</span>
                     
-                    {/* Score inside box */}
                     {evalData && (
                       <div className="flex items-center gap-2 mb-2">
                         <span className={`text-xs font-mono px-2 py-0.5 rounded ${
@@ -340,7 +331,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* Expanding Content Overlay */}
                     <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-96 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0'}`}>
                       <p className="text-xs text-gray-400 mb-2 font-mono">Overview: {strategy.description}</p>
                       <p className="text-sm text-gray-200 leading-relaxed font-sans border-l-2 border-cyan-500/50 pl-2">
