@@ -80,12 +80,17 @@ export default function Home() {
     import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
       const chart = createChart(chartRef.current!, {
         width: chartRef.current!.clientWidth || 800,
-        height: 400,
-        layout: { background: { color: 'transparent' }, textColor: '#9ca3af' },
-        grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
+        height: 450,
+        layout: { background: { color: 'transparent' }, textColor: '#64748b' },
+        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+        crosshair: { mode: 1 },
       });
 
-      const candleSeries = chart.addSeries(CandlestickSeries);
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#22d3ee', downColor: '#f43f5e', 
+        borderVisible: false, wickUpColor: '#22d3ee', wickDownColor: '#f43f5e'
+      });
+      
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
         .map((d: any) => ({
@@ -107,185 +112,232 @@ export default function Home() {
     setSelectedStrategy(null);
   };
 
-  const verdictColor = analysis?.verdict?.includes('Buy') ? 'text-cyan-400' :
-    analysis?.verdict === 'Hold' ? 'text-amber-400' : 'text-rose-400';
+  const verdictColor = analysis?.verdict?.includes('Buy') ? 'text-cyan-400 shadow-cyan-400/50' :
+    analysis?.verdict === 'Hold' ? 'text-amber-400 shadow-amber-400/50' : 'text-rose-400 shadow-rose-400/50';
 
-  const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-cyan-500/30 bg-cyan-500/10' :
-    analysis?.verdict === 'Hold' ? 'border-amber-500/30 bg-amber-500/10' : 'border-rose-500/30 bg-rose-500/10';
+  const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-cyan-500/40 bg-cyan-950/20' :
+    analysis?.verdict === 'Hold' ? 'border-amber-500/40 bg-amber-950/20' : 'border-rose-500/40 bg-rose-950/20';
 
   return (
-    <div className="min-h-screen bg-[#050505] text-gray-200" style={{ fontFamily: "'Space Grotesk', 'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-[#030305] text-gray-200 selection:bg-cyan-500/30" style={{ fontFamily: "'Space Grotesk', 'Inter', sans-serif" }}>
       
-      {/* Futuristic Background */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyan-600/10 blur-[120px] rounded-full mix-blend-screen" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 blur-[120px] rounded-full mix-blend-screen" />
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
+      {/* High-Tech Animated Background */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:2rem_2rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-600/20 blur-[150px] rounded-full mix-blend-screen animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 blur-[150px] rounded-full mix-blend-screen animate-pulse" style={{ animationDuration: '6s', animationDelay: '1s' }} />
       </div>
 
-      <div className="relative z-10 p-8 max-w-7xl mx-auto">
-        <div className="mb-12 pt-6 text-center">
-          <h1 className="text-7xl font-black mb-3 tracking-tighter bg-gradient-to-br from-white via-gray-200 to-gray-500 bg-clip-text text-transparent">
-            QUANTUM TRADE
+      <div className="relative z-10 p-6 md:p-12 max-w-7xl mx-auto">
+        
+        {/* Header */}
+        <div className="mb-16 pt-8 text-center flex flex-col items-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 backdrop-blur-md mb-6">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span className="text-xs font-mono text-cyan-300 tracking-[0.2em] uppercase">System Online // v2.0</span>
+          </div>
+          <h1 className="text-6xl md:text-8xl font-black mb-4 tracking-tighter bg-gradient-to-br from-white via-cyan-100 to-cyan-800 bg-clip-text text-transparent filter drop-shadow-[0_0_15px_rgba(34,211,238,0.2)]">
+            QUANTUM.TRADE
           </h1>
-          <p className="text-cyan-400 text-sm font-mono tracking-[0.3em] uppercase">Genuine Algorithmic Intelligence</p>
+          <p className="text-gray-400 text-sm md:text-base font-mono tracking-[0.1em] uppercase max-w-2xl">
+            Algorithmic Pattern Recognition & NLP Market Sentiment
+          </p>
         </div>
 
-        {/* Search Bar */}
-        <div className="relative w-full max-w-2xl mx-auto mb-12">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onFocus={() => input.length > 0 && setShowSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-            className="w-full bg-white/5 backdrop-blur-md border border-white/10 px-6 py-4 rounded-full text-lg outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all shadow-2xl"
-            placeholder="Initialize query: Infosys, AAPL, TCS..."
-          />
+        {/* Global Search Bar */}
+        <div className="relative w-full max-w-3xl mx-auto mb-16">
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full blur opacity-20"></div>
+          <div className="relative">
+             <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onFocus={() => input.length > 0 && setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              className="w-full bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 px-8 py-5 rounded-full text-xl text-white outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder-gray-600 font-mono"
+              placeholder="> INITIALIZE QUERY (e.g., AAPL, Infosys)"
+            />
+            <div className="absolute right-6 top-1/2 -translate-y-1/2 flex gap-2">
+              <span className="text-gray-600 font-mono text-xs hidden sm:block">PRESS ENTER</span>
+            </div>
+          </div>
+          
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-20 w-full bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 rounded-2xl mt-2 shadow-2xl overflow-hidden">
+            <div className="absolute z-50 w-full bg-[#0a0a0c]/95 backdrop-blur-2xl border border-white/10 rounded-2xl mt-4 shadow-[0_0_30px_rgba(0,0,0,0.8)] overflow-hidden">
               {suggestions.map((stock, i) => (
                 <div key={i} onMouseDown={() => selectStock(stock)}
-                  className="flex justify-between items-center px-5 py-4 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0">
-                  <div>
-                    <span className="font-semibold text-white">{stock.name}</span>
-                    <span className="text-gray-500 text-sm ml-2 font-mono">{stock.symbol}</span>
+                  className="flex justify-between items-center px-6 py-4 hover:bg-cyan-500/10 hover:pl-8 cursor-pointer border-b border-white/5 last:border-0 transition-all duration-200">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-gray-100">{stock.name}</span>
+                    <span className="text-cyan-500/70 text-xs font-mono">{stock.symbol}</span>
                   </div>
-                  <span className="text-xs px-3 py-1 rounded-full font-mono bg-white/5 border border-white/10">{stock.exchange}</span>
+                  <span className="text-xs px-3 py-1 rounded-full font-mono bg-white/5 border border-white/10 text-gray-300 backdrop-blur-sm">
+                    {stock.exchange}
+                  </span>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Live Price Bar */}
-        {quote && quote.price && (
-          <div className="flex justify-center items-end gap-6 mb-8">
-            <span className="text-5xl font-mono tracking-tighter text-white">{currency}{quote.price}</span>
-            <span className={`text-2xl font-mono mb-1 ${quote.change_percent > 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
-              {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent).toFixed(2)}%
-            </span>
-          </div>
-        )}
-
-        {/* Chart Container */}
-        <div className="bg-white/[0.02] backdrop-blur-3xl border border-white/10 rounded-3xl p-6 shadow-2xl mb-12">
-          {!chartData ? (
-            <div className="h-[400px] flex items-center justify-center font-mono text-cyan-400/50 animate-pulse">Awaiting Data Stream...</div>
-          ) : (
-            <div ref={chartRef} className="w-full h-[400px]" />
-          )}
-        </div>
-
-        {/* Dynamic AI Analysis Section */}
-        {analysis && !analysis.error && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+        {/* Dynamic Display Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-16">
+          
+          {/* Main Chart Terminal */}
+          <div className="lg:col-span-8 border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-6 shadow-2xl relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             
-            {/* Left Column: FISO & Technicals */}
-            <div className={`col-span-2 border backdrop-blur-xl rounded-3xl p-8 ${verdictBg}`}>
-              <div className="flex justify-between items-start mb-8">
-                <div>
-                  <h2 className="text-3xl font-bold text-white tracking-tight">Intelligent Assistant</h2>
-                  <p className="text-gray-400 font-mono text-sm mt-1">FISO Score (Fundamental Indicator Strength Oscillator)</p>
-                </div>
-                <div className={`text-5xl font-black tracking-tighter ${verdictColor}`}>{analysis.verdict}</div>
+            {/* Terminal Header */}
+            <div className="flex justify-between items-end mb-6 border-b border-white/5 pb-4">
+              <div>
+                <p className="text-cyan-500 text-xs font-mono tracking-widest mb-1 uppercase">Live Data Stream</p>
+                <h2 className="text-3xl font-bold text-white tracking-tight">{ticker}</h2>
               </div>
-
-              <div className="flex items-end gap-4 mb-2">
-                <span className={`text-6xl font-mono font-black ${verdictColor}`}>{analysis.fiso_score}</span>
-                <span className="text-xl text-gray-500 font-mono mb-2">/ 100</span>
-              </div>
-              
-              <div className="w-full bg-black/50 rounded-full h-2 mb-8 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-cyan-500 transition-all duration-1000" style={{ width: `${analysis.fiso_score}%` }} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                  <span className="text-gray-500 text-xs font-mono uppercase">Entry Node</span>
-                  <p className="text-2xl font-mono text-white mt-1">{currency}{analysis.entry}</p>
+              {quote && quote.price && (
+                <div className="text-right">
+                  <span className="text-4xl font-mono tracking-tighter text-white">{currency}{quote.price}</span>
+                  <div className={`text-lg font-mono flex items-center justify-end gap-1 mt-1 ${quote.change_percent > 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
+                    {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent).toFixed(2)}%
+                  </div>
                 </div>
-                <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                  <span className="text-gray-500 text-xs font-mono uppercase">Target Vector</span>
-                  <p className="text-2xl font-mono text-cyan-400 mt-1">{currency}{analysis.target}</p>
-                </div>
-                <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                  <span className="text-gray-500 text-xs font-mono uppercase">Hard Stop</span>
-                  <p className="text-2xl font-mono text-rose-400 mt-1">{currency}{analysis.stop_loss}</p>
-                </div>
-                <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                  <span className="text-gray-500 text-xs font-mono uppercase">R:R Ratio</span>
-                  <p className="text-2xl font-mono text-white mt-1">{analysis.risk_reward}</p>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Right Column: Live NLP Sentiment */}
-            <div className="border border-white/10 bg-white/[0.02] backdrop-blur-xl rounded-3xl p-8">
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                <span className="text-purple-400">⚡</span> Global News Sentiment
+            {!chartData ? (
+              <div className="h-[450px] flex flex-col items-center justify-center font-mono text-cyan-400/50 gap-4">
+                <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
+                FETCHING MARKET GEOMETRY...
+              </div>
+            ) : (
+              <div ref={chartRef} className="w-full h-[450px]" />
+            )}
+          </div>
+
+          {/* Right Column: NLP & FISO */}
+          <div className="lg:col-span-4 flex flex-col gap-8">
+            
+            {/* Live NLP Sentiment */}
+            <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-8 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 blur-[50px]"></div>
+              <h3 className="text-sm font-mono text-purple-400 tracking-widest uppercase mb-6 flex items-center gap-2">
+                <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
+                Global News NLP
               </h3>
               
-              <div className="mb-6">
-                <span className="text-sm text-gray-500 font-mono uppercase block mb-2">Algorithm Reading</span>
-                <span className={`px-4 py-2 rounded-full text-sm font-bold tracking-widest uppercase ${
-                  analysis.sentiment.label === 'Bullish' ? 'bg-cyan-500/20 text-cyan-400' :
-                  analysis.sentiment.label === 'Bearish' ? 'bg-rose-500/20 text-rose-400' : 'bg-gray-500/20 text-gray-300'
+              <div className="mb-8">
+                <span className={`inline-flex px-4 py-2 rounded-xl text-lg font-bold tracking-widest uppercase border ${
+                  analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' :
+                  analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-white/5 border-white/10 text-gray-300'
                 }`}>
-                  {analysis.sentiment.label} ({analysis.sentiment.score})
+                  {analysis?.sentiment?.label || 'ANALYZING...'} 
+                  <span className="ml-2 opacity-50">[{analysis?.sentiment?.score || 0}]</span>
                 </span>
               </div>
 
               <div className="space-y-4">
-                <span className="text-sm text-gray-500 font-mono uppercase block">Latest NLP Scans</span>
-                {analysis.sentiment.headlines.map((headline: string, idx: number) => (
-                  <div key={idx} className="text-sm text-gray-300 border-l-2 border-white/10 pl-3">
+                <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Recent Scans</span>
+                {analysis?.sentiment?.headlines?.map((headline: string, idx: number) => (
+                  <div key={idx} className="text-sm text-gray-400 font-sans leading-relaxed border-l-[3px] border-purple-500/30 pl-4 py-1">
                     {headline}
                   </div>
                 ))}
               </div>
             </div>
 
-          </div>
-        )}
+            {/* FISO Core */}
+            {analysis && !analysis.error && (
+              <div className={`border backdrop-blur-2xl rounded-[2rem] p-8 flex-1 ${verdictBg} relative overflow-hidden`}>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 blur-[50px]"></div>
+                <h3 className="text-sm font-mono text-gray-400 tracking-widest uppercase mb-2">Algorithm Verdict</h3>
+                
+                <div className={`text-4xl font-black tracking-tight mb-6 ${verdictColor}`}>{analysis.verdict}</div>
+                
+                <div className="mb-2 flex justify-between items-end">
+                   <span className="text-xs font-mono text-gray-500">FISO SCORE</span>
+                   <span className="text-3xl font-mono text-white">{analysis.fiso_score}<span className="text-lg text-gray-600">/100</span></span>
+                </div>
+                <div className="w-full bg-black/40 rounded-full h-2 mb-8 overflow-hidden border border-white/5">
+                  <div className={`h-full transition-all duration-1000 ${
+                    analysis.fiso_score >= 55 ? 'bg-gradient-to-r from-cyan-600 to-cyan-400' : 
+                    analysis.fiso_score >= 40 ? 'bg-gradient-to-r from-amber-600 to-amber-400' : 'bg-gradient-to-r from-rose-600 to-rose-400'
+                  }`} style={{ width: `${analysis.fiso_score}%` }} />
+                </div>
 
-        {/* Genuine Backtesting Section */}
+                {/* Trade Setup Matrix */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                    <span className="text-gray-500 text-[10px] font-mono uppercase tracking-wider block mb-1">Entry</span>
+                    <p className="text-lg font-mono text-white">{currency}{analysis.entry}</p>
+                  </div>
+                  <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                    <span className="text-gray-500 text-[10px] font-mono uppercase tracking-wider block mb-1">Target</span>
+                    <p className="text-lg font-mono text-cyan-400">{currency}{analysis.target}</p>
+                  </div>
+                  <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                    <span className="text-gray-500 text-[10px] font-mono uppercase tracking-wider block mb-1">Stop Loss</span>
+                    <p className="text-lg font-mono text-rose-400">{currency}{analysis.stop_loss}</p>
+                  </div>
+                  <div className="bg-black/40 rounded-xl p-4 border border-white/5">
+                    <span className="text-gray-500 text-[10px] font-mono uppercase tracking-wider block mb-1">Risk:Reward</span>
+                    <p className="text-lg font-mono text-white">{analysis.risk_reward}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tactical Strategy Matrix */}
         {analysis && !analysis.error && (
-          <div className="border border-white/10 bg-white/[0.02] backdrop-blur-xl rounded-3xl p-8 mb-12">
-            <h2 className="text-2xl font-bold text-white mb-2">Live Strategy Backtester</h2>
-            <p className="text-gray-500 mb-8 font-mono text-sm">Validating 20 technical models against current chart data.</p>
+          <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-8 lg:p-12 mb-12">
+            <div className="mb-10">
+              <h2 className="text-3xl font-bold text-white tracking-tight mb-2">Tactical Strategy Matrix</h2>
+              <p className="text-cyan-500/70 font-mono text-sm uppercase tracking-widest">Validating 20 mathematical models</p>
+            </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-12">
               {STRATEGIES.map((strategy) => (
                 <button
                   key={strategy.id}
                   onClick={() => setSelectedStrategy(strategy)}
-                  className={`text-left p-4 rounded-2xl border transition-all ${
+                  className={`text-left p-5 rounded-2xl border transition-all duration-300 group ${
                     selectedStrategy?.id === strategy.id
-                      ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.2)]'
-                      : 'bg-black/20 border-white/5 text-gray-400 hover:bg-white/5 hover:border-white/20'
+                      ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_20px_rgba(34,211,238,0.2)] -translate-y-1'
+                      : 'bg-black/30 border-white/5 hover:bg-white/5 hover:border-white/20 hover:-translate-y-1'
                   }`}
                 >
-                  <span className="font-mono text-xs opacity-50 block mb-2">MODEL {String(strategy.id).padStart(2, '0')}</span>
-                  <span className="font-semibold text-sm leading-tight block">{strategy.name}</span>
+                  <span className={`font-mono text-[10px] tracking-widest uppercase block mb-3 transition-colors ${
+                    selectedStrategy?.id === strategy.id ? 'text-cyan-400' : 'text-gray-500 group-hover:text-gray-400'
+                  }`}>MODEL {String(strategy.id).padStart(2, '0')}</span>
+                  <span className={`font-bold text-sm leading-tight block ${
+                     selectedStrategy?.id === strategy.id ? 'text-white' : 'text-gray-300 group-hover:text-white'
+                  }`}>{strategy.name}</span>
                 </button>
               ))}
             </div>
 
+            {/* Output Console */}
             {selectedStrategy && (
-              <div className="bg-black/40 border border-white/10 rounded-2xl p-6">
-                 <div className="flex items-center gap-3 mb-4">
-                    <span className="px-3 py-1 bg-white/10 rounded-full font-mono text-xs tracking-wider">
-                      {analysis.strategy_evals[selectedStrategy.id]?.fit || "NO FIT DATA"}
+              <div className="bg-[#050508] border border-white/10 rounded-2xl p-8 relative overflow-hidden">
+                 <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
+                 <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mb-6">
+                    <span className={`px-4 py-1.5 rounded-full font-mono text-xs tracking-widest uppercase font-bold ${
+                      analysis.strategy_evals?.[selectedStrategy.id]?.fit === 'STRONG FIT' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
+                      analysis.strategy_evals?.[selectedStrategy.id]?.fit === 'MODERATE FIT' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                      'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    }`}>
+                      {analysis.strategy_evals?.[selectedStrategy.id]?.fit || "AWAITING DATA"}
                     </span>
+                    <span className="text-gray-500 font-mono text-sm uppercase">/ {selectedStrategy.name} Analysis</span>
                  </div>
-                 <p className="text-lg text-gray-300 leading-relaxed">
-                   {analysis.strategy_evals[selectedStrategy.id]?.desc || "Waiting on backend mathematical evaluation..."}
+                 <p className="text-lg md:text-xl text-gray-300 leading-relaxed font-light">
+                   {analysis.strategy_evals?.[selectedStrategy.id]?.desc || "Synchronizing mathematical evaluation from backend processor..."}
                  </p>
               </div>
             )}
           </div>
         )}
+
       </div>
     </div>
   );
