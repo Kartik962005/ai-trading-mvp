@@ -837,7 +837,7 @@ export const STOCKS = [
   { name: 'Sempra Energy', symbol: 'SRE', exchange: 'NYSE', ticker: 'SRE', currency: '$' },
   { name: 'Consolidated Edison', symbol: 'ED', exchange: 'NYSE', ticker: 'ED', currency: '$' },
   { name: 'Public Service Ent.', symbol: 'PEG', exchange: 'NYSE', ticker: 'PEG', currency: '$' },
-  { name: 'WEC Energy Group', symbol: 'WEC', exchange: 'NYSE', ticker: 'WEC', currency: '$' }
+  { name: 'WEC Energy Group', symbol: 'WEC', exchange: 'NYSE', ticker: 'WEC', currency: '$' },
   // ==========================================
   // CRYPTOCURRENCIES
   // ==========================================
