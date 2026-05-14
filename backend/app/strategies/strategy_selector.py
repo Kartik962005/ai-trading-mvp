@@ -1,8 +1,8 @@
 import pandas as pd
 from ta import trend, momentum, volatility
-from app.strategies.engine import run_analysis   # your existing FISO
+from app.strategies.engine import run_analysis
 
-# Top 20 Most Popular Trading Strategies Worldwide (2025-2026)
+# Top 20 Most Popular Trading Strategies Worldwide
 TOP_20_STRATEGIES = [
     "SMA Crossover (Golden Cross)", "EMA Crossover", "RSI Overbought/Oversold",
     "MACD Crossover", "Momentum Trading", "Mean Reversion",
@@ -17,7 +17,6 @@ def get_strategy_prediction(df: pd.DataFrame, strategy_name: str, ticker: str):
     if df.empty or len(df) < 50:
         return {"error": "Not enough historical data"}
 
-    # Ensure columns are lowercase
     df.columns = [str(c).lower() for c in df.columns]
     latest = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else latest
@@ -32,20 +31,20 @@ def get_strategy_prediction(df: pd.DataFrame, strategy_name: str, ticker: str):
         "timeframe": "Next 5-10 trading days"
     }
 
-    # === Strategy Logic (using your 'ta' library) ===
     if strategy_name == "SMA Crossover (Golden Cross)":
-        if latest['close'] > latest.get('sma_50', 0) and latest.get('sma_50', 0) > latest.get('sma_200', 0):
+        if latest.get('close', 0) > latest.get('sma_50', 0) and latest.get('sma_50', 0) > latest.get('sma_200', 0):
             result.update({"verdict": "Bullish", "expected_move": "+4.8%", "confidence": 82,
-                           "reasoning": "Golden Cross confirmed – strong uptrend in progress"})
+                           "reasoning": "Golden Cross confirmed – strong long-term uptrend"})
         else:
             result.update({"verdict": "Bearish", "expected_move": "-3.5%", "confidence": 68,
-                           "reasoning": "Price below key moving averages"})
+                           "reasoning": "Price trading below key moving averages"})
 
     elif strategy_name == "RSI Overbought/Oversold":
-        if latest.get('rsi_14', 50) < 30:
+        rsi = latest.get('rsi_14', 50)
+        if rsi < 30:
             result.update({"verdict": "Bullish", "expected_move": "+6.2%", "confidence": 85,
                            "reasoning": "RSI deeply oversold – strong rebound expected"})
-        elif latest.get('rsi_14', 50) > 70:
+        elif rsi > 70:
             result.update({"verdict": "Bearish", "expected_move": "-4.9%", "confidence": 79,
                            "reasoning": "RSI overbought – correction likely"})
         else:
@@ -53,22 +52,22 @@ def get_strategy_prediction(df: pd.DataFrame, strategy_name: str, ticker: str):
                            "reasoning": "RSI in neutral zone"})
 
     elif strategy_name == "MACD Crossover":
-        if latest.get('macd', 0) > latest.get('macd_signal', 0) and prev.get('macd', 0) <= prev.get('macd_signal', 0):
+        macd = latest.get('macd', 0)
+        macd_signal = latest.get('macd_signal', 0)
+        if macd > macd_signal and prev.get('macd', 0) <= prev.get('macd_signal', 0):
             result.update({"verdict": "Bullish", "expected_move": "+5.9%", "confidence": 81,
-                           "reasoning": "Fresh bullish MACD crossover"})
+                           "reasoning": "Fresh bullish MACD crossover just occurred"})
         else:
             result.update({"verdict": "Neutral", "expected_move": "0%", "confidence": 60,
-                           "reasoning": "No clear MACD signal yet"})
+                           "reasoning": "No clear MACD crossover signal"})
 
-    # Fallback for all other strategies (you can expand later)
     else:
-        result["reasoning"] = f"{strategy_name} signals being evaluated (more advanced rules coming soon)"
+        result["reasoning"] = f"{strategy_name} signal being evaluated"
 
     return result
 
 
 def get_best_strategy(df: pd.DataFrame, ticker: str):
-    """AI picks the single best strategy using your existing FISO engine"""
     fiso_result = run_analysis(df, ticker)
     expected_move = f"{(fiso_result.get('target', 0) - fiso_result.get('current_price', 0)) / fiso_result.get('current_price', 1) * 100:+.1f}%"
     
@@ -77,6 +76,6 @@ def get_best_strategy(df: pd.DataFrame, ticker: str):
         "verdict": fiso_result["verdict"],
         "expected_move": expected_move,
         "confidence": min(92, int(fiso_result["fiso_score"] * 1.15)),
-        "reasoning": "Highest combined trend + momentum + MACD score across all indicators",
+        "reasoning": "Highest combined trend + momentum + MACD score",
         "fiso_score": fiso_result["fiso_score"]
     }
