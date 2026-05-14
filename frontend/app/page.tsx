@@ -5,7 +5,6 @@ import useSWR from 'swr';
 const fetcher = (url: string) => fetch(`https://ai-trading-backend-jhcl.onrender.com${url}`).then(res => res.json());
 
 const STOCKS = [
-  // NSE (No Tata Motors)
   { name: 'Reliance Ind.', symbol: 'RELIANCE', exchange: 'NSE', ticker: 'RELIANCE.NS', currency: '₹' },
   { name: 'TCS', symbol: 'TCS', exchange: 'NSE', ticker: 'TCS.NS', currency: '₹' },
   { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'NSE', ticker: 'HDFCBANK.NS', currency: '₹' },
@@ -22,8 +21,6 @@ const STOCKS = [
   { name: 'Axis Bank', symbol: 'AXISBANK', exchange: 'NSE', ticker: 'AXISBANK.NS', currency: '₹' },
   { name: 'Maruti Suzuki', symbol: 'MARUTI', exchange: 'NSE', ticker: 'MARUTI.NS', currency: '₹' },
   { name: 'Sun Pharma', symbol: 'SUNPHARMA', exchange: 'NSE', ticker: 'SUNPHARMA.NS', currency: '₹' },
-  
-  // US
   { name: 'Apple', symbol: 'AAPL', exchange: 'NASDAQ', ticker: 'AAPL', currency: '$' },
   { name: 'Microsoft', symbol: 'MSFT', exchange: 'NASDAQ', ticker: 'MSFT', currency: '$' },
   { name: 'Nvidia', symbol: 'NVDA', exchange: 'NASDAQ', ticker: 'NVDA', currency: '$' },
@@ -38,8 +35,6 @@ const STOCKS = [
   { name: 'Visa', symbol: 'V', exchange: 'NYSE', ticker: 'V', currency: '$' },
   { name: 'Walmart', symbol: 'WMT', exchange: 'NYSE', ticker: 'WMT', currency: '$' },
   { name: 'Johnson & Johnson', symbol: 'JNJ', exchange: 'NYSE', ticker: 'JNJ', currency: '$' },
-  
-  // CRYPTO
   { name: 'Bitcoin', symbol: 'BTC', exchange: 'CRYPTO', ticker: 'BTC-USD', currency: '$' },
   { name: 'Ethereum', symbol: 'ETH', exchange: 'CRYPTO', ticker: 'ETH-USD', currency: '$' },
   { name: 'Solana', symbol: 'SOL', exchange: 'CRYPTO', ticker: 'SOL-USD', currency: '$' },
@@ -54,28 +49,27 @@ const STOCKS = [
   { name: 'Shiba Inu', symbol: 'SHIB', exchange: 'CRYPTO', ticker: 'SHIB-USD', currency: '$' },
 ];
 
-// FULL 20 STRATEGY ARRAY
 const STRATEGIES = [
-  { id: 1,  name: 'Moving Average Crossover', desc: 'SMA50 > SMA200 indicating macro trend direction' },
-  { id: 2,  name: 'EMA Pullback Strategy', desc: 'Price pulling back to dynamic EMA20/50 support' },
-  { id: 3,  name: 'Supertrend Strategy', desc: 'Captures trend continuation while filtering chop' },
-  { id: 4,  name: 'Breakout Trading', desc: 'Price breaks structural resistance with volume' },
+  { id: 1,  name: 'Moving Average Crossover', desc: 'SMA50 > SMA200 indicating macro trend' },
+  { id: 2,  name: 'EMA Pullback Strategy', desc: 'Price pulling back to dynamic EMA20 support' },
+  { id: 3,  name: 'Supertrend Strategy', desc: 'Captures trend continuation while filtering noise' },
+  { id: 4,  name: 'Breakout Trading', desc: 'Price breaking major resistance with volume' },
   { id: 5,  name: 'Trendline Retest', desc: 'Breakout followed by support confirmation' },
-  { id: 6,  name: 'Volume Anomaly', desc: 'Sudden abnormal volume equals institutional activity' },
-  { id: 7,  name: 'Relative Strength', desc: 'Trading structurally strongest assets in market' },
-  { id: 8,  name: 'Momentum Ignition', desc: 'Price accelerating + rising volume & volatility' },
+  { id: 6,  name: 'Volume Anomaly', desc: 'Sudden abnormal volume equals whale activity' },
+  { id: 7,  name: 'Relative Strength', desc: 'Trading strongest assets in strong sectors' },
+  { id: 8,  name: 'Momentum Ignition', desc: 'Price accelerating + rising volume' },
   { id: 9,  name: 'VWAP Trend Strategy', desc: 'Above VWAP equals bullish institutional control' },
   { id: 10, name: 'Gap-Up Momentum', desc: 'Gap-up open + high volume continuation' },
-  { id: 11, name: 'RSI Divergence', desc: 'Price makes new high, but RSI momentum weakens' },
-  { id: 12, name: 'MACD Divergence', desc: 'Detects weakening trend before reversal occurs' },
+  { id: 11, name: 'RSI Divergence', desc: 'Price makes new high, RSI weakens' },
+  { id: 12, name: 'MACD Divergence', desc: 'Detects weakening trend before reversal' },
   { id: 13, name: 'Mean Reversion', desc: 'Extreme deviation from SMA200 statistically reverts' },
   { id: 14, name: 'Bollinger Reversal', desc: 'Price stretched outside normal standard deviations' },
-  { id: 15, name: 'Volatility Expansion', desc: 'Low volatility period leads to explosive move' },
-  { id: 16, name: 'ATR Breakout', desc: 'Price spread violently expands past true range' },
+  { id: 15, name: 'Volatility Expansion', desc: 'Low volatility leads to explosive incoming move' },
+  { id: 16, name: 'ATR Breakout', desc: 'Price spread expands past average true range' },
   { id: 17, name: 'Liquidity Sweep', desc: 'Market hunts stop losses first, then reverses' },
   { id: 18, name: 'Order Block SMC', desc: 'Institutions leave footprint in price zones' },
   { id: 19, name: 'S/R Flip Strategy', desc: 'Major resistance breaks and becomes new support' },
-  { id: 20, name: 'Multi-Factor AI', desc: 'Synthesizes trend, volume, momentum, and sentiment' },
+  { id: 20, name: 'Multi-Factor AI Strategy', desc: 'Combines trend, volume, momentum, and sentiment' },
 ];
 
 function getLevenshteinDistance(s: string, t: string) {
@@ -310,21 +304,21 @@ export default function Home() {
             <div className="animate-in fade-in duration-500 flex-1 w-full mx-auto">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 max-w-4xl mx-auto">
                  <button 
-                    onClick={() => setActiveMarket('INDIA')}
+                    onClick={() => setActiveCategory('INDIA')}
                     className={`px-8 py-6 rounded-2xl border text-sm font-bold uppercase tracking-[0.2em] transition-all whitespace-nowrap font-['Orbitron'] ${
                       activeMarket === 'INDIA' ? 'bg-amber-500/30 border-amber-400 text-amber-200 shadow-[0_0_25px_rgba(245,158,11,0.4)]' : 'bg-[#0a0500]/60 backdrop-blur-xl border-amber-500/30 text-amber-500 hover:bg-amber-900/50 hover:border-amber-400'
                     }`}>
                    Indian Markets
                  </button>
                  <button 
-                    onClick={() => setActiveMarket('US')}
+                    onClick={() => setActiveCategory('US')}
                     className={`px-8 py-6 rounded-2xl border text-sm font-bold uppercase tracking-[0.2em] transition-all whitespace-nowrap font-['Orbitron'] ${
                       activeMarket === 'US' ? 'bg-orange-500/30 border-orange-400 text-orange-200 shadow-[0_0_25px_rgba(249,115,22,0.4)]' : 'bg-[#0a0500]/60 backdrop-blur-xl border-amber-500/30 text-amber-500 hover:bg-orange-900/50 hover:border-orange-400'
                     }`}>
                    Global Markets
                  </button>
                  <button 
-                    onClick={() => setActiveMarket('CRYPTO')}
+                    onClick={() => setActiveCategory('CRYPTO')}
                     className={`px-8 py-6 rounded-2xl border text-sm font-bold uppercase tracking-[0.2em] transition-all whitespace-nowrap font-['Orbitron'] ${
                       activeMarket === 'CRYPTO' ? 'bg-yellow-500/30 border-yellow-400 text-yellow-200 shadow-[0_0_25px_rgba(234,179,8,0.4)]' : 'bg-[#0a0500]/60 backdrop-blur-xl border-amber-500/30 text-amber-500 hover:bg-yellow-900/50 hover:border-yellow-400'
                     }`}>
@@ -418,7 +412,7 @@ export default function Home() {
                   <div className="lg:col-span-8 bg-[#0a0500]/50 backdrop-blur-xl border border-amber-500/30 rounded-2xl p-6 shadow-[0_0_30px_rgba(245,158,11,0.1)]">
                     <h3 className="text-[11px] font-bold text-amber-400 tracking-[0.2em] uppercase mb-6 border-b border-amber-500/20 pb-2 font-['Orbitron']">Tactical Strategy Matrix</h3>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       {STRATEGIES.map((strategy) => {
                         const evalData = analysis?.strategy_evals?.[strategy.id];
                         const isBest = analysis?.best_strategy_id === strategy.id;
