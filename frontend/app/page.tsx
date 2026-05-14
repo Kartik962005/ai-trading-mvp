@@ -62,6 +62,14 @@ export default function Home() {
   const chartRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // === NEW: Strategy Explorer States ===
+  const [strategies, setStrategies] = useState<string[]>([]);
+  const [selectedStrategy, setSelectedStrategy] = useState('');
+  const { data: strategyData } = useSWR(
+    selectedStrategy ? `/api/v1/strategy/${ticker}/${encodeURIComponent(selectedStrategy)}` : null,
+    fetcher
+  );
+
   const { data: quote } = useSWR(`/api/v1/quote/${ticker}`, fetcher, { refreshInterval: 30000 });
   const { data: chartData } = useSWR(`/api/v1/chart/${ticker}`, fetcher);
   const { data: analysis } = useSWR(`/api/v1/analyze/${ticker}`, fetcher);
@@ -78,10 +86,17 @@ export default function Home() {
       s.name.toLowerCase().includes(q) ||
       s.symbol.toLowerCase().includes(q) ||
       s.ticker.toLowerCase().includes(q)
-    ).slice(0, 8); // max 8 results
+    ).slice(0, 8);
     setSuggestions(filtered);
     setShowSuggestions(true);
   }, [input]);
+
+  // Fetch list of Top 20 Strategies once
+  useEffect(() => {
+    fetch('https://ai-trading-backend-jhcl.onrender.com/api/v1/strategies/list')
+      .then(res => res.json())
+      .then(data => setStrategies(data.strategies || []));
+  }, []);
 
   // Chart
   useEffect(() => {
@@ -202,9 +217,59 @@ export default function Home() {
       )}
       <div ref={chartRef} className="w-full mb-8 rounded-xl overflow-hidden" />
 
-      {/* Analysis Card */}
+      {/* === NEW: STRATEGY EXPLORER (placed right below the chart) === */}
+      <div className="mt-12 bg-gray-900 p-6 rounded-2xl">
+        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+          📊 Strategy Explorer – Top 20 Worldwide
+        </h2>
+
+        <select
+          value={selectedStrategy}
+          onChange={(e) => setSelectedStrategy(e.target.value)}
+          className="w-full bg-gray-800 border border-gray-700 p-4 rounded-xl text-lg outline-none focus:border-blue-500"
+        >
+          <option value="">Choose a strategy...</option>
+          {strategies.map((strat) => (
+            <option key={strat} value={strat}>{strat}</option>
+          ))}
+        </select>
+
+        {selectedStrategy && strategyData && (
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Your Selected Strategy */}
+            <div className="bg-gray-950 p-6 rounded-2xl border border-blue-500">
+              <h3 className="text-blue-400 font-semibold text-xl mb-2">Your Strategy</h3>
+              <p className="text-2xl font-bold">{selectedStrategy}</p>
+              <div className={`text-6xl font-bold mt-6 ${
+                strategyData.selected_strategy.verdict === 'Bullish' ? 'text-green-400' :
+                strategyData.selected_strategy.verdict === 'Bearish' ? 'text-red-400' : 'text-yellow-400'
+              }`}>
+                {strategyData.selected_strategy.verdict}
+              </div>
+              <p className="text-3xl mt-2 font-mono">{strategyData.selected_strategy.expected_move}</p>
+              <p className="text-sm text-gray-400 mt-6">{strategyData.selected_strategy.reasoning}</p>
+            </div>
+
+            {/* AI Recommended Best Strategy */}
+            <div className="bg-gray-950 p-6 rounded-2xl border border-emerald-500 relative">
+              <div className="absolute -top-3 right-6 bg-emerald-500 text-white text-xs px-3 py-1 rounded-full font-bold">⭐ AI BEST FIT</div>
+              <h3 className="text-emerald-400 font-semibold text-xl mb-2">Best Strategy for this Stock</h3>
+              <p className="text-2xl font-bold">{strategyData.best_strategy.strategy}</p>
+              <div className={`text-6xl font-bold mt-6 ${
+                strategyData.best_strategy.verdict.includes('Buy') ? 'text-green-400' : 'text-red-400'
+              }`}>
+                {strategyData.best_strategy.verdict}
+              </div>
+              <p className="text-3xl mt-2 font-mono">{strategyData.best_strategy.expected_move}</p>
+              <p className="text-sm text-gray-400 mt-6">{strategyData.best_strategy.reasoning}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Analysis Card (FISO Score) */}
       {analysis && !analysis.error && analysis.verdict && (
-        <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-md">
+        <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-md mt-12">
           <h2 className="text-2xl font-bold mb-4">Intelligent Assistant</h2>
           <div className={`text-5xl font-bold mb-4 ${verdictColor}`}>
             {analysis.verdict}
@@ -243,7 +308,7 @@ export default function Home() {
       )}
 
       {!analysis && (
-        <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-md">
+        <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-md mt-12">
           <p className="text-gray-500">Select a stock above to see analysis...</p>
         </div>
       )}
