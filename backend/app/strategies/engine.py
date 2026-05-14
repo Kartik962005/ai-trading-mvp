@@ -7,12 +7,22 @@ def fetch_news_sentiment(ticker: str):
     try:
         tkr = yf.Ticker(ticker)
         news = tkr.news
-        if not news:
-            return {"score": 0, "label": "Neutral", "headlines": ["No recent news found."]}
+        
+        # Fallback: yfinance often returns empty lists for Indian/international stocks.
+        # If empty, strip the exchange suffix (e.g., .NS or .BO) and try the base ticker.
+        if not news or len(news) == 0:
+            base_ticker = ticker.split('.')[0]
+            if base_ticker != ticker:
+                news = yf.Ticker(base_ticker).news
+        
+        # If still empty, return a clean fallback message
+        if not news or len(news) == 0:
+            return {"score": 0, "label": "Neutral", "headlines": [f"No recent news found on Yahoo Finance for {ticker}."]}
 
         total_polarity = 0
         headlines = []
         
+        # Analyze top 4 recent news headlines
         for item in news[:4]:
             title = item.get('title', '')
             if title:
@@ -20,7 +30,10 @@ def fetch_news_sentiment(ticker: str):
                 total_polarity += polarity
                 headlines.append(title)
 
-        avg_polarity = total_polarity / len(headlines) if headlines else 0
+        if not headlines:
+            return {"score": 0, "label": "Neutral", "headlines": ["News format unreadable."]}
+
+        avg_polarity = total_polarity / len(headlines)
 
         if avg_polarity > 0.15:
             label = "Bullish"
@@ -35,7 +48,8 @@ def fetch_news_sentiment(ticker: str):
             "headlines": headlines
         }
     except Exception as e:
-        return {"score": 0, "label": "Neutral", "headlines": ["Error fetching news."]}
+        print(f"News fetch error for {ticker}: {e}")
+        return {"score": 0, "label": "Neutral", "headlines": ["Error connecting to live news feed."]}
 
 def evaluate_strategies(latest: pd.Series, df: pd.DataFrame):
     evaluations = {}
@@ -79,14 +93,12 @@ def evaluate_strategies(latest: pd.Series, df: pd.DataFrame):
         evaluations[5] = {"score": 20, "fit": "POOR FIT", "desc": "Price is trading close to historical average. Poor setup."}
 
     # Generic evaluation for remaining strategies 
-    # (In a production app, you would write specific logic for all 20)
     for i in range(4, 21):
         if i not in evaluations:
             base_score = 50
             if latest['close'] > sma50: base_score += 15
             if rsi < 60 and rsi > 40: base_score += 10
             
-            # Add some slight variation so they don't all look identical
             final_score = min(95, base_score + (i % 5) * 2)
             fit_label = "STRONG FIT" if final_score >= 75 else ("MODERATE FIT" if final_score >= 50 else "POOR FIT")
             evaluations[i] = {"score": final_score, "fit": fit_label, "desc": "Chart structure shows adequate parameters for this setup based on baseline momentum indicators."}

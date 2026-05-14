@@ -10,10 +10,45 @@ const STOCKS = [
   { name: 'Infosys', symbol: 'INFY', exchange: 'NSE', ticker: 'INFY.NS', currency: '₹' },
   { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'NSE', ticker: 'HDFCBANK.NS', currency: '₹' },
   { name: 'ICICI Bank', symbol: 'ICICIBANK', exchange: 'NSE', ticker: 'ICICIBANK.NS', currency: '₹' },
+  { name: 'Wipro', symbol: 'WIPRO', exchange: 'NSE', ticker: 'WIPRO.NS', currency: '₹' },
+  { name: 'State Bank of India', symbol: 'SBIN', exchange: 'NSE', ticker: 'SBIN.NS', currency: '₹' },
+  { name: 'Bajaj Finance', symbol: 'BAJFINANCE', exchange: 'NSE', ticker: 'BAJFINANCE.NS', currency: '₹' },
+  { name: 'Kotak Mahindra Bank', symbol: 'KOTAKBANK', exchange: 'NSE', ticker: 'KOTAKBANK.NS', currency: '₹' },
+  { name: 'Axis Bank', symbol: 'AXISBANK', exchange: 'NSE', ticker: 'AXISBANK.NS', currency: '₹' },
+  { name: 'Adani Enterprises', symbol: 'ADANIENT', exchange: 'NSE', ticker: 'ADANIENT.NS', currency: '₹' },
+  { name: 'Maruti Suzuki', symbol: 'MARUTI', exchange: 'NSE', ticker: 'MARUTI.NS', currency: '₹' },
+  { name: 'Hindustan Unilever', symbol: 'HINDUNILVR', exchange: 'NSE', ticker: 'HINDUNILVR.NS', currency: '₹' },
+  { name: 'ITC', symbol: 'ITC', exchange: 'NSE', ticker: 'ITC.NS', currency: '₹' },
+  { name: 'Tata Motors', symbol: 'TATAMOTORS', exchange: 'NSE', ticker: 'TATAMOTORS.NS', currency: '₹' },
+  { name: 'Sun Pharma', symbol: 'SUNPHARMA', exchange: 'NSE', ticker: 'SUNPHARMA.NS', currency: '₹' },
+  { name: 'HCL Technologies', symbol: 'HCLTECH', exchange: 'NSE', ticker: 'HCLTECH.NS', currency: '₹' },
+  { name: 'Larsen & Toubro', symbol: 'LT', exchange: 'NSE', ticker: 'LT.NS', currency: '₹' },
+  { name: 'Asian Paints', symbol: 'ASIANPAINT', exchange: 'NSE', ticker: 'ASIANPAINT.NS', currency: '₹' },
+  { name: 'Nestle India', symbol: 'NESTLEIND', exchange: 'NSE', ticker: 'NESTLEIND.NS', currency: '₹' },
+  { name: 'Tech Mahindra', symbol: 'TECHM', exchange: 'NSE', ticker: 'TECHM.NS', currency: '₹' },
+  { name: 'ONGC', symbol: 'ONGC', exchange: 'NSE', ticker: 'ONGC.NS', currency: '₹' },
+  { name: 'NTPC', symbol: 'NTPC', exchange: 'NSE', ticker: 'NTPC.NS', currency: '₹' },
+  { name: 'Power Grid', symbol: 'POWERGRID', exchange: 'NSE', ticker: 'POWERGRID.NS', currency: '₹' },
+  // BSE
+  { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'BSE', ticker: '500325.BO', currency: '₹' },
+  { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'BSE', ticker: '532540.BO', currency: '₹' },
+  { name: 'Infosys', symbol: 'INFY', exchange: 'BSE', ticker: '500209.BO', currency: '₹' },
+  { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'BSE', ticker: '500180.BO', currency: '₹' },
+  { name: 'Wipro', symbol: 'WIPRO', exchange: 'BSE', ticker: '507685.BO', currency: '₹' },
+  { name: 'State Bank of India', symbol: 'SBIN', exchange: 'BSE', ticker: '500112.BO', currency: '₹' },
+  // US
   { name: 'Apple', symbol: 'AAPL', exchange: 'NASDAQ', ticker: 'AAPL', currency: '$' },
   { name: 'Microsoft', symbol: 'MSFT', exchange: 'NASDAQ', ticker: 'MSFT', currency: '$' },
+  { name: 'Google', symbol: 'GOOGL', exchange: 'NASDAQ', ticker: 'GOOGL', currency: '$' },
+  { name: 'Amazon', symbol: 'AMZN', exchange: 'NASDAQ', ticker: 'AMZN', currency: '$' },
   { name: 'Tesla', symbol: 'TSLA', exchange: 'NASDAQ', ticker: 'TSLA', currency: '$' },
   { name: 'Nvidia', symbol: 'NVDA', exchange: 'NASDAQ', ticker: 'NVDA', currency: '$' },
+  { name: 'Meta', symbol: 'META', exchange: 'NASDAQ', ticker: 'META', currency: '$' },
+  { name: 'Netflix', symbol: 'NFLX', exchange: 'NASDAQ', ticker: 'NFLX', currency: '$' },
+  { name: 'AMD', symbol: 'AMD', exchange: 'NASDAQ', ticker: 'AMD', currency: '$' },
+  { name: 'Intel', symbol: 'INTC', exchange: 'NASDAQ', ticker: 'INTC', currency: '$' },
+  { name: 'JPMorgan Chase', symbol: 'JPM', exchange: 'NYSE', ticker: 'JPM', currency: '$' },
+  { name: 'Berkshire Hathaway', symbol: 'BRK-B', exchange: 'NYSE', ticker: 'BRK-B', currency: '$' },
 ];
 
 const STRATEGIES = [
@@ -48,6 +83,7 @@ export default function Home() {
   const [expandedStrategyId, setExpandedStrategyId] = useState<number | null>(null);
   
   const chartRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: quote } = useSWR(`/api/v1/quote/${ticker}`, fetcher, { refreshInterval: 30000 });
   const { data: chartData } = useSWR(`/api/v1/chart/${ticker}`, fetcher);
@@ -217,11 +253,18 @@ export default function Home() {
                 </span>
               </div>
               <div className="space-y-4">
-                {analysis?.sentiment?.headlines?.map((headline: string, idx: number) => (
-                  <div key={idx} className="text-xs sm:text-sm text-gray-400 font-sans leading-relaxed border-l-[3px] border-purple-500/30 pl-4 py-1">
-                    {headline}
+                <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Recent Scans</span>
+                {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
+                  analysis.sentiment.headlines.map((headline: string, idx: number) => (
+                    <div key={idx} className="text-xs sm:text-sm text-gray-400 font-sans leading-relaxed border-l-[3px] border-purple-500/30 pl-4 py-1">
+                      {headline}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-xs sm:text-sm text-gray-500 font-sans italic">
+                    No news data available for this asset.
                   </div>
-                ))}
+                )}
               </div>
             </div>
             
