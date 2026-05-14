@@ -431,10 +431,10 @@ export default function Home() {
                               {isBest && <span className="text-[8px] bg-amber-500 text-[#000000] px-1.5 py-0.5 uppercase font-black rounded tracking-widest">Best</span>}
                             </div>
                             
-                            <span className="font-bold text-xs uppercase block mb-3 font-['Orbitron'] tracking-wider leading-tight">{strategy.name}</span>
+                            <span className="font-bold text-xs uppercase block mb-3 font-['Orbitron'] tracking-wider">{strategy.name}</span>
                             
                             {evalData && (
-                              <span className="text-[10px] font-mono text-amber-100 uppercase tracking-widest bg-amber-500/20 border border-amber-500/30 px-2 py-1 rounded inline-block">
+                              <span className="text-[10px] font-mono text-amber-100 uppercase tracking-widest bg-amber-500/20 border border-amber-500/30 px-2 py-1 rounded">
                                 SCORE: {evalData.score}
                               </span>
                             )}
