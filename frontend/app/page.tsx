@@ -50,26 +50,26 @@ const STOCKS = [
 ];
 
 const STRATEGIES = [
-  { id: 1, name: 'Golden Cross', description: 'SMA 50 crosses above SMA 200 — classic long-term bullish signal' },
-  { id: 2, name: 'RSI Oversold Bounce', description: 'RSI below 30 signals oversold conditions — potential reversal' },
-  { id: 3, name: 'MACD Crossover', description: 'MACD line crosses signal line — momentum shift indicator' },
-  { id: 4, name: 'Bollinger Band Breakout', description: 'Price breaks above upper band — strong momentum signal' },
-  { id: 5, name: 'Mean Reversion', description: 'Price far from moving average — expects return to mean' },
-  { id: 6, name: 'Momentum Trading', description: 'Buy stocks showing strong upward price momentum' },
-  { id: 7, name: 'Breakout Trading', description: 'Buy when price breaks key resistance with volume' },
-  { id: 8, name: 'Trend Following', description: 'Follow the primary trend using multiple timeframe analysis' },
-  { id: 9, name: 'Volume Price Analysis', description: 'Confirms price moves with volume for stronger signals' },
-  { id: 10, name: 'Support & Resistance', description: 'Trade bounces off key price levels' },
-  { id: 11, name: 'EMA Ribbon', description: 'Multiple EMAs show trend strength and direction' },
-  { id: 12, name: 'Stochastic Oscillator', description: 'Compares closing price to price range over time' },
-  { id: 13, name: 'ATR Breakout', description: 'Uses Average True Range to identify volatility breakouts' },
-  { id: 14, name: 'Inside Bar Pattern', description: 'Consolidation pattern before a major price move' },
-  { id: 15, name: 'VWAP Strategy', description: 'Trade relative to Volume Weighted Average Price' },
-  { id: 16, name: 'Death Cross Reversal', description: 'SMA 50 crosses below SMA 200 — bearish signal to short' },
-  { id: 17, name: 'RSI Divergence', description: 'Price and RSI move in opposite directions — reversal signal' },
-  { id: 18, name: 'Gap Fill Strategy', description: 'Stocks tend to fill price gaps — fade the gap open' },
-  { id: 19, name: 'Swing High/Low', description: 'Trade between swing highs and lows in a range' },
-  { id: 20, name: 'Fibonacci Retracement', description: 'Buy at key Fibonacci levels during a pullback' },
+  { id: 1,  name: 'Golden Cross',           description: 'SMA 50 crosses above SMA 200 — classic long-term bullish signal' },
+  { id: 2,  name: 'RSI Oversold Bounce',    description: 'RSI below 30 signals oversold conditions — potential reversal' },
+  { id: 3,  name: 'MACD Crossover',         description: 'MACD line crosses signal line — momentum shift indicator' },
+  { id: 4,  name: 'Bollinger Band Breakout',description: 'Price breaks above upper band — strong momentum signal' },
+  { id: 5,  name: 'Mean Reversion',         description: 'Price far from moving average — expects return to mean' },
+  { id: 6,  name: 'Momentum Trading',       description: 'Buy stocks showing strong upward price momentum' },
+  { id: 7,  name: 'Breakout Trading',       description: 'Buy when price breaks key resistance with volume' },
+  { id: 8,  name: 'Trend Following',        description: 'Follow the primary trend using multiple timeframe analysis' },
+  { id: 9,  name: 'Volume Price Analysis',  description: 'Confirms price moves with volume for stronger signals' },
+  { id: 10, name: 'Support & Resistance',   description: 'Trade bounces off key price levels' },
+  { id: 11, name: 'EMA Ribbon',             description: 'Multiple EMAs show trend strength and direction' },
+  { id: 12, name: 'Stochastic Oscillator',  description: 'Compares closing price to price range over time' },
+  { id: 13, name: 'ATR Breakout',           description: 'Uses Average True Range to identify volatility breakouts' },
+  { id: 14, name: 'Inside Bar Pattern',     description: 'Consolidation pattern before a major price move' },
+  { id: 15, name: 'VWAP Strategy',          description: 'Trade relative to Volume Weighted Average Price' },
+  { id: 16, name: 'Death Cross Reversal',   description: 'SMA 50 crosses below SMA 200 — bearish signal to short' },
+  { id: 17, name: 'RSI Divergence',         description: 'Price and RSI move in opposite directions — reversal signal' },
+  { id: 18, name: 'Gap Fill Strategy',      description: 'Stocks tend to fill price gaps — fade the gap open' },
+  { id: 19, name: 'Swing High/Low',         description: 'Trade between swing highs and lows in a range' },
+  { id: 20, name: 'Fibonacci Retracement',  description: 'Buy at key Fibonacci levels during a pullback' },
 ];
 
 export default function Home() {
@@ -88,11 +88,7 @@ export default function Home() {
   const { data: analysis } = useSWR(`/api/v1/analyze/${ticker}`, fetcher);
 
   useEffect(() => {
-    if (input.trim().length < 1) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
+    if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     const q = input.trim().toLowerCase();
     const filtered = STOCKS.filter(s =>
       s.name.toLowerCase().includes(q) ||
@@ -106,7 +102,6 @@ export default function Home() {
   useEffect(() => {
     if (!chartData || !chartRef.current || !Array.isArray(chartData) || chartData.length === 0) return;
     chartRef.current.innerHTML = '';
-
     import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
       const chart = createChart(chartRef.current!, {
         width: chartRef.current!.clientWidth || 800,
@@ -115,12 +110,10 @@ export default function Home() {
         grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
         crosshair: { mode: 1 },
       });
-
       const candleSeries = chart.addSeries(CandlestickSeries, {
         upColor: '#22d3ee', downColor: '#f43f5e', 
         borderVisible: false, wickUpColor: '#22d3ee', wickDownColor: '#f43f5e'
       });
-      
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
         .map((d: any) => ({
@@ -128,7 +121,6 @@ export default function Home() {
           open: parseFloat(d.open), high: parseFloat(d.high),
           low: parseFloat(d.low), close: parseFloat(d.close),
         }));
-
       candleSeries.setData(formattedData);
       chart.timeScale().fitContent();
     });
@@ -148,7 +140,6 @@ export default function Home() {
   const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-cyan-500/40 bg-cyan-950/20' :
     analysis?.verdict === 'Hold' ? 'border-amber-500/40 bg-amber-950/20' : 'border-rose-500/40 bg-rose-950/20';
 
-  // Calculate pointer position (0% to 100%) based on -1.0 to +1.0 score
   const sentimentScore = analysis?.sentiment?.score || 0;
   const pointerPosition = Math.max(5, Math.min(95, ((sentimentScore + 1) / 2) * 100));
 
@@ -161,7 +152,6 @@ export default function Home() {
       </div>
 
       <div className="relative z-10 p-4 sm:p-6 md:p-12 max-w-7xl mx-auto">
-        
         <div className="mb-12 md:mb-16 pt-8 text-center flex flex-col items-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 backdrop-blur-md mb-6">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
@@ -240,11 +230,9 @@ export default function Home() {
                 Global News NLP
               </h3>
               
-              {/* --- NEW VISUAL SCALE FOR SENTIMENT --- */}
               <div className="mb-8 mt-12">
                 <div className="relative w-full h-3 rounded-full border border-white/10 bg-black/50">
                   <div className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500 via-gray-500 to-cyan-500 opacity-80" />
-                  
                   <div 
                     className="absolute top-[-36px] -translate-x-1/2 flex flex-col items-center transition-all duration-1000 ease-out"
                     style={{ left: `${pointerPosition}%` }}
@@ -255,7 +243,6 @@ export default function Home() {
                     }`}>
                       {analysis?.sentiment?.label || 'ANALYZING...'}
                     </div>
-                    {/* Downward pointing arrow */}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
                       <path d="M12 21L1 3H23L12 21Z" fill="currentColor"/>
                     </svg>
@@ -263,16 +250,12 @@ export default function Home() {
                 </div>
                 
                 <div className="flex justify-between text-[10px] font-mono text-gray-500 mt-2 px-1 tracking-widest uppercase">
-                  <span>Bearish</span>
-                  <span>Neutral</span>
-                  <span>Bullish</span>
+                  <span>Bearish</span><span>Neutral</span><span>Bullish</span>
                 </div>
               </div>
-              {/* -------------------------------------- */}
 
               <div className="space-y-4">
                 <span className="text-xs text-gray-600 font-mono uppercase tracking-widest block border-b border-white/5 pb-2">Recent Scans</span>
-                
                 {analysis?.sentiment?.headlines && analysis.sentiment.headlines.length > 0 ? (
                   <ul className="space-y-3">
                     {analysis.sentiment.headlines.map((headline: string, idx: number) => (
@@ -288,23 +271,81 @@ export default function Home() {
                 )}
               </div>
             </div>
-            
-            {analysis && !analysis.error && (
-              <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-8 flex-1 ${verdictBg} relative overflow-hidden`}>
-                <h3 className="text-xs sm:text-sm font-mono text-gray-400 tracking-widest uppercase mb-2">Algorithm Verdict</h3>
-                <div className={`text-3xl sm:text-4xl font-black tracking-tight mb-6 ${verdictColor}`}>{analysis.verdict}</div>
-                <div className="mb-2 flex justify-between items-end">
-                   <span className="text-[10px] sm:text-xs font-mono text-gray-500">FISO SCORE</span>
-                   <span className="text-2xl sm:text-3xl font-mono text-white">{analysis.fiso_score}<span className="text-sm sm:text-lg text-gray-600">/100</span></span>
-                </div>
-                <div className="w-full bg-black/40 rounded-full h-2 mb-8 overflow-hidden border border-white/5">
-                  <div className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-all duration-1000" style={{ width: `${analysis.fiso_score}%` }} />
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
+        {/* --- BRAND NEW PREDICTIVE ANALYTICS DASHBOARD --- */}
+        {analysis && !analysis.error && (
+          <div className={`border backdrop-blur-2xl rounded-[2rem] p-6 sm:p-10 mb-16 relative overflow-hidden shadow-2xl ${verdictBg}`}>
+             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 blur-[100px] pointer-events-none"></div>
+             
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-white/10 pb-6">
+                <div>
+                  <h3 className="text-sm font-mono text-gray-400 tracking-widest uppercase mb-1">Predictive Forecast</h3>
+                  <div className={`text-5xl sm:text-6xl font-black tracking-tight ${verdictColor}`}>{analysis.verdict}</div>
+                </div>
+                
+                <div className="mt-6 md:mt-0 text-left md:text-right">
+                   <span className="text-xs font-mono text-gray-500 tracking-widest uppercase block mb-1">AI Confidence Level</span>
+                   <div className="flex items-center gap-3">
+                     <div className="text-3xl font-mono text-white">{analysis.confidence}%</div>
+                     <div className="flex gap-1">
+                        {[1,2,3,4,5].map(i => (
+                          <div key={i} className={`w-6 h-1.5 rounded-full ${i <= Math.ceil(analysis.confidence / 20) ? 'bg-cyan-400' : 'bg-white/10'}`} />
+                        ))}
+                     </div>
+                   </div>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                {/* Entry & Risk */}
+                <div className="bg-black/30 rounded-2xl p-5 border border-white/5">
+                  <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Entry Vector</span>
+                  <p className="text-2xl font-mono text-white">{currency}{analysis.entry}</p>
+                  <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
+                    <span className="text-[10px] font-mono text-gray-500 uppercase">Profile</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                      analysis.risk_level === 'High Risk' ? 'bg-rose-500/20 text-rose-400' :
+                      analysis.risk_level === 'Medium Risk' ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'
+                    }`}>{analysis.risk_level}</span>
+                  </div>
+                </div>
+
+                {/* Target */}
+                <div className="bg-black/30 rounded-2xl p-5 border border-white/5 relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Target Price</span>
+                  <p className="text-3xl font-mono text-cyan-400">{currency}{analysis.target}</p>
+                  <p className="text-cyan-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Take Profit Zone</p>
+                </div>
+
+                {/* Date Estimation */}
+                <div className="bg-cyan-500/10 rounded-2xl p-5 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.1)]">
+                  <span className="text-cyan-400 text-xs font-mono uppercase tracking-wider block mb-1">Expected Timeframe</span>
+                  <p className="text-2xl font-mono text-white">{analysis.estimated_days} Trading Days</p>
+                  <p className="text-cyan-300 text-sm font-mono mt-1 border-t border-cyan-500/20 pt-2">By {analysis.target_date}</p>
+                </div>
+
+                {/* Stop Loss */}
+                <div className="bg-black/30 rounded-2xl p-5 border border-white/5">
+                  <span className="text-gray-500 text-xs font-mono uppercase tracking-wider block mb-1">Hard Stop-Loss</span>
+                  <p className="text-3xl font-mono text-rose-400">{currency}{analysis.stop_loss}</p>
+                  <p className="text-rose-500/50 text-[10px] font-mono uppercase tracking-wider mt-1">Maximum Risk Tolerance</p>
+                </div>
+             </div>
+             
+             {/* FISO Bar */}
+             <div className="mt-8 pt-6 border-t border-white/5 flex items-center gap-4">
+                <span className="text-xs font-mono text-gray-500 whitespace-nowrap">FISO SCORE ({analysis.fiso_score}/100)</span>
+                <div className="w-full bg-black/40 rounded-full h-1 overflow-hidden border border-white/5">
+                  <div className="h-full bg-gradient-to-r from-rose-500 via-amber-500 to-cyan-500" style={{ width: `${analysis.fiso_score}%` }} />
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* Tactical Strategy Matrix */}
         {analysis && !analysis.error && (
           <div className="border border-white/10 bg-white/[0.01] backdrop-blur-2xl rounded-[2rem] p-4 sm:p-8 lg:p-12 mb-12">
             <div className="mb-10 text-center sm:text-left">
@@ -336,9 +377,7 @@ export default function Home() {
                       }`}>MODEL {String(strategy.id).padStart(2, '0')}</span>
                       
                       {isExpanded && (
-                        <button className="sm:hidden text-gray-400 hover:text-white">
-                          ✕
-                        </button>
+                        <button className="sm:hidden text-gray-400 hover:text-white">✕</button>
                       )}
                     </div>
 

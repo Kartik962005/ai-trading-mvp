@@ -7,18 +7,15 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import html
 import re
+import math
+from datetime import datetime, timedelta
 
 def fetch_news_sentiment(ticker: str):
-    """Fetches reliable live news from Google News RSS, filters out SEO spam, and calculates NLP sentiment."""
     try:
-        # Clean the ticker for a better search query
         base_ticker = ticker.split('.')[0]
         search_query = urllib.parse.quote(f"{base_ticker} stock market news")
-        
-        # Google News RSS URL
         url = f"https://news.google.com/rss/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
         
-        # Use a strong User-Agent so we don't get blocked
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
         response = urllib.request.urlopen(req)
         xml_data = response.read()
@@ -29,32 +26,23 @@ def fetch_news_sentiment(ticker: str):
         headlines = []
         total_polarity = 0
         
-        # Loop through items until we find 5 HIGH QUALITY headlines
         for item in items:
             title_element = item.find('title')
             if title_element is not None and title_element.text:
-                # Sanitize the XML text
                 raw_title = html.unescape(title_element.text)
-                
-                # Remove the publisher name from the end
                 clean_title = raw_title.rsplit(' - ', 1)[0] if ' - ' in raw_title else raw_title
                 clean_title = clean_title.strip()
-                
-                # 1. CLEANER: Remove YouTube video IDs usually enclosed in brackets at the end e.g., (07OUPGTYDo)
                 clean_title = re.sub(r'\s*\([A-Za-z0-9_-]{10,12}\)$', '', clean_title)
                 
-                # 2. SPAM FILTER: Skip SEO spam titles that keyword stuff with " L " or "Share Price Today"
                 lower_title = clean_title.lower()
                 if " l " in lower_title or "share price today" in lower_title:
-                    continue # Skip this garbage article entirely
+                    continue
                 
-                # If the title is clean and not a duplicate, add it
                 if clean_title and clean_title not in headlines:
                     headlines.append(clean_title)
                     polarity = TextBlob(clean_title).sentiment.polarity
                     total_polarity += polarity
             
-            # Stop once we have 5 good headlines
             if len(headlines) == 5:
                 break
                 
@@ -63,25 +51,17 @@ def fetch_news_sentiment(ticker: str):
             
         avg_polarity = total_polarity / len(headlines)
         
-        if avg_polarity > 0.10:
-            label = "Bullish"
-        elif avg_polarity < -0.10:
-            label = "Bearish"
-        else:
-            label = "Neutral"
+        if avg_polarity > 0.10: label = "Bullish"
+        elif avg_polarity < -0.10: label = "Bearish"
+        else: label = "Neutral"
             
-        return {
-            "score": round(avg_polarity, 2), 
-            "label": label, 
-            "headlines": headlines
-        }
+        return {"score": round(avg_polarity, 2), "label": label, "headlines": headlines}
     except Exception as e:
         print(f"News fetch error for {ticker}: {e}")
-        return {"score": 0, "label": "Neutral", "headlines": ["Error connecting to live news feed. Re-analyzing..."]}
+        return {"score": 0, "label": "Neutral", "headlines": ["Error connecting to live news feed."]}
 
 def evaluate_strategies(latest: pd.Series, df: pd.DataFrame):
     evaluations = {}
-    
     rsi = latest.get('RSI_14', 50)
     sma50 = latest.get('SMA_50', latest['close'])
     sma200 = latest.get('SMA_200', latest['close'])
@@ -120,7 +100,6 @@ def evaluate_strategies(latest: pd.Series, df: pd.DataFrame):
             base_score = 50
             if latest['close'] > sma50: base_score += 15
             if rsi < 60 and rsi > 40: base_score += 10
-            
             final_score = min(95, base_score + (i % 5) * 2)
             fit_label = "STRONG FIT" if final_score >= 75 else ("MODERATE FIT" if final_score >= 50 else "POOR FIT")
             evaluations[i] = {"score": final_score, "fit": fit_label, "desc": "Chart structure shows adequate parameters for this setup based on baseline momentum indicators."}
@@ -146,8 +125,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
 
     df = df.dropna(subset=['SMA_50', 'SMA_200', 'RSI_14', 'MACD', 'MACD_signal'])
 
-    if len(df) == 0:
-        return {"error": "Not enough data"}
+    if len(df) == 0: return {"error": "Not enough data"}
 
     latest = df.iloc[-1]
     sentiment = fetch_news_sentiment(ticker)
@@ -165,10 +143,33 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     elif fiso >= 20: verdict = "Sell"
     else: verdict = "Strong Sell"
 
-    atr_val   = float(latest['ATR_14']) if pd.notna(latest['ATR_14']) else 10.0
-    entry     = float(latest['close']) * 1.001
-    stop_loss = entry - 1.5 * atr_val
-    target    = entry + 2 * (entry - stop_loss)
+    # Price Targets & Risk Management
+    atr_val = float(latest['ATR_14']) if pd.notna(latest['ATR_14']) else (float(latest['close']) * 0.02)
+    entry = float(latest['close'])
+    
+    # Calculate Risk Level based on Volatility (ATR %)
+    volatility_pct = (atr_val / entry) * 100
+    if volatility_pct > 3.5: risk_level = "High Risk"
+    elif volatility_pct > 1.5: risk_level = "Medium Risk"
+    else: risk_level = "Low Risk"
+    
+    # Adjust Targets based on Verdict
+    if fiso >= 50: # Bullish
+        stop_loss = entry - (1.5 * atr_val)
+        target = entry + (3.0 * atr_val) # 1:2 Risk Reward
+    else: # Bearish
+        stop_loss = entry + (1.5 * atr_val)
+        target = entry - (3.0 * atr_val)
+
+    # Date Prediction Math (Target distance divided by daily average move)
+    price_distance = abs(target - entry)
+    estimated_days = math.ceil(price_distance / atr_val) if atr_val > 0 else 5
+    # Add roughly 1.4x days to account for weekends in the calendar
+    target_date_obj = datetime.now() + timedelta(days=(estimated_days * 1.4))
+    target_date = target_date_obj.strftime('%b %d, %Y')
+    
+    # Confidence Score Calculation
+    confidence = min(99, max(45, abs(fiso - 50) * 1.5 + 45))
 
     strategy_evals, best_id = evaluate_strategies(latest, df)
 
@@ -183,5 +184,9 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "current_price": round(float(latest['close']), 2),
         "sentiment": sentiment,
         "strategy_evals": strategy_evals,
-        "best_strategy_id": best_id
+        "best_strategy_id": best_id,
+        "risk_level": risk_level,
+        "confidence": round(confidence),
+        "estimated_days": estimated_days,
+        "target_date": target_date
     }
