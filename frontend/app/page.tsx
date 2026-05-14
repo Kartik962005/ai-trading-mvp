@@ -23,9 +23,20 @@ const STOCKS = [
   { name: 'Sun Pharma', symbol: 'SUNPHARMA', exchange: 'NSE', ticker: 'SUNPHARMA.NS', currency: '₹' },
   { name: 'HCL Technologies', symbol: 'HCLTECH', exchange: 'NSE', ticker: 'HCLTECH.NS', currency: '₹' },
   { name: 'Larsen & Toubro', symbol: 'LT', exchange: 'NSE', ticker: 'LT.NS', currency: '₹' },
-  { name: 'Infosys', symbol: 'INFY', exchange: 'BSE', ticker: '500209.BO', currency: '₹' },
+  { name: 'Asian Paints', symbol: 'ASIANPAINT', exchange: 'NSE', ticker: 'ASIANPAINT.NS', currency: '₹' },
+  { name: 'Nestle India', symbol: 'NESTLEIND', exchange: 'NSE', ticker: 'NESTLEIND.NS', currency: '₹' },
+  { name: 'Tech Mahindra', symbol: 'TECHM', exchange: 'NSE', ticker: 'TECHM.NS', currency: '₹' },
+  { name: 'ONGC', symbol: 'ONGC', exchange: 'NSE', ticker: 'ONGC.NS', currency: '₹' },
+  { name: 'NTPC', symbol: 'NTPC', exchange: 'NSE', ticker: 'NTPC.NS', currency: '₹' },
+  { name: 'Power Grid', symbol: 'POWERGRID', exchange: 'NSE', ticker: 'POWERGRID.NS', currency: '₹' },
+  // BSE
   { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'BSE', ticker: '500325.BO', currency: '₹' },
-  { name: 'TCS', symbol: 'TCS', exchange: 'BSE', ticker: '532540.BO', currency: '₹' },
+  { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'BSE', ticker: '532540.BO', currency: '₹' },
+  { name: 'Infosys', symbol: 'INFY', exchange: 'BSE', ticker: '500209.BO', currency: '₹' },
+  { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'BSE', ticker: '500180.BO', currency: '₹' },
+  { name: 'Wipro', symbol: 'WIPRO', exchange: 'BSE', ticker: '507685.BO', currency: '₹' },
+  { name: 'State Bank of India', symbol: 'SBIN', exchange: 'BSE', ticker: '500112.BO', currency: '₹' },
+  // US
   { name: 'Apple', symbol: 'AAPL', exchange: 'NASDAQ', ticker: 'AAPL', currency: '$' },
   { name: 'Microsoft', symbol: 'MSFT', exchange: 'NASDAQ', ticker: 'MSFT', currency: '$' },
   { name: 'Google', symbol: 'GOOGL', exchange: 'NASDAQ', ticker: 'GOOGL', currency: '$' },
@@ -35,29 +46,32 @@ const STOCKS = [
   { name: 'Meta', symbol: 'META', exchange: 'NASDAQ', ticker: 'META', currency: '$' },
   { name: 'Netflix', symbol: 'NFLX', exchange: 'NASDAQ', ticker: 'NFLX', currency: '$' },
   { name: 'AMD', symbol: 'AMD', exchange: 'NASDAQ', ticker: 'AMD', currency: '$' },
+  { name: 'Intel', symbol: 'INTC', exchange: 'NASDAQ', ticker: 'INTC', currency: '$' },
+  { name: 'JPMorgan Chase', symbol: 'JPM', exchange: 'NYSE', ticker: 'JPM', currency: '$' },
+  { name: 'Berkshire Hathaway', symbol: 'BRK-B', exchange: 'NYSE', ticker: 'BRK-B', currency: '$' },
 ];
 
 const STRATEGIES = [
-  { id: 1, name: 'Golden Cross', description: 'SMA 50 crosses above SMA 200 — classic long-term bullish signal' },
-  { id: 2, name: 'RSI Oversold Bounce', description: 'RSI below 30 signals oversold conditions — potential reversal' },
-  { id: 3, name: 'MACD Crossover', description: 'MACD line crosses signal line — momentum shift indicator' },
-  { id: 4, name: 'Bollinger Band Breakout', description: 'Price breaks above upper band — strong momentum signal' },
-  { id: 5, name: 'Mean Reversion', description: 'Price far from moving average — expects return to mean' },
-  { id: 6, name: 'Momentum Trading', description: 'Buy stocks showing strong upward price momentum' },
-  { id: 7, name: 'Breakout Trading', description: 'Buy when price breaks key resistance with volume' },
-  { id: 8, name: 'Trend Following', description: 'Follow the primary trend using multiple timeframe analysis' },
-  { id: 9, name: 'Volume Price Analysis', description: 'Confirms price moves with volume for stronger signals' },
-  { id: 10, name: 'Support & Resistance', description: 'Trade bounces off key price levels' },
-  { id: 11, name: 'EMA Ribbon', description: 'Multiple EMAs show trend strength and direction' },
-  { id: 12, name: 'Stochastic Oscillator', description: 'Compares closing price to price range over time' },
-  { id: 13, name: 'ATR Breakout', description: 'Uses Average True Range to identify volatility breakouts' },
-  { id: 14, name: 'Inside Bar Pattern', description: 'Consolidation pattern before a major price move' },
-  { id: 15, name: 'VWAP Strategy', description: 'Trade relative to Volume Weighted Average Price' },
-  { id: 16, name: 'Death Cross Reversal', description: 'SMA 50 crosses below SMA 200 — bearish signal to short' },
-  { id: 17, name: 'RSI Divergence', description: 'Price and RSI move in opposite directions — reversal signal' },
-  { id: 18, name: 'Gap Fill Strategy', description: 'Stocks tend to fill price gaps — fade the gap open' },
-  { id: 19, name: 'Swing High/Low', description: 'Trade between swing highs and lows in a range' },
-  { id: 20, name: 'Fibonacci Retracement', description: 'Buy at key Fibonacci levels during a pullback' },
+  { id: 1,  name: 'Golden Cross',           description: 'SMA 50 crosses above SMA 200 — classic long-term bullish signal' },
+  { id: 2,  name: 'RSI Oversold Bounce',    description: 'RSI below 30 signals oversold conditions — potential reversal' },
+  { id: 3,  name: 'MACD Crossover',         description: 'MACD line crosses signal line — momentum shift indicator' },
+  { id: 4,  name: 'Bollinger Band Breakout',description: 'Price breaks above upper band — strong momentum signal' },
+  { id: 5,  name: 'Mean Reversion',         description: 'Price far from moving average — expects return to mean' },
+  { id: 6,  name: 'Momentum Trading',       description: 'Buy stocks showing strong upward price momentum' },
+  { id: 7,  name: 'Breakout Trading',       description: 'Buy when price breaks key resistance with volume' },
+  { id: 8,  name: 'Trend Following',        description: 'Follow the primary trend using multiple timeframe analysis' },
+  { id: 9,  name: 'Volume Price Analysis',  description: 'Confirms price moves with volume for stronger signals' },
+  { id: 10, name: 'Support & Resistance',   description: 'Trade bounces off key price levels' },
+  { id: 11, name: 'EMA Ribbon',             description: 'Multiple EMAs show trend strength and direction' },
+  { id: 12, name: 'Stochastic Oscillator',  description: 'Compares closing price to price range over time' },
+  { id: 13, name: 'ATR Breakout',           description: 'Uses Average True Range to identify volatility breakouts' },
+  { id: 14, name: 'Inside Bar Pattern',     description: 'Consolidation pattern before a major price move' },
+  { id: 15, name: 'VWAP Strategy',          description: 'Trade relative to Volume Weighted Average Price' },
+  { id: 16, name: 'Death Cross Reversal',   description: 'SMA 50 crosses below SMA 200 — bearish signal to short' },
+  { id: 17, name: 'RSI Divergence',         description: 'Price and RSI move in opposite directions — reversal signal' },
+  { id: 18, name: 'Gap Fill Strategy',      description: 'Stocks tend to fill price gaps — fade the gap open' },
+  { id: 19, name: 'Swing High/Low',         description: 'Trade between swing highs and lows in a range' },
+  { id: 20, name: 'Fibonacci Retracement',  description: 'Buy at key Fibonacci levels during a pullback' },
 ];
 
 export default function Home() {
@@ -75,16 +89,20 @@ export default function Home() {
   const { data: chartData } = useSWR(`/api/v1/chart/${ticker}`, fetcher);
   const { data: analysis } = useSWR(`/api/v1/analyze/${ticker}`, fetcher);
 
+  // Search suggestions
   useEffect(() => {
     if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     const q = input.trim().toLowerCase();
     const filtered = STOCKS.filter(s =>
-      s.name.toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q) || s.ticker.toLowerCase().includes(q)
+      s.name.toLowerCase().includes(q) ||
+      s.symbol.toLowerCase().includes(q) ||
+      s.ticker.toLowerCase().includes(q)
     ).slice(0, 8);
     setSuggestions(filtered);
     setShowSuggestions(true);
   }, [input]);
 
+  // Chart
   useEffect(() => {
     if (!chartData || !chartRef.current) return;
     if (!Array.isArray(chartData) || chartData.length === 0) return;
@@ -101,8 +119,10 @@ export default function Home() {
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
         .map((d: any) => ({
           time: d.date?.toString().slice(0, 10),
-          open: parseFloat(d.open), high: parseFloat(d.high),
-          low: parseFloat(d.low), close: parseFloat(d.close),
+          open: parseFloat(d.open),
+          high: parseFloat(d.high),
+          low: parseFloat(d.low),
+          close: parseFloat(d.close),
         }));
       candleSeries.setData(formattedData);
       chart.timeScale().fitContent();
@@ -118,34 +138,153 @@ export default function Home() {
     setStrategyAnalysis(null);
   };
 
+  // Fixed analyzeStrategy — waits for analysis data before running
   const analyzeStrategy = async (strategy: typeof STRATEGIES[0]) => {
     setSelectedStrategy(strategy);
     setLoadingStrategy(true);
     setStrategyAnalysis(null);
-    await new Promise(r => setTimeout(r, 1500));
-    if (!analysis) { setLoadingStrategy(false); return; }
 
-    const verdict = analysis.verdict;
-    const fiso = analysis.fiso_score;
-    const price = analysis.current_price;
+    // Poll until analysis data is available (up to 10 seconds)
+    let currentAnalysis = analysis;
+    let attempts = 0;
+    while (!currentAnalysis?.fiso_score && attempts < 20) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+      currentAnalysis = analysis;
+    }
 
-    const strategyResults: Record<number, string> = {
-      1: `Golden Cross Analysis for ${ticker}:\n\nThe 50-day SMA vs 200-day SMA relationship is the foundation of this strategy. ${fiso >= 30 ? '✅ BULLISH: The 50 SMA is above the 200 SMA — a confirmed Golden Cross is in effect. This indicates a long-term uptrend.' : '❌ BEARISH: The 50 SMA is below the 200 SMA — no Golden Cross. A Death Cross may be forming.'}\n\nRecommendation: ${fiso >= 50 ? 'This strategy is ACTIVE and working for ' + ticker + '. The long-term trend is your friend. Hold or add to positions on dips.' : 'Golden Cross is NOT ideal right now. Consider RSI Oversold Bounce or Mean Reversion instead as the trend is weak.'}`,
-      2: `RSI Oversold Bounce Analysis for ${ticker}:\n\nRSI measures momentum on a 0-100 scale. Below 30 = oversold, above 70 = overbought.\n\n${fiso >= 30 ? '⚠️ RSI is in neutral zone (30-70). No extreme oversold condition present.' : '✅ RSI is showing oversold conditions — a bounce may be imminent.'}\n\nRecommendation: ${fiso < 30 ? 'PRIME OPPORTUNITY: Stock is oversold. Consider small entry positions with tight stop loss at ' + analysis.stop_loss + '. Target: ' + analysis.target : 'RSI bounce strategy is NOT optimal now. Try Momentum Trading or Trend Following instead.'}`,
-      3: `MACD Crossover Analysis for ${ticker}:\n\nMACD (Moving Average Convergence Divergence) shows momentum shifts when the MACD line crosses its signal line.\n\n${fiso >= 50 ? '✅ BULLISH CROSSOVER: MACD is above its signal line. Momentum is shifting upward.' : '❌ BEARISH: MACD is below signal line. Selling pressure dominates.'}\n\nRecommendation: ${fiso >= 50 ? 'MACD strategy is ACTIVE. Entry near ' + price + ' with target ' + analysis.target + ' and stop at ' + analysis.stop_loss : 'MACD shows bearish momentum. Wait for crossover or use Mean Reversion strategy.'}`,
+    if (!currentAnalysis?.fiso_score) {
+      setStrategyAnalysis('Could not load analysis data. Please wait for the stock data to fully load and try again.');
+      setLoadingStrategy(false);
+      return;
+    }
+
+    const verdict  = currentAnalysis.verdict;
+    const fiso     = currentAnalysis.fiso_score;
+    const price    = currentAnalysis.current_price;
+    const entry    = currentAnalysis.entry;
+    const sl       = currentAnalysis.stop_loss;
+    const target   = currentAnalysis.target;
+    const rr       = currentAnalysis.risk_reward;
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    const fit = fiso >= 60 ? '✅ STRONG FIT' : fiso >= 30 ? '⚠️ MODERATE FIT' : '❌ POOR FIT';
+    const fitDesc = fiso >= 60
+      ? 'This strategy aligns excellently with current conditions. Strong momentum supports this approach.'
+      : fiso >= 30
+      ? 'This strategy can work but conditions are mixed. Use smaller position sizes and tighter stops.'
+      : 'Current conditions do not strongly support this strategy. Consider the alternatives below.';
+
+    const bestStrategy = fiso >= 60
+      ? 'Momentum Trading or Trend Following — strong upward momentum is present.'
+      : fiso >= 30
+      ? 'Mean Reversion or Support & Resistance — sideways action favours range trading.'
+      : 'RSI Oversold Bounce or Fibonacci Retracement — better suited for current weakness.';
+
+    // Specialised reports for strategies 1–3, generic for the rest
+    const specialised: Record<number, string> = {
+      1: `Golden Cross Analysis for ${ticker}
+
+${fiso >= 30
+  ? '✅ BULLISH: The 50-day SMA is above the 200-day SMA — a confirmed Golden Cross is in effect.\n   This indicates a long-term uptrend is established.'
+  : '❌ BEARISH: The 50-day SMA is below the 200-day SMA — no Golden Cross present.\n   A Death Cross may be forming, signalling long-term weakness.'}
+
+📈 Current Conditions:
+FISO Score: ${fiso}/90 — ${verdict}
+Current Price: ${currency}${price}
+
+🎯 Trade Setup:
+Entry:        ${currency}${entry}
+Stop Loss:    ${currency}${sl}
+Target:       ${currency}${target}
+Risk-Reward:  ${rr}
+
+💡 Recommendation:
+${fiso >= 50
+  ? `Golden Cross strategy is ACTIVE for ${ticker}. The long-term trend is your friend.\n   Hold or add to positions on pullbacks toward the 50 SMA.`
+  : `Golden Cross is NOT ideal right now. Consider RSI Oversold Bounce or\n   Mean Reversion until the trend re-establishes itself.`}`,
+
+      2: `RSI Oversold Bounce Analysis for ${ticker}
+
+RSI measures momentum on a 0–100 scale.
+Below 30 = oversold (potential bounce) | Above 70 = overbought (potential pullback)
+
+${fiso < 30
+  ? '✅ RSI OVERSOLD: A bounce may be imminent. This is a prime setup for this strategy.'
+  : fiso >= 60
+  ? '⚠️ RSI OVERBOUGHT ZONE: Stock may be extended. Poor time to initiate new longs.'
+  : '⚠️ RSI NEUTRAL: No extreme reading present. Strategy is not fully triggered.'}
+
+📈 Current Conditions:
+FISO Score: ${fiso}/90 — ${verdict}
+Current Price: ${currency}${price}
+
+🎯 Trade Setup:
+Entry:        ${currency}${entry}
+Stop Loss:    ${currency}${sl}
+Target:       ${currency}${target}
+Risk-Reward:  ${rr}
+
+💡 Recommendation:
+${fiso < 30
+  ? `PRIME OPPORTUNITY: Enter small positions with a tight stop at ${currency}${sl}.\n   Target: ${currency}${target}. Keep position size small — oversold can stay oversold.`
+  : `RSI Bounce strategy is NOT optimal now. Consider Momentum Trading\n   or Trend Following to match the current market phase.`}`,
+
+      3: `MACD Crossover Analysis for ${ticker}
+
+MACD shows momentum shifts when the MACD line crosses its signal line.
+A bullish crossover (MACD above signal) confirms accelerating buying pressure.
+
+${fiso >= 50
+  ? '✅ BULLISH CROSSOVER: MACD is above its signal line — momentum is shifting upward.'
+  : '❌ BEARISH: MACD is below its signal line — selling pressure currently dominates.'}
+
+📈 Current Conditions:
+FISO Score: ${fiso}/90 — ${verdict}
+Current Price: ${currency}${price}
+
+🎯 Trade Setup:
+Entry:        ${currency}${entry}
+Stop Loss:    ${currency}${sl}
+Target:       ${currency}${target}
+Risk-Reward:  ${rr}
+
+💡 Recommendation:
+${fiso >= 50
+  ? `MACD strategy is ACTIVE. Enter near ${currency}${entry}, target ${currency}${target},\n   stop at ${currency}${sl}.`
+  : `MACD shows bearish momentum. Wait for a bullish crossover confirmation\n   before entering, or switch to a Mean Reversion strategy.`}`,
     };
 
-    const genericAnalysis = `${strategy.name} Analysis for ${ticker}:\n\n📊 Strategy Overview:\n${strategy.description}\n\n📈 Current Market Conditions:\nFISO Score: ${fiso}/90 — ${verdict}\nCurrent Price: ${currency}${price}\n\n${fiso >= 60 ? '✅ STRONG FIT: This strategy aligns well with current market conditions for ' + ticker + '. The stock shows strong momentum indicators supporting this approach.' : fiso >= 30 ? '⚠️ MODERATE FIT: This strategy can work but conditions are mixed. Use smaller position sizes and tighter stop losses.' : '❌ POOR FIT: Current conditions do not support this strategy for ' + ticker + '.'}\n\n🎯 Trade Setup:\nEntry: ${currency}${analysis.entry}\nStop Loss: ${currency}${analysis.stop_loss}\nTarget: ${currency}${analysis.target}\nRisk-Reward: ${analysis.risk_reward}\n\n💡 Best Strategy Recommendation:\n${fiso >= 60 ? 'Momentum Trading or Trend Following would be ideal given the strong upward momentum.' : fiso >= 30 ? 'Mean Reversion or Support & Resistance trading suits the current sideways action.' : 'RSI Oversold Bounce or Fibonacci Retracement are better suited for the current weakness.'}`;
+    const result = specialised[strategy.id] ?? `${strategy.name} Analysis for ${ticker}
 
-    setStrategyAnalysis(strategyResults[strategy.id] || genericAnalysis);
+📊 Strategy Overview:
+${strategy.description}
+
+📈 Current Market Conditions:
+FISO Score: ${fiso}/90 — ${verdict}
+Current Price: ${currency}${price}
+
+${fit}: ${fitDesc}
+
+🎯 Trade Setup:
+Entry:        ${currency}${entry}
+Stop Loss:    ${currency}${sl}
+Target:       ${currency}${target}
+Risk-Reward:  ${rr}
+
+💡 Best Strategy for ${ticker} Right Now:
+${bestStrategy}`;
+
+    setStrategyAnalysis(result);
     setLoadingStrategy(false);
   };
 
-  const verdictColor = analysis?.verdict?.includes('Buy') ? 'text-emerald-400' :
-    analysis?.verdict === 'Hold' ? 'text-amber-400' : 'text-red-400';
+  const verdictColor = analysis?.verdict?.includes('Buy') ? 'text-emerald-400'
+    : analysis?.verdict === 'Hold' ? 'text-amber-400' : 'text-red-400';
 
-  const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-emerald-500/30 bg-emerald-500/5' :
-    analysis?.verdict === 'Hold' ? 'border-amber-500/30 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5';
+  const verdictBg = analysis?.verdict?.includes('Buy') ? 'border-emerald-500/30 bg-emerald-500/5'
+    : analysis?.verdict === 'Hold' ? 'border-amber-500/30 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5';
 
   return (
     <div className="min-h-screen bg-gray-950 text-white" style={{ fontFamily: "'Inter', 'SF Pro Display', sans-serif" }}>
@@ -156,10 +295,9 @@ export default function Home() {
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
         <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
-        {/* Grid overlay */}
         <div className="absolute inset-0 opacity-10" style={{
           backgroundImage: 'linear-gradient(rgba(99,102,241,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.3) 1px, transparent 1px)',
-          backgroundSize: '50px 50px'
+          backgroundSize: '50px 50px',
         }} />
       </div>
 
@@ -174,10 +312,12 @@ export default function Home() {
           <h1 className="text-6xl font-black mb-3 bg-gradient-to-r from-white via-blue-200 to-emerald-300 bg-clip-text text-transparent leading-tight">
             QUANTUM TRADE
           </h1>
-          <p className="text-gray-400 text-lg font-light tracking-wide">Next-generation stock intelligence • Real-time analysis • 20 proven strategies</p>
+          <p className="text-gray-400 text-lg font-light tracking-wide">
+            Next-generation stock intelligence • Real-time analysis • 20 proven strategies
+          </p>
         </div>
 
-        {/* Search Bar */}
+        {/* Search */}
         <div className="relative w-full max-w-2xl mb-10">
           <div className="relative">
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400">
@@ -205,8 +345,8 @@ export default function Home() {
                     <span className="text-gray-500 text-sm ml-2 font-mono">{stock.symbol}</span>
                   </div>
                   <span className={`text-xs px-3 py-1 rounded-full font-mono font-bold ${
-                    stock.exchange === 'NSE' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
-                    stock.exchange === 'BSE' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
+                    stock.exchange === 'NSE'    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                    stock.exchange === 'BSE'    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
                     'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                   }`}>{stock.exchange}</span>
                 </div>
@@ -223,7 +363,7 @@ export default function Home() {
               <p className="text-3xl font-black font-mono text-white">{currency}{quote.price}</p>
             </div>
             <div className={`px-4 py-2 rounded-xl font-mono font-bold text-lg ${quote.change_percent > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
-              {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent).toFixed(2)}%
+              {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent ?? 0).toFixed(2)}%
             </div>
             <div className="ml-auto">
               <p className="text-gray-500 text-xs font-mono uppercase tracking-wider mb-1">Symbol</p>
@@ -254,14 +394,18 @@ export default function Home() {
           <div ref={chartRef} className="w-full" />
         </div>
 
-        {/* Strategy Selector */}
+        {/* Strategy Backtester */}
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-8">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-1.5 h-6 bg-gradient-to-b from-purple-400 to-blue-400 rounded-full" />
             <h2 className="text-xl font-bold text-white">Strategy Backtester</h2>
-            <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-1 rounded-full font-mono">20 STRATEGIES</span>
+            <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-1 rounded-full font-mono">
+              20 STRATEGIES
+            </span>
           </div>
-          <p className="text-gray-400 text-sm mb-5">Select a strategy to analyze how it performs on {ticker}</p>
+          <p className="text-gray-400 text-sm mb-5">
+            Select a strategy to see how it fits the current conditions for <span className="text-blue-400 font-mono">{ticker}</span>
+          </p>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
             {STRATEGIES.map((strategy) => (
@@ -280,29 +424,31 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Strategy Result */}
           {loadingStrategy && (
             <div className="bg-black/30 rounded-xl p-6 flex items-center gap-4">
               <div className="w-6 h-6 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-              <p className="text-gray-400">Analyzing {selectedStrategy?.name} strategy on {ticker}...</p>
+              <p className="text-gray-400">
+                Analysing <span className="text-purple-300">{selectedStrategy?.name}</span> on {ticker}...
+              </p>
             </div>
           )}
 
           {strategyAnalysis && !loadingStrategy && (
             <div className="bg-black/30 border border-purple-500/20 rounded-xl p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-purple-400 font-mono text-sm uppercase tracking-wider">Strategy Report — {selectedStrategy?.name}</span>
-              </div>
-              <pre className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed font-sans">{strategyAnalysis}</pre>
+              <p className="text-purple-400 font-mono text-xs uppercase tracking-wider mb-4">
+                Strategy Report — {selectedStrategy?.name}
+              </p>
+              <pre className="text-gray-300 text-sm whitespace-pre-wrap leading-relaxed font-sans">
+                {strategyAnalysis}
+              </pre>
             </div>
           )}
         </div>
 
-        {/* Intelligent Assistant — Full Detailed Version */}
+        {/* Intelligent Assistant */}
         {analysis && !analysis.error && analysis.verdict && (
           <div className={`border rounded-2xl p-8 mb-8 backdrop-blur-xl ${verdictBg}`}>
 
-            {/* Header */}
             <div className="flex items-center gap-3 mb-8">
               <div className="w-1.5 h-8 bg-gradient-to-b from-emerald-400 to-blue-400 rounded-full" />
               <div>
@@ -311,58 +457,54 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Verdict */}
+            {/* Verdict + confidence */}
             <div className="flex items-center gap-6 mb-8">
               <div className={`text-6xl font-black ${verdictColor}`}>{analysis.verdict}</div>
               <div>
-                <p className="text-gray-400 text-sm mb-1">Confidence Level</p>
+                <p className="text-gray-400 text-sm mb-2">Confidence Level</p>
                 <div className="flex gap-1">
                   {[1,2,3,4,5].map(i => (
-                    <div key={i} className={`w-8 h-2 rounded-full ${i <= Math.ceil(analysis.fiso_score/18) ? 'bg-emerald-400' : 'bg-gray-800'}`} />
+                    <div key={i} className={`w-8 h-2 rounded-full ${i <= Math.ceil(analysis.fiso_score / 18) ? 'bg-emerald-400' : 'bg-gray-800'}`} />
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* FISO Score Full */}
+            {/* FISO Score */}
             <div className="bg-black/30 rounded-2xl p-6 mb-6">
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <h3 className="font-bold text-white text-lg">FISO Score</h3>
                   <p className="text-gray-500 text-xs mt-1">(Fundamental Indicator Strength Oscillator)</p>
                 </div>
-                <span className={`text-4xl font-black font-mono ${verdictColor}`}>{analysis.fiso_score}<span className="text-lg text-gray-600">/90</span></span>
+                <span className={`text-4xl font-black font-mono ${verdictColor}`}>
+                  {analysis.fiso_score}<span className="text-lg text-gray-600">/90</span>
+                </span>
               </div>
               <div className="w-full bg-gray-900 rounded-full h-3 mb-3">
-                <div className="h-3 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-emerald-300 transition-all duration-1000"
-                  style={{ width: `${(analysis.fiso_score / 90) * 100}%` }} />
+                <div
+                  className="h-3 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-emerald-300 transition-all duration-1000"
+                  style={{ width: `${(analysis.fiso_score / 90) * 100}%` }}
+                />
               </div>
               <div className="grid grid-cols-3 gap-4 mt-4">
-                <div className="text-center">
-                  <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Trend Score</p>
-                  <p className={`text-2xl font-bold font-mono ${analysis.fiso_score >= 30 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {analysis.fiso_score >= 30 ? '30' : '0'}<span className="text-gray-600 text-sm">/30</span>
-                  </p>
-                  <p className="text-gray-600 text-xs mt-1">SMA 50 vs SMA 200</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Momentum</p>
-                  <p className={`text-2xl font-bold font-mono ${analysis.fiso_score >= 45 ? 'text-emerald-400' : analysis.fiso_score >= 30 ? 'text-amber-400' : 'text-red-400'}`}>
-                    {analysis.fiso_score >= 60 ? '30' : analysis.fiso_score >= 30 ? '15' : '0'}<span className="text-gray-600 text-sm">/30</span>
-                  </p>
-                  <p className="text-gray-600 text-xs mt-1">RSI 14</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Signal</p>
-                  <p className={`text-2xl font-bold font-mono ${analysis.fiso_score >= 60 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {analysis.fiso_score >= 60 ? '30' : '0'}<span className="text-gray-600 text-sm">/30</span>
-                  </p>
-                  <p className="text-gray-600 text-xs mt-1">MACD Cross</p>
-                </div>
+                {[
+                  { label: 'Trend Score', sub: 'SMA 50 vs SMA 200', score: analysis.fiso_score >= 30 ? 30 : 0, max: 30 },
+                  { label: 'Momentum',    sub: 'RSI 14',            score: analysis.fiso_score >= 60 ? 30 : analysis.fiso_score >= 30 ? 15 : 0, max: 30 },
+                  { label: 'Signal',      sub: 'MACD Cross',        score: analysis.fiso_score >= 60 ? 30 : 0, max: 30 },
+                ].map(({ label, sub, score, max }) => (
+                  <div key={label} className="text-center">
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">{label}</p>
+                    <p className={`text-2xl font-bold font-mono ${score > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {score}<span className="text-gray-600 text-sm">/{max}</span>
+                    </p>
+                    <p className="text-gray-600 text-xs mt-1">{sub}</p>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Technical Analysis Explanation */}
+            {/* Technical breakdown */}
             <div className="bg-black/30 rounded-2xl p-6 mb-6">
               <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-blue-400">📊</span> Technical Analysis Breakdown
@@ -370,44 +512,64 @@ export default function Home() {
               <div className="space-y-4 text-sm text-gray-300 leading-relaxed">
                 <div className="flex gap-3">
                   <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${analysis.fiso_score >= 30 ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                  <p><span className="text-white font-semibold">Trend (SMA 50/200):</span> {analysis.fiso_score >= 30 ? `The 50-day moving average is trading above the 200-day moving average for ${ticker}. This is the famous "Golden Cross" formation — historically one of the most reliable bullish signals in technical analysis. It confirms that the medium-term momentum is stronger than the long-term baseline.` : `The 50-day moving average has crossed below the 200-day moving average — known as the "Death Cross". This bearish formation suggests the medium-term trend has weakened below the long-term baseline for ${ticker}.`}</p>
+                  <p>
+                    <span className="text-white font-semibold">Trend (SMA 50/200): </span>
+                    {analysis.fiso_score >= 30
+                      ? `The 50-day moving average is above the 200-day moving average for ${ticker}. This is the "Golden Cross" — historically one of the most reliable bullish signals. It confirms that medium-term momentum is stronger than the long-term baseline.`
+                      : `The 50-day SMA has crossed below the 200-day SMA — a "Death Cross". This bearish formation suggests medium-term momentum has weakened below the long-term baseline for ${ticker}.`}
+                  </p>
                 </div>
                 <div className="flex gap-3">
                   <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${analysis.fiso_score >= 45 ? 'bg-emerald-400' : analysis.fiso_score >= 30 ? 'bg-amber-400' : 'bg-red-400'}`} />
-                  <p><span className="text-white font-semibold">Momentum (RSI 14):</span> {analysis.fiso_score >= 60 ? `RSI is in the neutral-to-bullish zone (30-70). The stock has healthy buying momentum without being overbought. This is the ideal RSI range for initiating or holding long positions.` : analysis.fiso_score >= 30 ? `RSI is neutral. The stock is neither oversold nor overbought, indicating a period of consolidation. Watch for a directional breakout.` : `RSI indicates oversold conditions (below 30). While this can signal a potential bounce, in a strong downtrend oversold can stay oversold. Wait for RSI to turn upward before entering.`}</p>
+                  <p>
+                    <span className="text-white font-semibold">Momentum (RSI 14): </span>
+                    {analysis.fiso_score >= 60
+                      ? `RSI is in the neutral-to-bullish zone (30–70). Healthy buying momentum without being overbought — the ideal range for initiating or holding long positions.`
+                      : analysis.fiso_score >= 30
+                      ? `RSI is neutral. The stock is consolidating. Watch for a directional breakout.`
+                      : `RSI indicates oversold conditions. While a bounce is possible, in strong downtrends oversold can stay oversold. Wait for RSI to turn upward before entering.`}
+                  </p>
                 </div>
                 <div className="flex gap-3">
                   <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${analysis.fiso_score >= 60 ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                  <p><span className="text-white font-semibold">Signal (MACD):</span> {analysis.fiso_score >= 60 ? `The MACD line is above its signal line, confirming bullish momentum. This crossover shows that buying pressure is accelerating and the trend is strengthening for ${ticker}.` : `The MACD line is below its signal line. Selling momentum currently dominates. A bullish MACD crossover would be a key confirmation signal to watch for before entering longs.`}</p>
+                  <p>
+                    <span className="text-white font-semibold">Signal (MACD): </span>
+                    {analysis.fiso_score >= 60
+                      ? `The MACD line is above its signal line — buying pressure is accelerating and the trend is strengthening for ${ticker}.`
+                      : `The MACD line is below its signal line. Selling momentum dominates. A bullish MACD crossover would be the key confirmation to watch for.`}
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Global News Context */}
+            {/* Market context */}
             <div className="bg-black/30 rounded-2xl p-6 mb-6">
               <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                 <span className="text-amber-400">🌐</span> Market Context & News Sentiment
               </h3>
               <div className="space-y-3 text-sm text-gray-300">
-                <p className="leading-relaxed">Based on current technical positioning of <span className="text-blue-300 font-semibold">{ticker}</span>, the stock is showing <span className={`font-semibold ${verdictColor}`}>{analysis.verdict.toLowerCase()}</span> signals. Global macro factors currently influencing this sector include interest rate expectations, FII/DII flows for Indian markets, and broader risk sentiment in equity markets.</p>
+                <p className="leading-relaxed">
+                  Based on the current technical positioning of <span className="text-blue-300 font-semibold">{ticker}</span>,
+                  the stock is showing <span className={`font-semibold ${verdictColor}`}>{analysis.verdict.toLowerCase()}</span> signals.
+                  Global macro factors currently influencing this sector include interest rate expectations,
+                  FII/DII flows for Indian markets, and broader risk-on/risk-off sentiment in global equities.
+                </p>
                 <div className="grid grid-cols-3 gap-3 mt-4">
-                  <div className="bg-white/5 rounded-xl p-3 text-center">
-                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Sector Trend</p>
-                    <p className={`font-bold ${analysis.fiso_score >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>{analysis.fiso_score >= 50 ? 'Bullish' : 'Bearish'}</p>
-                  </div>
-                  <div className="bg-white/5 rounded-xl p-3 text-center">
-                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Volatility</p>
-                    <p className="font-bold text-amber-400">Moderate</p>
-                  </div>
-                  <div className="bg-white/5 rounded-xl p-3 text-center">
-                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Volume Signal</p>
-                    <p className={`font-bold ${analysis.fiso_score >= 60 ? 'text-emerald-400' : 'text-gray-400'}`}>{analysis.fiso_score >= 60 ? 'Strong' : 'Weak'}</p>
-                  </div>
+                  {[
+                    { label: 'Sector Trend', value: analysis.fiso_score >= 50 ? 'Bullish' : 'Bearish', color: analysis.fiso_score >= 50 ? 'text-emerald-400' : 'text-red-400' },
+                    { label: 'Volatility',   value: 'Moderate', color: 'text-amber-400' },
+                    { label: 'Volume Signal',value: analysis.fiso_score >= 60 ? 'Strong' : 'Weak', color: analysis.fiso_score >= 60 ? 'text-emerald-400' : 'text-gray-400' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="bg-white/5 rounded-xl p-3 text-center">
+                      <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">{label}</p>
+                      <p className={`font-bold ${color}`}>{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Trade Setup */}
+            {/* Trade setup */}
             <div className="bg-black/30 rounded-2xl p-6">
               <h3 className="font-bold text-white mb-5 flex items-center gap-2">
                 <span className="text-emerald-400">🎯</span> Trade Setup
@@ -435,7 +597,9 @@ export default function Home() {
               <div className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
                 <p className="text-gray-400 text-sm mb-1">Risk-Reward Ratio</p>
                 <p className="text-3xl font-black text-emerald-400">{analysis.risk_reward}</p>
-                <p className="text-gray-600 text-xs mt-1">For every {currency}1 risked, potential gain of {currency}2</p>
+                <p className="text-gray-600 text-xs mt-1">
+                  For every {currency}1 risked, potential gain of {currency}2
+                </p>
               </div>
             </div>
           </div>
