@@ -8,8 +8,7 @@ const STOCKS = [
   // NSE
   { name: 'Reliance Industries', symbol: 'RELIANCE', exchange: 'NSE', ticker: 'RELIANCE.NS', currency: '₹' },
   { name: 'Tata Consultancy Services', symbol: 'TCS', exchange: 'NSE', ticker: 'TCS.NS', currency: '₹' },
-  { name: 'Tata Motors (Commercial)', symbol: 'TATAMOTORS', exchange: 'NSE', ticker: 'TATAMOTORS.NS', currency: '₹' },
-  { name: 'Tata Motors (TMPV)', symbol: 'TMPV', exchange: 'NSE', ticker: 'TATAMTRDVR.NS', currency: '₹' },
+  // TATAMOTORS.NS HAS BEEN REMOVED ACCORDING TO PROMPT
   { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'NSE', ticker: 'HDFCBANK.NS', currency: '₹' },
   { name: 'ICICI Bank', symbol: 'ICICIBANK', exchange: 'NSE', ticker: 'ICICIBANK.NS', currency: '₹' },
   { name: 'Infosys', symbol: 'INFY', exchange: 'NSE', ticker: 'INFY.NS', currency: '₹' },
@@ -119,10 +118,10 @@ const HoverStockCard = ({ stock, onSelect }: { stock: typeof STOCKS[0], onSelect
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => onSelect(stock)}
-      className="relative border border-amber-500/30 bg-[#0a0500]/40 backdrop-blur-md p-5 hover:bg-amber-900/40 hover:border-amber-400 transition-all duration-300 cursor-pointer group rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.05)]"
+      className="relative border border-amber-500/20 bg-[#0a0500]/30 backdrop-blur-md p-5 hover:bg-amber-900/40 hover:border-amber-400 transition-all duration-300 cursor-pointer group rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.05)]"
     >
       <div className="flex justify-between items-start mb-2">
-        <span className="text-[11px] font-mono font-bold text-amber-500 group-hover:text-amber-300 transition-colors uppercase tracking-widest">{stock.symbol}</span>
+        <span className="text-[11px] font-mono font-bold text-amber-50 group-hover:text-amber-200 transition-colors uppercase tracking-widest">{stock.symbol}</span>
       </div>
       <h3 className="font-bold text-sm text-gray-200 line-clamp-1 font-['Rajdhani'] uppercase tracking-wider">{stock.name}</h3>
 
@@ -293,7 +292,7 @@ export default function Home() {
 
         <div className="relative z-10 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col justify-center min-h-[90vh]">
           
-          {/* 2. CENTERED HEADER & SEARCH (Restored to Terminal Layout) */}
+          {/* 2. MINIMAL HEADER & SEARCH (Restored to Terminal Layout, Unfunctional Nav Removed) */}
           <div className="flex flex-col items-center text-center mb-12">
             <h1 className="text-6xl sm:text-7xl md:text-8xl font-black tracking-widest uppercase leading-none cursor-pointer text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-orange-400 to-yellow-500 drop-shadow-[0_0_20px_rgba(245,158,11,0.6)] font-['Orbitron'] mb-4" onClick={() => setTicker(null)}>
               SignalX
@@ -328,7 +327,7 @@ export default function Home() {
 
           {/* 3. HOME OVERVIEW (No Ticker) */}
           {!ticker && (
-            <div className="animate-in fade-in duration-500 flex-1 w-full max-w-5xl mx-auto">
+            <div className="animate-in fade-in duration-500 flex-1">
               <div className="flex justify-center gap-4 mb-10 overflow-x-auto no-scrollbar pb-2">
                  <button 
                     onClick={() => setActiveCategory(activeCategory === 'INDIA' ? null : 'INDIA')}
@@ -363,7 +362,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* 4. DASHBOARD ALGORITHMIC GRID (Ticker Selected) */}
+          {/* 4. DASHBOARD BENTO GRID (Ticker Selected) */}
           {ticker && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
               
@@ -431,7 +430,7 @@ export default function Home() {
                     <h3 className="text-[11px] font-bold text-amber-400 tracking-[0.2em] uppercase mb-6 border-b border-amber-500/20 pb-2 font-['Orbitron']">Global NLP Feed</h3>
                     <div className="mb-6">
                       <span className={`inline-block px-3 py-1.5 rounded text-[11px] font-black uppercase tracking-[0.2em] border font-['Orbitron'] ${
-                          analysis?.sentiment?.label === 'Bullish' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+                          analysis?.sentiment?.label === 'Bullish' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' :
                           analysis?.sentiment?.label === 'Bearish' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-white/10 text-gray-200 border-white/20'
                       }`}>
                         {analysis?.sentiment?.label || 'ANALYZING...'} [{analysis?.sentiment?.score || 0}]
