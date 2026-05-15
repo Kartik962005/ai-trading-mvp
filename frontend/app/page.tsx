@@ -59,25 +59,21 @@ const MarketAssetCard = ({
     }
   }, [stock, onSelect]);
 
-  // Only hit the API if we have no prefetched data yet
+  // Only hit the API if no prefetched data exists yet
   const { data: fetchedAnalysis } = useSWR(
     expanded && !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
     fetcher
   );
 
-  // Prefer prefetched; fall back to on-demand fetch
   const analysis = prefetchedAnalysis ?? fetchedAnalysis;
   const isReady = !!analysis && !analysis.error;
-  const isPrefetching = !analysis; // still loading in background
-
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
   const verdictColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
-
-  // Mini verdict dot shown even before hover when prefetch is done
   const dotColor = isReady
     ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
     : 'bg-zinc-700 animate-pulse';
+  const barColor = isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171';
 
   return (
     <div
@@ -90,24 +86,19 @@ const MarketAssetCard = ({
       <div className="flex justify-between items-start mb-2">
         <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
         <div className="flex items-center gap-1.5">
-          {/* Live verdict dot — green/red/grey based on prefetch status */}
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysis.verdict : 'Loading...'} />
+          {/* Verdict dot — green/red/grey, visible even before hover */}
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-500 ${dotColor}`} />
           <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
         </div>
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
 
-      {/* FISO score mini-bar shown even before hover if prefetch is done */}
+      {/* Mini FISO bar + verdict label — shown collapsed when data is ready */}
       {isReady && !expanded && (
         <div className="mt-2 flex items-center gap-2">
           <div className="flex-1 h-0.5 bg-white/5 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-1000"
-              style={{
-                width: `${analysis.fiso_score}%`,
-                backgroundColor: isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171',
-              }}
-            />
+            <div className="h-full rounded-full transition-all duration-1000"
+              style={{ width: `${analysis.fiso_score}%`, backgroundColor: barColor }} />
           </div>
           <span className={`text-[9px] font-bold font-['JetBrains_Mono'] ${verdictColor}`}>
             {analysis.verdict?.replace('Strong ', '')}
@@ -149,9 +140,7 @@ const MarketAssetCard = ({
         ) : (
           <div className="flex items-center justify-center py-4 gap-2">
             <div className="w-3 h-3 border border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0" />
-            <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">
-              {isPrefetching ? 'LOADING...' : 'INITIALIZING...'}
-            </span>
+            <span className="text-[10px] text-cyan-500/70 font-['JetBrains_Mono'] tracking-widest animate-pulse">LOADING...</span>
           </div>
         )}
       </div>
@@ -627,33 +616,44 @@ export default function Home() {
     return [];
   };
 
-  // ── Prefetch cache: ticker → analysis result ──────────────────────────────
+  // ── Prefetch cache: stores analysis results keyed by ticker ───────────────
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
   const prefetchedRef = useRef<Set<string>>(new Set());
 
-  // Prefetch all visible cards for the active market tab, staggered to avoid
-  // hammering the backend. Results are cached so hover is instant.
+  // On mount + every market tab change: eagerly fetch first 8 cards immediately,
+  // then remaining 16 lazily (they load on hover, but backend cache makes them fast)
   useEffect(() => {
     const visibleStocks = getMarketStocks();
-    const toFetch = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker));
-    if (toFetch.length === 0) return;
+    // First 8 = eager (prefetched now), next 16 = lazy (load on hover but hit backend cache)
+    const eager = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker)).slice(0, 8);
+    const lazy  = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker)).slice(8);
 
-    // Mark them as queued immediately so tab switches don't re-queue
-    toFetch.forEach(s => prefetchedRef.current.add(s.ticker));
+    // Mark all 24 as queued so tab switches don't re-queue
+    [...eager, ...lazy].forEach(s => prefetchedRef.current.add(s.ticker));
 
-    toFetch.forEach((stock, i) => {
+    // Fetch eager cards immediately with 350ms stagger
+    eager.forEach((stock, i) => {
       setTimeout(async () => {
         try {
           const res = await fetch(`${BACKEND}/api/v1/analyze/${stock.ticker}`);
           if (!res.ok) return;
           const data = await res.json();
-          if (data && !data.error) {
-            setPrefetchCache(prev => ({ ...prev, [stock.ticker]: data }));
-          }
-        } catch {
-          // silently ignore — card will fall back to on-demand fetch on hover
-        }
-      }, i * 400); // 400ms stagger = 24 stocks complete in ~10s background
+          if (data && !data.error) setPrefetchCache(prev => ({ ...prev, [stock.ticker]: data }));
+        } catch { /* silent fail — card falls back to on-demand */ }
+      }, i * 350);
+    });
+
+    // Fetch lazy cards after a 4s delay with 300ms stagger (warms backend cache
+    // so hover feels instant even though UI doesn't show them until hovered)
+    lazy.forEach((stock, i) => {
+      setTimeout(async () => {
+        try {
+          const res = await fetch(`${BACKEND}/api/v1/analyze/${stock.ticker}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data && !data.error) setPrefetchCache(prev => ({ ...prev, [stock.ticker]: data }));
+        } catch { /* silent fail */ }
+      }, 4000 + i * 300);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMarket]);

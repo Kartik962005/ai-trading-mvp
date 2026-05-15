@@ -9,7 +9,12 @@ import html
 import re
 import math
 import numpy as np
+import time
 from datetime import datetime, timedelta
+
+# ── In-memory analysis cache — reuse computed results for 1 hour ──────────────
+_analysis_cache: dict = {}
+ANALYSIS_TTL = 3600  # 1 hour
 
 def fetch_news_sentiment(ticker: str):
     try:
@@ -230,6 +235,12 @@ def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     return sorted_evals, best_id
 
 def run_analysis(df: pd.DataFrame, ticker: str):
+    # ── Cache check — return stored result if fresh ────────────────────────────
+    now = time.time()
+    if ticker in _analysis_cache and now - _analysis_cache[ticker]['ts'] < ANALYSIS_TTL:
+        print(f"[Analysis] Cache hit for {ticker}")
+        return _analysis_cache[ticker]['result']
+
     df.columns = [str(c).lower() for c in df.columns]
     df = df.dropna(subset=['close', 'high', 'low', 'volume'])
     df = df.reset_index(drop=True)
@@ -298,7 +309,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
 
     sorted_evals, best_id = evaluate_strategies(latest, prev, df)
 
-    return {
+    result = {
         "ticker": ticker,
         "fiso_score": round(fiso, 2),
         "verdict": verdict,
@@ -307,9 +318,15 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "target": round(target, 2),
         "current_price": round(float(latest['close']), 2),
         "sentiment": sentiment,
-        "strategy_evals": sorted_evals,        # now a list, sorted best→worst
+        "strategy_evals": sorted_evals,
         "best_strategy_id": best_id,
         "confidence": round(confidence, 2),
         "estimated_days": estimated_days,
         "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y')
     }
+
+    # ── Store in cache ─────────────────────────────────────────────────────────
+    _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+    print(f"[Analysis] Cached {ticker} (FISO: {round(fiso, 2)})")
+
+    return result
