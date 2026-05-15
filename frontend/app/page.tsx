@@ -174,7 +174,8 @@ export default function Home() {
     setIsBacktesting(true);
     setBacktestResult(null);
     try {
-      const res = await fetch('https://ai-trading-backend-jhcl.onrender.com/api/v1/backtest/custom', {
+      // Pointing to LOCALHOST instead of Render for testing!
+      const res = await fetch('http://127.0.0.1:8000/api/v1/backtest/custom', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker: ticker, prompt: aiPrompt })
@@ -183,6 +184,7 @@ export default function Home() {
       setBacktestResult(data);
     } catch (err) {
       console.error("Backtest failed", err);
+      setBacktestResult({ error: "Failed to connect to backend server." });
     } finally {
       setIsBacktesting(false);
     }
@@ -543,8 +545,10 @@ export default function Home() {
                 {/* Results Display */}
                 {backtestResult && (
                   <div className="p-4 rounded-xl border border-white/10 bg-white/5 animate-in fade-in zoom-in-95 duration-300">
-                    {backtestResult.error ? (
-                      <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">{backtestResult.error}</p>
+                    {backtestResult.error || backtestResult.detail ? (
+                      <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">
+                        {backtestResult.error || (typeof backtestResult.detail === 'string' ? backtestResult.detail : "Server Error. Check your Python terminal.")}
+                      </p>
                     ) : (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
