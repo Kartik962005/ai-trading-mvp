@@ -76,20 +76,51 @@ class BacktestRequest(BaseModel):
     ticker: str
     prompt: str
 
+from pydantic import BaseModel
+from app.strategies.nlp_backtester import run_custom_backtest
+from app.strategies.engine import evaluate_strategies
+
+class BacktestRequest(BaseModel):
+    ticker: str
+    prompt: str
+
 @app.post("/api/v1/backtest/custom")
-@limiter.limit("5/minute") # Prevent spam on your free LLM tier
+@limiter.limit("10/minute")
 async def custom_backtest(request: Request, body: BacktestRequest):
     try:
-        # Fetch data using your existing yfinance function
         df = get_historical_data(body.ticker) 
         
-        # Ensure your indicators (SMA, RSI, etc) are calculated on this df first!
-        # (You can copy the indicator calculations from run_analysis in engine.py)
+        # 1. Evaluate custom prompt (If user types "find best strategy", this safely returns an error but doesn't crash)
+        custom_result = run_custom_backtest(df, body.prompt)
         
-        result = run_custom_backtest(df, body.prompt)
-        return result
+        # 2. Add indicators required for the predefined strategies
+        import ta
+        df['SMA_50']  = ta.trend.sma_indicator(df['close'], window=50)
+        df['SMA_200'] = ta.trend.sma_indicator(df['close'], window=200)
+        df['EMA_20']  = ta.trend.ema_indicator(df['close'], window=20)
+        df['EMA_50']  = ta.trend.ema_indicator(df['close'], window=50)
+        df['RSI_14']  = ta.momentum.rsi(df['close'], window=14)
+        df['MACD']    = ta.trend.macd(df['close'])
+        df['MACD_signal'] = ta.trend.macd_signal(df['close'])
+        df['VWAP'] = ta.volume.volume_weighted_average_price(df['high'], df['low'], df['close'], df['volume'], window=14)
+        df['VOL_SMA_20'] = df['volume'].rolling(window=20).mean()
+        df['ATR_14']  = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=14)
+        df['BBU_14_2.0'] = ta.volatility.bollinger_hband(df['close'], window=14, window_dev=2)
+        df['BBL_14_2.0'] = ta.volatility.bollinger_lband(df['close'], window=14, window_dev=2)
+        df = df.dropna()
+
+        # 3. Get all strategies and slice top 20
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+        all_strategies, best_id = evaluate_strategies(latest, prev, df)
+        top_20 = all_strategies[:20]
+
+        return {
+            "custom_metrics": custom_result,
+            "top_20": top_20
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-# =====================================================================
 
 print("✅ FastAPI started - visit http://localhost:8000/health")

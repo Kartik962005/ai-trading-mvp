@@ -384,10 +384,11 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Master Verdict Block */}
+                {/* Master Verdict Block (Now includes NLP Feed) */}
                 {analysis && !analysis.error && (
-                  <div className={`lg:col-span-4 rounded-3xl border backdrop-blur-2xl p-8 flex flex-col justify-between shadow-[0_8px_30px_rgba(0,0,0,0.5)] ${bgAccent}`}>
-                    <div>
+                  <div className="lg:col-span-4 flex flex-col gap-6">
+                    {/* Verdict Card */}
+                    <div className={`rounded-3xl border backdrop-blur-2xl p-8 flex flex-col shadow-[0_8px_30px_rgba(0,0,0,0.5)] ${bgAccent}`}>
                       <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-2 font-['Space_Grotesk']">Algorithm Verdict</h3>
                       <div className={`text-6xl font-black uppercase tracking-tighter mb-8 font-['Space_Grotesk'] ${accentColor}`}>{analysis.verdict}</div>
                       
@@ -396,193 +397,103 @@ export default function Home() {
                         <div className="text-4xl font-['JetBrains_Mono'] font-bold text-white tracking-tighter">
                           {analysis.fiso_score}<span className="text-lg text-zinc-600 tracking-normal">/100</span>
                         </div>
-                        {/* Progress Bar */}
                         <div className="w-full bg-zinc-800 rounded-full h-1.5 mt-4 overflow-hidden">
                           <div className="h-full bg-gradient-to-r from-fuchsia-500 via-zinc-500 to-cyan-400" style={{ width: `${analysis.fiso_score}%` }} />
                         </div>
                       </div>
-                    </div>
 
-                    <div className="bg-black/40 border border-white/5 rounded-2xl p-5">
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-3 border-b border-white/5 pb-2">Predictive Vectors</span>
-                      <div className="flex justify-between items-center mb-2">
-                         <span className="text-xs text-zinc-500 font-medium">Target Price</span>
-                         <span className="font-['JetBrains_Mono'] font-bold text-cyan-400">{currency}{analysis.target}</span>
-                      </div>
-                      <div className="flex justify-between items-center mb-2">
-                         <span className="text-xs text-zinc-500 font-medium">Stop Loss</span>
-                         <span className="font-['JetBrains_Mono'] font-bold text-fuchsia-500">{currency}{analysis.stop_loss}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                         <span className="text-xs text-zinc-500 font-medium">Timeframe</span>
-                         <span className="font-['JetBrains_Mono'] font-bold text-white">{analysis.estimated_days} Days</span>
+                      {/* NEW: NLP Feed Embedded Inside Verdict Box */}
+                      <div className="mt-4 pt-4 border-t border-white/10">
+                        <div className="flex justify-between items-center mb-4">
+                          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block">Global NLP Feed</span>
+                          <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono'] ${
+                              analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
+                              analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' : 'bg-white/5 text-zinc-400 border-white/10'
+                          }`}>
+                            {analysis?.sentiment?.label || 'ANALYZING...'} [{analysis?.sentiment?.score || 0}]
+                          </span>
+                        </div>
+                        <ul className="space-y-3">
+                          {analysis?.sentiment?.headlines?.slice(0, 3).map((headline: string, idx: number) => (
+                            <li key={idx} className="text-[11px] text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-3 py-1 hover:border-cyan-400 hover:text-white transition-all cursor-pointer truncate">
+                              {headline}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     </div>
                   </div>
                 )}
-              </div>
 
-              {/* Bottom Row: NLP & Matrix */}
-              {analysis && !analysis.error && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
-                  
-                  {/* News NLP */}
-                  <div className="lg:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-                    <div className="flex justify-between items-center border-b border-white/10 pb-4 mb-6">
-                      <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Global NLP Feed</h3>
-                      <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono'] ${
-                          analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
-                          analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' : 'bg-white/5 text-zinc-400 border-white/10'
-                      }`}>
-                        {analysis?.sentiment?.label || 'ANALYZING...'} [{analysis?.sentiment?.score || 0}]
-                      </span>
-                    </div>
-                    
-                    <ul className="space-y-4">
-                      {analysis?.sentiment?.headlines?.map((headline: string, idx: number) => (
-                        <li key={idx} className="text-xs text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-4 py-1 tracking-wide hover:border-cyan-400 hover:text-white transition-all cursor-pointer">
-                          {headline}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                    {/* Strategy Matrix */}
-                  <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-                    <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-6 border-b border-white/10 pb-4 font-['Space_Grotesk']">
-                      Tactical Strategy Matrix
+                {/* AI Strategy Lab & Ranked Matrix */}
+                {analysis && !analysis.error && (
+                  <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+                    <h3 className="text-xs font-bold text-cyan-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-4 font-['Space_Grotesk'] flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                      Strategy Matrix & AI Lab
                     </h3>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {(analysis?.strategy_evals ?? []).map((strategy: {
-                        id: number; name: string; score: number; desc: string;
-                      }, rank: number) => {
-                        const isBest = rank === 0;   // first item is always the top scorer
-
-                        return (
-                          <div
-                            key={strategy.id}
-                            className={`relative border rounded-2xl p-5 transition-all ${
-                              isBest
-                                ? 'bg-cyan-900/20 border-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]'
-                                : 'bg-black/50 border-white/5 hover:border-white/20'
-                            }`}
-                          >
-                            {/* Rank badge */}
-                            <div className="flex justify-between items-start mb-3">
-                              <span className="font-['JetBrains_Mono'] text-[9px] font-bold opacity-50 uppercase text-white tracking-widest">
-                                #{String(rank + 1).padStart(2, '0')}
-                              </span>
-                              {isBest && (
-                                <span className="text-[8px] bg-cyan-400 text-black px-1.5 py-0.5 uppercase font-black rounded-sm tracking-widest">
-                                  Optimal
-                                </span>
-                              )}
-                            </div>
-
-                            <span className="font-bold text-sm uppercase block mb-2 font-['Space_Grotesk'] text-white">
-                              {strategy.name}
-                            </span>
-
-                            {/* Score pill + bar */}
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="text-[10px] font-['JetBrains_Mono'] font-bold text-zinc-300 uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded inline-block">
-                                SCR: {strategy.score}
-                              </span>
-                              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-700"
-                                  style={{
-                                    width: `${strategy.score}%`,
-                                    background:
-                                      strategy.score >= 80 ? '#22d3ee'
-                                      : strategy.score >= 60 ? '#86efac'
-                                      : strategy.score >= 40 ? '#fbbf24'
-                                      : '#d946ef',
-                                  }}
-                                />
-                              </div>
-                            </div>
-
-                           <p className="text-xs text-zinc-500 leading-relaxed border-t border-white/5 pt-3">
-                              {strategy.desc}
-                            </p>
-                          </div>
-                        );
-                      })}
+                    
+                    <div className="flex flex-col gap-4 mb-4">
+                      <input 
+                        type="text"
+                        value={aiPrompt}
+                        onChange={(e) => setAiPrompt(e.target.value)}
+                        placeholder="e.g., 'Find best strategy' OR 'RSI below 30'"
+                        className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white font-['JetBrains_Mono'] focus:border-cyan-400 outline-none"
+                      />
+                      <button 
+                        onClick={handleCustomBacktest}
+                        disabled={isBacktesting}
+                        className="w-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/40 px-6 py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
+                      >
+                        {isBacktesting ? 'Simulating...' : 'Backtest & Rank'}
+                      </button>
                     </div>
-                  </div>
 
-                </div>
-              )}
+                    {/* Custom Strategy Results */}
+                    {backtestResult && backtestResult.custom_metrics && !backtestResult.custom_metrics.error && (
+                      <div className="p-4 mb-4 rounded-xl border border-cyan-500/30 bg-cyan-500/5 animate-in fade-in zoom-in-95 duration-300">
+                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Total Trades</span>
+                               <span className="text-lg text-white font-['JetBrains_Mono']">{backtestResult.custom_metrics.total_trades}</span>
+                            </div>
+                            <div>
+                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Win Rate</span>
+                               <span className="text-lg text-cyan-400 font-['JetBrains_Mono']">{backtestResult.custom_metrics.win_rate}%</span>
+                            </div>
+                            <div>
+                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Avg Return</span>
+                               <span className="text-lg text-cyan-400 font-['JetBrains_Mono']">{backtestResult.custom_metrics.avg_return_per_trade_pct}%</span>
+                            </div>
+                            <div>
+                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Compound Return</span>
+                               <span className="text-lg text-cyan-400 font-['JetBrains_Mono']">{backtestResult.custom_metrics.total_return_pct}%</span>
+                            </div>
+                         </div>
+                      </div>
+                    )}
 
-              {/* ========================================= */}
-              {/* AI STRATEGY LAB UI BLOCK                  */}
-              {/* ========================================= */}
-              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mt-6">
-                <h3 className="text-xs font-bold text-cyan-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-4 font-['Space_Grotesk'] flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-                  AI Strategy Lab (Beta)
-                </h3>
-                
-                <div className="flex gap-4 mb-6">
-                  <input 
-                    type="text"
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="e.g., 'Buy if price goes down 2 days in a row and RSI is below 30'"
-                    className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white font-['JetBrains_Mono'] focus:border-cyan-400 outline-none"
-                  />
-                  <button 
-                    onClick={handleCustomBacktest}
-                    disabled={isBacktesting}
-                    className="bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/40 px-6 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
-                  >
-                    {isBacktesting ? 'Simulating...' : 'Backtest'}
-                  </button>
-                </div>
-
-                {/* Results Display */}
-                {backtestResult && (
-                  <div className="p-4 rounded-xl border border-white/10 bg-white/5 animate-in fade-in zoom-in-95 duration-300">
-                    {backtestResult.error || backtestResult.detail ? (
-                      <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">
-                        {backtestResult.error || (typeof backtestResult.detail === 'string' ? backtestResult.detail : "Server Error. Check your Python terminal.")}
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Total Trades</span>
-                           <span className="text-xl text-white font-['JetBrains_Mono']">{backtestResult.total_trades}</span>
-                        </div>
-                        <div>
-                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Win Rate</span>
-                           <span className={`text-xl font-['JetBrains_Mono'] ${backtestResult.win_rate > 50 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
-                             {backtestResult.win_rate}%
-                           </span>
-                        </div>
-                        <div>
-                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Avg Return / Trade</span>
-                           <span className={`text-xl font-['JetBrains_Mono'] ${backtestResult.avg_return_per_trade_pct > 0 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
-                             {backtestResult.avg_return_per_trade_pct}%
-                           </span>
-                        </div>
-                        <div>
-                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Total Compound Return</span>
-                           <span className={`text-xl font-['JetBrains_Mono'] ${backtestResult.total_return_pct > 0 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
-                             {backtestResult.total_return_pct}%
-                           </span>
-                        </div>
-                        <div className="col-span-full mt-2 pt-2 border-t border-white/5">
-                           <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono']">Generated Logic: {backtestResult.logic_used}</span>
-                        </div>
+                    {/* Top 20 Strategies List */}
+                    {backtestResult && backtestResult.top_20 && (
+                      <div className="mt-4 border-t border-white/10 pt-4 max-h-[400px] overflow-y-auto no-scrollbar">
+                         <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-4">Top 20 Ranked Strategies</span>
+                         <div className="flex flex-col gap-3">
+                           {backtestResult.top_20.map((strat: any, idx: number) => (
+                             <div key={idx} className="bg-black/50 border border-white/5 rounded-xl p-3 flex flex-col gap-2">
+                                <div className="flex justify-between items-center">
+                                   <span className="text-xs font-bold text-white uppercase font-['Space_Grotesk']">#{idx + 1} {strat.name}</span>
+                                   <span className="text-[10px] font-['JetBrains_Mono'] bg-white/10 px-2 py-0.5 rounded text-zinc-300">SCR: {strat.score}</span>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 leading-relaxed">{strat.desc}</p>
+                             </div>
+                           ))}
+                         </div>
                       </div>
                     )}
                   </div>
                 )}
               </div>
-              {/* ========================================= */}
-
             </div>
           )}
         </main>

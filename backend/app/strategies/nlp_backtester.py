@@ -1,9 +1,13 @@
 import os
 import pandas as pd
 from groq import Groq
-
+from dotenv import load_dotenv
+# Force this specific file to open the .env vault
+load_dotenv()
 # Initialize Groq client (Make sure to add GROQ_API_KEY to your .env file)
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))def translate_to_pandas(user_prompt: str) -> str:
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+def translate_to_pandas(user_prompt: str) -> str:
     """Uses LLM to convert english into a Pandas boolean expression."""
     system_prompt = """
     You are a quantitative finance assistant. The user will give you a trading strategy.
@@ -20,7 +24,7 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))def translate_to_pandas(use
     """
     
     completion = client.chat.completions.create(
-        model="llama3-70b-8192", # Free tier model
+        model="llama-3.3-70b-versatile", # Free tier model
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
