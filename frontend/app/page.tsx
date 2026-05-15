@@ -32,7 +32,15 @@ const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string
 };
 
 // ─── MARKET ASSET CARD ────────────────────────────────────────────────────────
-const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelect: (s: typeof STOCKS[0]) => void }) => {
+const MarketAssetCard = ({
+  stock,
+  onSelect,
+  prefetchedAnalysis,
+}: {
+  stock: typeof STOCKS[0];
+  onSelect: (s: typeof STOCKS[0]) => void;
+  prefetchedAnalysis?: any;
+}) => {
   const [expanded, setExpanded] = useState(false);
   const lastTap = useRef<number>(0);
 
@@ -51,10 +59,26 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
     }
   }, [stock, onSelect]);
 
-  const { data: analysis } = useSWR(expanded ? `/api/v1/analyze/${stock.ticker}` : null, fetcher);
+  // Only hit the API if we have no prefetched data yet
+  const { data: fetchedAnalysis } = useSWR(
+    expanded && !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
+    fetcher
+  );
+
+  // Prefer prefetched; fall back to on-demand fetch
+  const analysis = prefetchedAnalysis ?? fetchedAnalysis;
+  const isReady = !!analysis && !analysis.error;
+  const isPrefetching = !analysis; // still loading in background
+
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
   const verdictColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
+
+  // Mini verdict dot shown even before hover when prefetch is done
+  const dotColor = isReady
+    ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
+    : 'bg-zinc-700 animate-pulse';
+
   return (
     <div
       onMouseEnter={handleMouseEnter}
@@ -66,14 +90,33 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
       <div className="flex justify-between items-start mb-2">
         <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
         <div className="flex items-center gap-1.5">
+          {/* Live verdict dot — green/red/grey based on prefetch status */}
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysis.verdict : 'Loading...'} />
           <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
-          <span className="md:hidden text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">{expanded ? '2×' : 'tap'}</span>
         </div>
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
 
+      {/* FISO score mini-bar shown even before hover if prefetch is done */}
+      {isReady && !expanded && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1 h-0.5 bg-white/5 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-1000"
+              style={{
+                width: `${analysis.fiso_score}%`,
+                backgroundColor: isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171',
+              }}
+            />
+          </div>
+          <span className={`text-[9px] font-bold font-['JetBrains_Mono'] ${verdictColor}`}>
+            {analysis.verdict?.replace('Strong ', '')}
+          </span>
+        </div>
+      )}
+
       <div className={`transition-all duration-300 ease-in-out ${expanded ? 'max-h-52 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-        {analysis && !analysis.error ? (
+        {isReady ? (
           <div className="space-y-2.5">
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Verdict</span>
@@ -104,8 +147,11 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
             </button>
           </div>
         ) : (
-          <div className="flex items-center justify-center py-4">
-            <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">INITIALIZING...</span>
+          <div className="flex items-center justify-center py-4 gap-2">
+            <div className="w-3 h-3 border border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0" />
+            <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">
+              {isPrefetching ? 'LOADING...' : 'INITIALIZING...'}
+            </span>
           </div>
         )}
       </div>
@@ -127,7 +173,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
   const rr = Math.abs(priceDiff / (analysis.stop_loss - analysis.entry)).toFixed(2);
 
-  // AI Backtester state
+  // AI Backtester state (lifted into FisoDetailPanel so it lives next to the section)
   const [aiPrompt, setAiPrompt] = useState('');
   const [backtestResult, setBacktestResult] = useState<any>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
@@ -150,47 +196,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
     }
   };
 
+  // ── Enter key handler for AI backtester input
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) {
       handleCustomBacktest();
     }
   };
 
-  // ── Strategy card backtest state — auto-loads win rates for all 10 on mount
-  const [selectedStrategy, setSelectedStrategy] = useState<any>(null);
-  const [strategyBacktests, setStrategyBacktests] = useState<Record<number, any>>({});
-  const [loadingStrategies, setLoadingStrategies] = useState<Record<number, boolean>>({});
-
   const topStrategies = (analysis?.strategy_evals ?? []).slice(0, 10);
-
-  // Auto-run backtest for all 10 strategies as soon as analysis + ticker are ready
-  useEffect(() => {
-    if (!ticker || topStrategies.length === 0) return;
-    // Run all 10 in parallel — stagger slightly to avoid hammering the backend
-    topStrategies.forEach((s: any, i: number) => {
-      setTimeout(async () => {
-        setLoadingStrategies(prev => ({ ...prev, [s.id]: true }));
-        try {
-          const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticker, prompt: s.name + ': ' + s.desc })
-          });
-          const data = await res.json();
-          setStrategyBacktests(prev => ({ ...prev, [s.id]: data }));
-        } catch {
-          setStrategyBacktests(prev => ({ ...prev, [s.id]: { error: 'Failed' } }));
-        } finally {
-          setLoadingStrategies(prev => ({ ...prev, [s.id]: false }));
-        }
-      }, i * 300); // 300ms stagger between each
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker, topStrategies.length]);
-
-  const handleStrategyClick = async (strategy: any) => {
-    setSelectedStrategy((prev: any) => prev?.id === strategy.id ? null : strategy);
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -454,45 +467,30 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
           <div className="flex flex-col gap-3">
             {topStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
-              const isSelected = selectedStrategy?.id === s.id;
-              const isLoading = loadingStrategies[s.id];
-              const bResult = strategyBacktests[s.id];
-              const winRate = bResult?.custom_metrics?.win_rate ?? bResult?.win_rate;
-              const hasWinRate = winRate != null;
-
-              // Color based on win rate if available, else score
-              const winRateColor = hasWinRate
-                ? (winRate >= 55 ? '#4ade80' : winRate >= 45 ? '#fbbf24' : '#f87171')
-                : (s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171');
-              const displayValue = hasWinRate ? `${winRate}%` : isLoading ? '...' : `${s.score}`;
-              const barWidth = hasWinRate ? Math.min(winRate, 100) : s.score;
-              const barLabel = hasWinRate ? 'win' : isLoading ? '' : 'score';
-
+              // Using #4ade80 for strong buy (green) and #f87171 for weak/sell (red)
+              const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
               return (
                 <div
                   key={s.id}
-                  onClick={() => handleStrategyClick(s)}
-                  className={`relative rounded-2xl p-4 transition-all duration-200 cursor-pointer ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-cyan-900/40 to-fuchsia-900/20 border border-cyan-400/60 shadow-[0_0_25px_rgba(6,182,212,0.18)]'
-                      : isBestFit
-                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)] hover:border-cyan-400/60'
-                      : 'bg-black/30 border border-white/5 hover:border-white/20 hover:bg-white/3'
+                  className={`relative rounded-2xl p-4 transition-all duration-200 ${
+                    isBestFit
+                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
+                      : 'bg-black/30 border border-white/5 hover:border-white/15 hover:bg-white/3'
                   }`}
                 >
                   <div className="flex items-start gap-4">
 
-                    {/* Rank */}
+                    {/* Rank number */}
                     <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
-                      isBestFit ? 'bg-cyan-400 text-black' : isSelected ? 'bg-cyan-500/30 text-cyan-300' : 'bg-white/5 text-zinc-500'
+                      isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
                     }`}>
                       {String(rank + 1).padStart(2, '0')}
                     </div>
 
-                    {/* Name + desc */}
+                    {/* Main content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit || isSelected ? 'text-white' : 'text-zinc-200'}`}>
+                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
                           {s.name}
                         </span>
                         {isBestFit && (
@@ -502,55 +500,18 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                         )}
                       </div>
                       <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
-
-                      {/* Expanded detail panel on click */}
-                      {isSelected && (
-                        <div className="mt-3 pt-3 border-t border-white/10">
-                          {isLoading ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-4 h-4 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
-                              <span className="text-[10px] text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Running backtest...</span>
-                            </div>
-                          ) : bResult?.error ? (
-                            <p className="text-[11px] text-red-400 font-['JetBrains_Mono']">{bResult.error}</p>
-                          ) : hasWinRate ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              {[
-                                { label: 'Trades', value: bResult?.custom_metrics?.total_trades ?? bResult?.total_trades, suffix: '', color: 'text-white' },
-                                { label: 'Win Rate', value: winRate, suffix: '%', color: winRate >= 55 ? 'text-green-400' : winRate >= 45 ? 'text-yellow-400' : 'text-red-400' },
-                                { label: 'Avg/Trade', value: bResult?.custom_metrics?.avg_return_per_trade_pct ?? bResult?.avg_return_per_trade_pct, suffix: '%', color: ((bResult?.custom_metrics?.avg_return_per_trade_pct ?? bResult?.avg_return_per_trade_pct) ?? 0) >= 0 ? 'text-green-400' : 'text-red-400' },
-                                { label: 'Total Return', value: bResult?.custom_metrics?.total_return_pct ?? bResult?.total_return_pct, suffix: '%', color: ((bResult?.custom_metrics?.total_return_pct ?? bResult?.total_return_pct) ?? 0) >= 0 ? 'text-green-400' : 'text-red-400' },
-                              ].map(({ label, value, suffix, color }) => (
-                                <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
-                                  <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-bold block mb-1 font-['Space_Grotesk']">{label}</span>
-                                  <span className={`text-sm font-['JetBrains_Mono'] font-bold ${color}`}>
-                                    {value !== undefined && value !== null ? `${value}${suffix}` : '—'}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
                     </div>
 
-                    {/* Win rate / score badge */}
-                    <div className="shrink-0 flex flex-col items-end gap-1.5 min-w-[52px]">
-                      {isLoading ? (
-                        <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin mt-1"></div>
-                      ) : (
-                        <>
-                          <span className="text-lg font-['JetBrains_Mono'] font-bold leading-none" style={{ color: winRateColor }}>
-                            {displayValue}
-                          </span>
-                          <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${barWidth}%`, backgroundColor: winRateColor }} />
-                          </div>
-                          {barLabel && <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">{barLabel}</span>}
-                        </>
-                      )}
+                    {/* Score */}
+                    <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
+                        {s.score}
+                      </span>
+                      <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
+                      </div>
+                      <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
                     </div>
-
                   </div>
                 </div>
               );
@@ -665,6 +626,37 @@ export default function Home() {
     if (activeMarket === 'CRYPTO') return STOCKS.filter(s => s.exchange === 'CRYPTO').slice(0, 24);
     return [];
   };
+
+  // ── Prefetch cache: ticker → analysis result ──────────────────────────────
+  const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
+  const prefetchedRef = useRef<Set<string>>(new Set());
+
+  // Prefetch all visible cards for the active market tab, staggered to avoid
+  // hammering the backend. Results are cached so hover is instant.
+  useEffect(() => {
+    const visibleStocks = getMarketStocks();
+    const toFetch = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker));
+    if (toFetch.length === 0) return;
+
+    // Mark them as queued immediately so tab switches don't re-queue
+    toFetch.forEach(s => prefetchedRef.current.add(s.ticker));
+
+    toFetch.forEach((stock, i) => {
+      setTimeout(async () => {
+        try {
+          const res = await fetch(`${BACKEND}/api/v1/analyze/${stock.ticker}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data && !data.error) {
+            setPrefetchCache(prev => ({ ...prev, [stock.ticker]: data }));
+          }
+        } catch {
+          // silently ignore — card will fall back to on-demand fetch on hover
+        }
+      }, i * 400); // 400ms stagger = 24 stocks complete in ~10s background
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMarket]);
 
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
@@ -804,7 +796,12 @@ export default function Home() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                   {getMarketStocks().map(s => (
-                    <MarketAssetCard key={s.ticker} stock={s} onSelect={selectStock} />
+                    <MarketAssetCard
+                      key={s.ticker}
+                      stock={s}
+                      onSelect={selectStock}
+                      prefetchedAnalysis={prefetchCache[s.ticker]}
+                    />
                   ))}
                 </div>
               </div>
