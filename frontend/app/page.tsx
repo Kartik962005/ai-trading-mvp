@@ -1,90 +1,124 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
-const fetcher = (url: string) => fetch(`https://ai-trading-backend-jhcl.onrender.com${url}`).then(res => res.json());
 
-// --- EXPANDED DATA ARRAYS (~15-20 per category for a rich grid) ---
-
-const STRATEGIES = [
-  { id: 1,  name: 'Golden Cross', desc: 'SMA 50 crosses above SMA 200' },
-  { id: 2,  name: 'RSI Oversold', desc: 'RSI below 30 signals oversold' },
-  { id: 3,  name: 'MACD Crossover', desc: 'MACD line crosses signal line' },
-  { id: 4,  name: 'Bollinger Breakout', desc: 'Price breaks above upper band' },
-  { id: 5,  name: 'Volume Anomaly', desc: 'Spike in institutional buying' },
-  { id: 6,  name: 'Mean Reversion', desc: 'Price extended from moving average' },
-];
+const BACKEND = 'https://ai-trading-backend-jhcl.onrender.com';
+const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json());
 
 function getLevenshteinDistance(s: string, t: string) {
   if (!s.length) return t.length;
   if (!t.length) return s.length;
-  const arr = [];
+  const arr: number[][] = [];
   for (let i = 0; i <= t.length; i++) { arr[i] = [i]; for (let j = 1; j <= s.length; j++) { arr[i][j] = i === 0 ? j : Math.min(arr[i - 1][j] + 1, arr[i][j - 1] + 1, arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1)); } }
   return arr[t.length][s.length];
 }
 
-const TickerItem = ({ title, symbol, currency }: { title: string, symbol: string, currency: string }) => {
-  const { data } = useSWR(`/api/v1/quote/${symbol}`, fetcher, { refreshInterval: 60000 });
+// ─── TICKER TAPE ─────────────────────────────────────────────────────────────
+const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string; currency: string }) => {
+  const { data } = useSWR(`/api/v1/quote/${symbol}`, fetcher, { refreshInterval: 15000 });
   return (
     <div className="flex items-center gap-4 shrink-0 px-8 border-r border-white/10">
       <span className="font-bold text-xs tracking-widest text-zinc-400 uppercase font-['Space_Grotesk']">{title}</span>
-      {data && data.price ? (
+      {data?.price ? (
         <div className="flex items-center gap-2">
           <span className="text-sm font-['JetBrains_Mono'] text-white">{currency}{data.price.toLocaleString()}</span>
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${data.change_percent > 0 ? 'bg-cyan-500/20 text-cyan-400' : 'bg-fuchsia-500/20 text-fuchsia-400'}`}>
             {data.change_percent > 0 ? '▲' : '▼'}{Math.abs(data.change_percent).toFixed(2)}%
           </span>
         </div>
-      ) : (
-        <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] tracking-widest">SYNCING...</span>
-      )}
+      ) : <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] tracking-widest">SYNCING...</span>}
     </div>
   );
 };
 
-// --- Custom Expandable Asset Card ---
-const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0], onSelect: (s: typeof STOCKS[0]) => void }) => {
-  const [isHovered, setIsHovered] = useState(false);
-  // Fetch analysis only when hovered to save API calls
-  const { data: analysis } = useSWR(isHovered ? `/api/v1/analyze/${stock.ticker}` : null, fetcher);
+// ─── MARKET ASSET CARD — desktop hover / mobile single+double tap ─────────────
+const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelect: (s: typeof STOCKS[0]) => void }) => {
+  const [expanded, setExpanded] = useState(false);
+  const lastTap = useRef<number>(0);
 
+  // Desktop: hover controls expansion
+  const handleMouseEnter = () => setExpanded(true);
+  const handleMouseLeave = () => setExpanded(false);
+
+  // Mobile: single tap = expand, double tap = open full analysis
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    const now = Date.now();
+    const gap = now - lastTap.current;
+    lastTap.current = now;
+    if (gap < 350 && gap > 0) {
+      // double tap → open full stock analysis
+      onSelect(stock);
+    } else {
+      // single tap → toggle expand
+      setExpanded(prev => !prev);
+    }
+  }, [stock, onSelect]);
+
+  const { data: analysis } = useSWR(expanded ? `/api/v1/analyze/${stock.ticker}` : null, fetcher);
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
   const verdictColor = isBull ? 'text-cyan-400' : isHold ? 'text-zinc-300' : 'text-fuchsia-400';
 
   return (
     <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onSelect(stock)}
-      className="relative p-4 border border-white/10 bg-black/40 backdrop-blur-md rounded-2xl hover:border-cyan-500/50 hover:bg-cyan-900/20 transition-all duration-300 cursor-pointer group flex flex-col justify-start overflow-hidden"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchEnd={handleTouchEnd}
+      onClick={() => { /* desktop click still selects */ }}
+      className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 cursor-pointer group flex flex-col justify-start overflow-hidden select-none
+        ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
     >
+      {/* Mobile hint badge */}
+      <div className="absolute top-2 right-2 md:hidden">
+        <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
+          {expanded ? '2× open' : 'tap'}
+        </span>
+      </div>
+
       <div className="flex justify-between items-start mb-2">
-        <span className="text-[11px] font-bold text-zinc-500 group-hover:text-cyan-400 font-['JetBrains_Mono'] transition-colors">{stock.symbol}</span>
+        <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
         <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
 
-      {/* Expanded State Dropdown */}
-      <div className={`transition-all duration-300 ease-in-out ${isHovered ? 'max-h-40 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0'}`}>
+      {/* Expandable content */}
+      <div className={`transition-all duration-300 ease-in-out ${expanded ? 'max-h-52 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
         {analysis && !analysis.error ? (
-          <div className="space-y-3">
-            <div className="flex justify-between items-end">
+          <div className="space-y-2.5">
+            <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Verdict</span>
               <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysis.verdict}</span>
             </div>
-            <div className="flex justify-between items-end">
+            <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">FISO Score</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysis.fiso_score}</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysis.fiso_score}/100</span>
             </div>
-            <div className="flex justify-between items-end">
+            <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Confidence</span>
               <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysis.confidence}%</span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Target</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-cyan-400 font-bold">{stock.currency}{analysis.target}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Stop Loss</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-fuchsia-400 font-bold">{stock.currency}{analysis.stop_loss}</span>
+            </div>
+            {/* Desktop: click to open full. Mobile: hint */}
+            <button
+              onMouseDown={() => onSelect(stock)}
+              onTouchEnd={(e) => { e.stopPropagation(); onSelect(stock); }}
+              className="w-full mt-1 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-500/20 transition-all"
+            >
+              Full Analysis →
+            </button>
           </div>
         ) : (
           <div className="flex items-center justify-center py-4">
-             <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">INITIALIZING ALGORITHM...</span>
+            <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">INITIALIZING...</span>
           </div>
         )}
       </div>
@@ -92,21 +126,216 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0], onSelec
   );
 };
 
+// ─── DETAILED FISO PANEL ──────────────────────────────────────────────────────
+const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: string }) => {
+  if (!analysis || analysis.error) return null;
 
+  const isBull = analysis.verdict?.includes('Buy');
+  const isHold = analysis.verdict === 'Hold';
+  const accentColor = isBull ? 'text-cyan-400' : isHold ? 'text-zinc-300' : 'text-fuchsia-400';
+  const accentBg = isBull ? 'bg-cyan-500/10 border-cyan-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-fuchsia-500/10 border-fuchsia-500/30';
+  const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(34,211,238,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(217,70,239,0.15)]';
+
+  const priceDiff = analysis.target - analysis.entry;
+  const pricePct = ((priceDiff / analysis.entry) * 100).toFixed(2);
+  const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
+  const rr = Math.abs(priceDiff / (analysis.stop_loss - analysis.entry)).toFixed(2);
+
+  return (
+    <div className="flex flex-col gap-6">
+
+      {/* ── Row 1: Verdict + Score + Key Metrics ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        {/* Verdict card */}
+        <div className={`lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-6 flex flex-col justify-between ${accentBg} ${accentGlow}`}>
+          <div>
+            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Algorithm Verdict</span>
+            <div className={`text-5xl font-black uppercase tracking-tighter font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysis.verdict}</div>
+          </div>
+          <div>
+            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Confidence</span>
+            <div className="flex items-end gap-2">
+              <span className="text-3xl font-['JetBrains_Mono'] font-bold text-white">{analysis.confidence}</span>
+              <span className="text-zinc-400 text-lg mb-0.5">%</span>
+            </div>
+            <div className="w-full bg-zinc-800 rounded-full h-1 mt-2 overflow-hidden">
+              <div className={`h-full rounded-full ${isBull ? 'bg-cyan-400' : isHold ? 'bg-zinc-400' : 'bg-fuchsia-500'}`} style={{ width: `${analysis.confidence}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {/* FISO Score detailed */}
+        <div className="lg:col-span-3 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 flex flex-col justify-between">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">FISO Math Score</span>
+          <div>
+            <div className="flex items-end gap-1 mb-3">
+              <span className="text-5xl font-['JetBrains_Mono'] font-bold text-white">{analysis.fiso_score}</span>
+              <span className="text-zinc-600 text-xl mb-1">/100</span>
+            </div>
+            <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden mb-4">
+              <div className="h-full rounded-full bg-gradient-to-r from-fuchsia-500 via-zinc-400 to-cyan-400 transition-all duration-1000"
+                style={{ width: `${analysis.fiso_score}%` }} />
+            </div>
+            {/* Score breakdown buckets */}
+            <div className="grid grid-cols-4 gap-1 text-center">
+              {[['0-20', 'Sell'], ['20-40', 'Weak'], ['40-75', 'Hold'], ['75-100', 'Buy']].map(([range, label]) => (
+                <div key={label} className={`rounded-lg py-1 text-[8px] font-bold uppercase tracking-widest font-['JetBrains_Mono']
+                  ${analysis.fiso_score >= 75 && label === 'Buy' ? 'bg-cyan-500/30 text-cyan-400' :
+                    analysis.fiso_score >= 40 && analysis.fiso_score < 75 && label === 'Hold' ? 'bg-zinc-500/30 text-zinc-300' :
+                    analysis.fiso_score < 40 && (label === 'Sell' || label === 'Weak') ? 'bg-fuchsia-500/30 text-fuchsia-400' :
+                    'bg-white/5 text-zinc-600'}`}>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Price targets block */}
+        <div className="lg:col-span-6 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Predictive Price Vectors</span>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry Price</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysis.entry?.toLocaleString()}</span>
+              <span className="text-[9px] text-zinc-500 block mt-1">Current position</span>
+            </div>
+            <div className="bg-cyan-500/10 border border-cyan-400/30 rounded-2xl p-4">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Target Price</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-cyan-400">{currency}{analysis.target?.toLocaleString()}</span>
+              <span className="text-[9px] text-cyan-500/70 block mt-1">{priceDiff > 0 ? '+' : ''}{pricePct}% upside</span>
+            </div>
+            <div className="bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-2xl p-4">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Stop Loss</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-fuchsia-400">{currency}{analysis.stop_loss?.toLocaleString()}</span>
+              <span className="text-[9px] text-fuchsia-500/70 block mt-1">{slPct}% downside</span>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Risk:Reward</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">1 : {rr}</span>
+              <span className="text-[9px] text-zinc-500 block mt-1">per unit risk</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Row 2: Timeline + Sentiment ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        {/* Timeline card */}
+        <div className="lg:col-span-5 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Trade Timeline</span>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between py-3 border-b border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center">
+                  <span className="text-cyan-400 text-xs font-bold">T</span>
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">Target Date</span>
+                  <span className="text-[10px] text-zinc-500">{analysis.target_date}</span>
+                </div>
+              </div>
+              <span className="font-['JetBrains_Mono'] text-cyan-400 font-bold text-sm">{analysis.estimated_days}d</span>
+            </div>
+            <div className="flex items-center justify-between py-3 border-b border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                  <span className="text-zinc-400 text-xs font-bold">⚡</span>
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">Expected Move</span>
+                  <span className="text-[10px] text-zinc-500">From current price</span>
+                </div>
+              </div>
+              <span className={`font-['JetBrains_Mono'] font-bold text-sm ${priceDiff >= 0 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
+                {priceDiff >= 0 ? '+' : ''}{pricePct}%
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                  <span className="text-zinc-400 text-xs font-bold">📊</span>
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">Max Risk</span>
+                  <span className="text-[10px] text-zinc-500">If stop loss triggered</span>
+                </div>
+              </div>
+              <span className="font-['JetBrains_Mono'] font-bold text-sm text-fuchsia-400">{slPct}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Sentiment / NLP */}
+        <div className="lg:col-span-7 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Global NLP Feed</span>
+            <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
+              ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
+                analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' :
+                'bg-white/5 text-zinc-400 border-white/10'}`}>
+              {analysis?.sentiment?.label || 'ANALYZING'} [{analysis?.sentiment?.score || 0}]
+            </span>
+          </div>
+          <ul className="space-y-3">
+            {analysis?.sentiment?.headlines?.map((h: string, i: number) => (
+              <li key={i} className="text-xs text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-4 py-1 hover:border-cyan-400 hover:text-white transition-all cursor-pointer">
+                {h}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* ── Row 3: Strategy Matrix ── */}
+      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
+        <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-6 border-b border-white/10 pb-4 font-['Space_Grotesk'] flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
+          Tactical Strategy Matrix
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {(analysis?.strategy_evals ?? []).slice(0, 8).map((s: any, rank: number) => (
+            <div key={s.id} className={`relative border rounded-2xl p-4 transition-all
+              ${rank === 0 ? 'bg-cyan-900/20 border-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]' : 'bg-black/50 border-white/5 hover:border-white/20'}`}>
+              <div className="flex justify-between items-start mb-2">
+                <span className="font-['JetBrains_Mono'] text-[9px] font-bold opacity-50 uppercase text-white tracking-widest">#{String(rank + 1).padStart(2, '0')}</span>
+                {rank === 0 && <span className="text-[8px] bg-cyan-400 text-black px-1.5 py-0.5 uppercase font-black rounded-sm tracking-widest">Optimal</span>}
+              </div>
+              <span className="font-bold text-xs uppercase block mb-2 font-['Space_Grotesk'] text-white">{s.name}</span>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-['JetBrains_Mono'] font-bold text-zinc-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded">SCR: {s.score}</span>
+                <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{
+                    width: `${s.score}%`,
+                    background: s.score >= 80 ? '#22d3ee' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#d946ef'
+                  }} />
+                </div>
+              </div>
+              <p className="text-[10px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Home() {
   const [ticker, setTicker] = useState<string | null>(null);
   const [currency, setCurrency] = useState('₹');
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<typeof STOCKS>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [activeMarket, setActiveMarket] = useState<'INDIA' | 'US' | 'CRYPTO' | null>('INDIA');
+  const [activeMarket, setActiveMarket] = useState<'INDIA' | 'US' | 'CRYPTO'>('INDIA');
   const [aiPrompt, setAiPrompt] = useState('');
   const [backtestResult, setBacktestResult] = useState<any>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
-  
   const chartRef = useRef<HTMLDivElement>(null);
 
-  const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 30000 });
+  const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 10000 });
   const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}` : null, fetcher);
   const { data: analysis } = useSWR(ticker ? `/api/v1/analyze/${ticker}` : null, fetcher);
 
@@ -123,25 +352,19 @@ export default function Home() {
     setShowSuggestions(true);
   }, [input]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && suggestions.length > 0) {
-      selectStock(suggestions[0]);
-    }
-  };
-
   useEffect(() => {
     if (!ticker || !chartData || !chartRef.current || !Array.isArray(chartData) || chartData.length === 0) return;
     chartRef.current.innerHTML = '';
     import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
       const chart = createChart(chartRef.current!, {
         width: chartRef.current!.clientWidth || 800,
-        height: 380,
+        height: 320,
         layout: { background: { color: 'transparent' }, textColor: '#71717a' },
         grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
         crosshair: { mode: 1 },
       });
       const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#22d3ee', downColor: '#d946ef', 
+        upColor: '#22d3ee', downColor: '#d946ef',
         borderVisible: false, wickUpColor: '#22d3ee', wickDownColor: '#d946ef'
       });
       const formattedData = chartData
@@ -164,35 +387,33 @@ export default function Home() {
   };
 
   const getMarketStocks = () => {
-    if (activeMarket === 'INDIA') return STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE');
-    if (activeMarket === 'US') return STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE');
-    if (activeMarket === 'CRYPTO') return STOCKS.filter(s => s.exchange === 'CRYPTO');
+    if (activeMarket === 'INDIA') return STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE').slice(0, 24);
+    if (activeMarket === 'US') return STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE').slice(0, 24);
+    if (activeMarket === 'CRYPTO') return STOCKS.filter(s => s.exchange === 'CRYPTO').slice(0, 24);
     return [];
   };
+
   const handleCustomBacktest = async () => {
     if (!aiPrompt || !ticker) return;
     setIsBacktesting(true);
     setBacktestResult(null);
     try {
-      // Pointing to LOCALHOST instead of Render for testing!
-      const res = await fetch('http://127.0.0.1:8000/api/v1/backtest/custom', {
+      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: ticker, prompt: aiPrompt })
+        body: JSON.stringify({ ticker, prompt: aiPrompt })
       });
-      const data = await res.json();
-      setBacktestResult(data);
-    } catch (err) {
-      console.error("Backtest failed", err);
-      setBacktestResult({ error: "Failed to connect to backend server." });
+      setBacktestResult(await res.json());
+    } catch {
+      setBacktestResult({ error: "Failed to connect to backend." });
     } finally {
       setIsBacktesting(false);
     }
   };
+
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
-  const accentColor = isBull ? 'text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]' : isHold ? 'text-zinc-300 drop-shadow-[0_0_15px_rgba(212,212,216,0.5)]' : 'text-fuchsia-500 drop-shadow-[0_0_15px_rgba(217,70,239,0.5)]';
-  const bgAccent = isBull ? 'bg-cyan-500/10 border-cyan-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-fuchsia-500/10 border-fuchsia-500/30';
+  const accentColor = isBull ? 'text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]' : isHold ? 'text-zinc-300' : 'text-fuchsia-500 drop-shadow-[0_0_15px_rgba(217,70,239,0.5)]';
 
   const TickerContent = () => (
     <>
@@ -214,10 +435,10 @@ export default function Home() {
         @keyframes marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-100%); } }
         .animate-marquee { animation: marquee 35s linear infinite; }
       `}} />
-      
+
       <div className="min-h-screen text-zinc-200 selection:bg-cyan-500/30 selection:text-white flex flex-col font-['Inter']">
-        
-        {/* HYPERSPACE VIDEO BACKGROUND */}
+
+        {/* BACKGROUND */}
         <div className="fixed inset-0 z-0 pointer-events-none bg-black">
           <video autoPlay loop muted playsInline className="absolute top-1/2 left-1/2 min-w-full min-h-full w-auto h-auto object-cover -translate-x-1/2 -translate-y-1/2 opacity-60 mix-blend-screen">
             <source src="/background.mp4" type="video/mp4" />
@@ -226,37 +447,30 @@ export default function Home() {
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
         </div>
 
-        {/* 1. SEAMLESS TOP TICKER TAPE */}
+        {/* TICKER TAPE */}
         <div className="relative z-20 w-full bg-black/60 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
-           <div className="flex w-[200%] sm:w-[150%] md:w-full">
-              <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0">
-                 <TickerContent />
-              </div>
-              <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0">
-                 <TickerContent />
-              </div>
-           </div>
+          <div className="flex w-[200%] sm:w-[150%] md:w-full">
+            <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0"><TickerContent /></div>
+            <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0"><TickerContent /></div>
+          </div>
         </div>
 
-        {/* 2. REFINED NAVIGATION / WIDE SEARCH BAR */}
-        <nav className="relative z-20 w-full px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-8 max-w-[1600px] mx-auto border-b border-white/5 bg-black/20 backdrop-blur-sm">
-          
-          {/* Logo & Tagline */}
-          <div className="flex flex-col items-start cursor-pointer group shrink-0" onClick={() => {setTicker(null); setActiveMarket('INDIA');}}>
+        {/* NAV */}
+        <nav className="relative z-20 w-full px-4 sm:px-6 py-4 sm:py-5 flex flex-col md:flex-row justify-between items-center gap-4 sm:gap-8 max-w-[1600px] mx-auto border-b border-white/5 bg-black/20 backdrop-blur-sm">
+          <div className="flex flex-col items-start cursor-pointer group shrink-0 w-full md:w-auto" onClick={() => { setTicker(null); }}>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)] group-hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all">
-                <span className="font-black text-black font-['Space_Grotesk'] text-xl">X</span>
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                <span className="font-black text-black font-['Space_Grotesk'] text-lg">X</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black tracking-[0.2em] uppercase text-white font-['Space_Grotesk']">
                 Signal<span className="text-cyan-400">X</span>
               </h1>
             </div>
-            <p className="text-[10px] text-zinc-400 uppercase tracking-widest mt-1.5 ml-[52px] font-['Space_Grotesk'] font-bold">
+            <p className="text-[10px] text-zinc-400 uppercase tracking-widest mt-1 ml-[48px] font-['Space_Grotesk'] font-bold hidden sm:block">
               The market heard we exist.
             </p>
           </div>
 
-          {/* Expanded Search Bar */}
           <div className="flex-1 w-full max-w-4xl relative">
             <div className="absolute inset-0 bg-cyan-500/5 rounded-2xl blur-lg"></div>
             <input
@@ -264,16 +478,16 @@ export default function Home() {
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => input.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              onKeyDown={handleKeyDown}
-              className="relative z-10 w-full bg-black/60 backdrop-blur-2xl border border-white/10 hover:border-cyan-500/50 px-8 py-5 rounded-2xl text-base font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all placeholder-zinc-500 shadow-2xl tracking-widest uppercase"
-              placeholder="SEARCH ASSETS.NOT HOPE."
+              onKeyDown={(e) => { if (e.key === 'Enter' && suggestions.length > 0) selectStock(suggestions[0]); }}
+              className="relative z-10 w-full bg-black/60 backdrop-blur-2xl border border-white/10 hover:border-cyan-500/50 px-5 sm:px-8 py-4 sm:py-5 rounded-2xl text-sm sm:text-base font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all placeholder-zinc-500 shadow-2xl tracking-widest uppercase"
+              placeholder="SEARCH ASSETS. NOT HOPE."
             />
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-50 w-full bg-black/95 backdrop-blur-3xl border border-white/10 rounded-2xl mt-3 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
+              <div className="absolute z-50 w-full bg-black/95 backdrop-blur-3xl border border-white/10 rounded-2xl mt-2 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
                 {suggestions.map((stock, i) => (
-                  <div key={i} onMouseDown={() => selectStock(stock)} className="flex justify-between items-center px-6 py-4 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 group transition-all">
-                    <span className="font-bold text-zinc-300 group-hover:text-white uppercase tracking-wider font-['Space_Grotesk']">{stock.name}</span>
-                    <span className="text-xs font-['JetBrains_Mono'] text-cyan-500/70 group-hover:text-cyan-400">{stock.symbol}</span>
+                  <div key={i} onMouseDown={() => selectStock(stock)} className="flex justify-between items-center px-5 py-3.5 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 group transition-all">
+                    <span className="font-bold text-sm text-zinc-300 group-hover:text-white uppercase tracking-wider font-['Space_Grotesk']">{stock.name}</span>
+                    <span className="text-xs font-['JetBrains_Mono'] text-cyan-500/70 group-hover:text-cyan-400 ml-2 shrink-0">{stock.symbol}</span>
                   </div>
                 ))}
               </div>
@@ -281,84 +495,78 @@ export default function Home() {
           </div>
         </nav>
 
-        {/* 3. MAIN APP CONTAINER */}
-        <main className="relative z-10 flex-1 w-full max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
-          
-          {/* ========================================= */}
-          {/* VIEW 1: MARKET DISCOVERY HUB (No Ticker) */}
-          {/* ========================================= */}
-          {!ticker && (
-            <div className="animate-in fade-in duration-700 w-full flex flex-col gap-8">
-              
-              {/* Massive Category Tabs */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-                <button 
-                  onClick={() => setActiveMarket('INDIA')}
-                  className={`p-6 md:p-8 rounded-3xl border backdrop-blur-xl transition-all flex flex-col items-start ${
-                    activeMarket === 'INDIA' ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.2)]' : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'
-                  }`}
-                >
-                  <span className={`text-2xl font-black uppercase tracking-tight font-['Space_Grotesk'] ${activeMarket === 'INDIA' ? 'text-white' : 'text-zinc-400'}`}>Indian Markets</span>
-                  <span className={`text-[10px] font-['JetBrains_Mono'] mt-2 uppercase tracking-widest ${activeMarket === 'INDIA' ? 'text-cyan-400' : 'text-zinc-600'}`}>NSE / BSE Equities</span>
-                </button>
-                
-                <button 
-                  onClick={() => setActiveMarket('US')}
-                  className={`p-6 md:p-8 rounded-3xl border backdrop-blur-xl transition-all flex flex-col items-start ${
-                    activeMarket === 'US' ? 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_30px_rgba(217,70,239,0.2)]' : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'
-                  }`}
-                >
-                  <span className={`text-2xl font-black uppercase tracking-tight font-['Space_Grotesk'] ${activeMarket === 'US' ? 'text-white' : 'text-zinc-400'}`}>US Markets</span>
-                  <span className={`text-[10px] font-['JetBrains_Mono'] mt-2 uppercase tracking-widest ${activeMarket === 'US' ? 'text-fuchsia-400' : 'text-zinc-600'}`}>NASDAQ / NYSE</span>
-                </button>
+        {/* MAIN */}
+        <main className="relative z-10 flex-1 w-full max-w-[1600px] mx-auto p-3 sm:p-6 lg:p-8 flex flex-col gap-6">
 
-                <button 
-                  onClick={() => setActiveMarket('CRYPTO')}
-                  className={`p-6 md:p-8 rounded-3xl border backdrop-blur-xl transition-all flex flex-col items-start ${
-                    activeMarket === 'CRYPTO' ? 'bg-zinc-800/50 border-white/50 shadow-[0_0_30px_rgba(255,255,255,0.1)]' : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'
-                  }`}
-                >
-                  <span className={`text-2xl font-black uppercase tracking-tight font-['Space_Grotesk'] ${activeMarket === 'CRYPTO' ? 'text-white' : 'text-zinc-400'}`}>Cryptocurrency</span>
-                  <span className={`text-[10px] font-['JetBrains_Mono'] mt-2 uppercase tracking-widest ${activeMarket === 'CRYPTO' ? 'text-white' : 'text-zinc-600'}`}>Digital Assets</span>
-                </button>
+          {/* ── VIEW 1: DISCOVERY HUB ── */}
+          {!ticker && (
+            <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
+
+              {/* Mobile hint banner */}
+              <div className="md:hidden bg-cyan-500/5 border border-cyan-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
+                <span className="text-cyan-400 text-lg">👆</span>
+                <div>
+                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-widest font-['Space_Grotesk'] block">Mobile Guide</span>
+                  <span className="text-[11px] text-zinc-400 font-['JetBrains_Mono']">Single tap = preview · Double tap = full analysis</span>
+                </div>
               </div>
 
-              {/* Dynamic Asset Grid (Expands on Hover) */}
-              {activeMarket && (
-                <div className="bg-black/20 backdrop-blur-md rounded-3xl p-6 border border-white/5 animate-in slide-in-from-bottom-8 fade-in duration-500">
-                  <div className="flex items-center justify-between mb-6 px-2 border-b border-white/10 pb-4">
-                    <h2 className="text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Initializing Algorithm...</h2>
-                    <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full text-zinc-300 font-['JetBrains_Mono']">Live Scan: {activeMarket}</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {getMarketStocks().map(s => (
-                      <MarketAssetCard key={s.ticker} stock={s} onSelect={selectStock} />
-                    ))}
-                  </div>
+              {/* Market tabs */}
+              <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+                {(['INDIA', 'US', 'CRYPTO'] as const).map(market => (
+                  <button key={market} onClick={() => setActiveMarket(market)}
+                    className={`p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border backdrop-blur-xl transition-all flex flex-col items-start
+                      ${activeMarket === market
+                        ? market === 'INDIA' ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.2)]'
+                        : market === 'US' ? 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_30px_rgba(217,70,239,0.2)]'
+                        : 'bg-zinc-800/50 border-white/50 shadow-[0_0_30px_rgba(255,255,255,0.1)]'
+                        : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'}`}>
+                    <span className={`text-base sm:text-2xl font-black uppercase tracking-tight font-['Space_Grotesk']
+                      ${activeMarket === market ? 'text-white' : 'text-zinc-400'}`}>
+                      {market === 'INDIA' ? 'India' : market === 'US' ? 'US' : 'Crypto'}
+                    </span>
+                    <span className={`text-[9px] sm:text-[10px] font-['JetBrains_Mono'] mt-1 sm:mt-2 uppercase tracking-widest hidden sm:block
+                      ${activeMarket === market
+                        ? market === 'INDIA' ? 'text-cyan-400' : market === 'US' ? 'text-fuchsia-400' : 'text-white'
+                        : 'text-zinc-600'}`}>
+                      {market === 'INDIA' ? 'NSE / BSE' : market === 'US' ? 'NASDAQ / NYSE' : 'Digital Assets'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Asset grid */}
+              <div className="bg-black/20 backdrop-blur-md rounded-3xl p-4 sm:p-6 border border-white/5 animate-in slide-in-from-bottom-8 fade-in duration-500">
+                <div className="flex items-center justify-between mb-4 sm:mb-6 px-2 border-b border-white/10 pb-4">
+                  <h2 className="text-xs sm:text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Live Scan</h2>
+                  <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full text-zinc-300 font-['JetBrains_Mono']">{activeMarket}</span>
                 </div>
-              )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {getMarketStocks().map(s => (
+                    <MarketAssetCard key={s.ticker} stock={s} onSelect={selectStock} />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ========================================= */}
-          {/* VIEW 2: DASHBOARD ALGORITHMIC GRID (Ticker Selected) */}
-          {/* ========================================= */}
+          {/* ── VIEW 2: STOCK DASHBOARD ── */}
           {ticker && (
             <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 w-full flex flex-col gap-6">
-              
-              {/* Ticker Header */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-6 gap-4">
+
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-5 gap-3">
                 <div>
-                  <button onClick={() => setTicker(null)} className="text-zinc-400 font-bold uppercase text-[10px] hover:text-white transition-colors flex items-center gap-2 tracking-[0.2em] mb-4 bg-white/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
-                    ← Return Overview
+                  <button onClick={() => setTicker(null)}
+                    className="text-zinc-400 font-bold uppercase text-[10px] hover:text-white transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
+                    ← Overview
                   </button>
-                  <h1 className="font-black text-5xl sm:text-6xl text-white uppercase tracking-tighter font-['Space_Grotesk']">{ticker}</h1>
+                  <h1 className="font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-tighter font-['Space_Grotesk']">{ticker}</h1>
                 </div>
-                {quote && quote.price && (
+                {quote?.price && (
                   <div className="text-left sm:text-right">
-                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Live Asset Value</div>
-                    <span className="text-4xl font-['JetBrains_Mono'] font-bold text-white tracking-tight">{currency}{quote.price}</span>
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Live Price</div>
+                    <span className="text-3xl sm:text-4xl font-['JetBrains_Mono'] font-bold text-white tracking-tight">{currency}{quote.price.toLocaleString()}</span>
                     <div className={`text-sm font-['JetBrains_Mono'] font-bold mt-1 tracking-wider ${quote.change_percent > 0 ? 'text-cyan-400' : 'text-fuchsia-500'}`}>
                       {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent).toFixed(2)}%
                     </div>
@@ -366,134 +574,78 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Top Row: Chart & Verdict Block */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
-                {/* Chart Block */}
-                <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-                  <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-4">
-                    <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk']">Chart Geometry</span>
-                  </div>
-                  {!chartData ? (
-                    <div className="h-[380px] flex flex-col items-center justify-center font-['JetBrains_Mono'] text-zinc-500 gap-4 text-sm uppercase tracking-widest">
-                       <div className="w-8 h-8 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
-                       Loading Data Stream...
-                    </div>
-                  ) : (
-                    <div ref={chartRef} className="w-full h-[380px]" />
+              {/* Chart */}
+              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+                <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-3">
+                  <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk']">Chart Geometry</span>
+                  {analysis && !analysis.error && (
+                    <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] ${accentColor}`}>{analysis.verdict}</span>
                   )}
                 </div>
+                {!chartData ? (
+                  <div className="h-[260px] sm:h-[320px] flex flex-col items-center justify-center font-['JetBrains_Mono'] text-zinc-500 gap-4 text-xs sm:text-sm uppercase tracking-widest">
+                    <div className="w-8 h-8 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
+                    Loading Data Stream...
+                  </div>
+                ) : (
+                  <div ref={chartRef} className="w-full h-[260px] sm:h-[320px]" />
+                )}
+              </div>
 
-                {/* Master Verdict Block (Now includes NLP Feed) */}
-                {analysis && !analysis.error && (
-                  <div className="lg:col-span-4 flex flex-col gap-6">
-                    {/* Verdict Card */}
-                    <div className={`rounded-3xl border backdrop-blur-2xl p-8 flex flex-col shadow-[0_8px_30px_rgba(0,0,0,0.5)] ${bgAccent}`}>
-                      <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-2 font-['Space_Grotesk']">Algorithm Verdict</h3>
-                      <div className={`text-6xl font-black uppercase tracking-tighter mb-8 font-['Space_Grotesk'] ${accentColor}`}>{analysis.verdict}</div>
-                      
-                      <div className="mb-6 bg-black/40 p-4 rounded-2xl border border-white/5">
-                        <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">FISO Math Score</span>
-                        <div className="text-4xl font-['JetBrains_Mono'] font-bold text-white tracking-tighter">
-                          {analysis.fiso_score}<span className="text-lg text-zinc-600 tracking-normal">/100</span>
-                        </div>
-                        <div className="w-full bg-zinc-800 rounded-full h-1.5 mt-4 overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-fuchsia-500 via-zinc-500 to-cyan-400" style={{ width: `${analysis.fiso_score}%` }} />
-                        </div>
-                      </div>
-
-                      {/* NEW: NLP Feed Embedded Inside Verdict Box */}
-                      <div className="mt-4 pt-4 border-t border-white/10">
-                        <div className="flex justify-between items-center mb-4">
-                          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block">Global NLP Feed</span>
-                          <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono'] ${
-                              analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
-                              analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' : 'bg-white/5 text-zinc-400 border-white/10'
-                          }`}>
-                            {analysis?.sentiment?.label || 'ANALYZING...'} [{analysis?.sentiment?.score || 0}]
-                          </span>
-                        </div>
-                        <ul className="space-y-3">
-                          {analysis?.sentiment?.headlines?.slice(0, 3).map((headline: string, idx: number) => (
-                            <li key={idx} className="text-[11px] text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-3 py-1 hover:border-cyan-400 hover:text-white transition-all cursor-pointer truncate">
-                              {headline}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+              {/* Detailed FISO Analysis Panel */}
+              {analysis && !analysis.error
+                ? <FisoDetailPanel analysis={analysis} currency={currency} />
+                : !analysis && (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-10 h-10 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
+                      <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Running FISO Algorithm...</span>
                     </div>
                   </div>
-                )}
+                )
+              }
 
-                {/* AI Strategy Lab & Ranked Matrix */}
-                {analysis && !analysis.error && (
-                  <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-                    <h3 className="text-xs font-bold text-cyan-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-4 font-['Space_Grotesk'] flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
-                      Strategy Matrix & AI Lab
-                    </h3>
-                    
-                    <div className="flex flex-col gap-4 mb-4">
-                      <input 
-                        type="text"
-                        value={aiPrompt}
-                        onChange={(e) => setAiPrompt(e.target.value)}
-                        placeholder="e.g., 'Find best strategy' OR 'RSI below 30'"
-                        className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white font-['JetBrains_Mono'] focus:border-cyan-400 outline-none"
-                      />
-                      <button 
-                        onClick={handleCustomBacktest}
-                        disabled={isBacktesting}
-                        className="w-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/40 px-6 py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
-                      >
-                        {isBacktesting ? 'Simulating...' : 'Backtest & Rank'}
-                      </button>
-                    </div>
-
-                    {/* Custom Strategy Results */}
-                    {backtestResult && backtestResult.custom_metrics && !backtestResult.custom_metrics.error && (
-                      <div className="p-4 mb-4 rounded-xl border border-cyan-500/30 bg-cyan-500/5 animate-in fade-in zoom-in-95 duration-300">
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div>
-                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Total Trades</span>
-                               <span className="text-lg text-white font-['JetBrains_Mono']">{backtestResult.custom_metrics.total_trades}</span>
-                            </div>
-                            <div>
-                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Win Rate</span>
-                               <span className="text-lg text-cyan-400 font-['JetBrains_Mono']">{backtestResult.custom_metrics.win_rate}%</span>
-                            </div>
-                            <div>
-                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Avg Return</span>
-                               <span className="text-lg text-cyan-400 font-['JetBrains_Mono']">{backtestResult.custom_metrics.avg_return_per_trade_pct}%</span>
-                            </div>
-                            <div>
-                               <span className="text-[10px] text-zinc-500 uppercase block mb-1">Compound Return</span>
-                               <span className="text-lg text-cyan-400 font-['JetBrains_Mono']">{backtestResult.custom_metrics.total_return_pct}%</span>
-                            </div>
-                         </div>
-                      </div>
-                    )}
-
-                    {/* Top 20 Strategies List */}
-                    {backtestResult && backtestResult.top_20 && (
-                      <div className="mt-4 border-t border-white/10 pt-4 max-h-[400px] overflow-y-auto no-scrollbar">
-                         <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-4">Top 20 Ranked Strategies</span>
-                         <div className="flex flex-col gap-3">
-                           {backtestResult.top_20.map((strat: any, idx: number) => (
-                             <div key={idx} className="bg-black/50 border border-white/5 rounded-xl p-3 flex flex-col gap-2">
-                                <div className="flex justify-between items-center">
-                                   <span className="text-xs font-bold text-white uppercase font-['Space_Grotesk']">#{idx + 1} {strat.name}</span>
-                                   <span className="text-[10px] font-['JetBrains_Mono'] bg-white/10 px-2 py-0.5 rounded text-zinc-300">SCR: {strat.score}</span>
-                                </div>
-                                <p className="text-[10px] text-zinc-500 leading-relaxed">{strat.desc}</p>
-                             </div>
-                           ))}
-                         </div>
+              {/* AI Backtester */}
+              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
+                <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
+                  AI Strategy Backtester
+                </h3>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    value={aiPrompt}
+                    onChange={e => setAiPrompt(e.target.value)}
+                    placeholder="e.g. RSI below 30 and volume spike..."
+                    className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-600"
+                  />
+                  <button onClick={handleCustomBacktest} disabled={isBacktesting || !aiPrompt}
+                    className="bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-xs px-6 py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0">
+                    {isBacktesting ? 'Running...' : 'Backtest'}
+                  </button>
+                </div>
+                {backtestResult && (
+                  <div className="mt-4 bg-black/40 border border-white/5 rounded-2xl p-4">
+                    {backtestResult.error ? (
+                      <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">{backtestResult.error}</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                          { label: 'Total Trades', value: backtestResult.custom_metrics?.total_trades },
+                          { label: 'Win Rate', value: `${backtestResult.custom_metrics?.win_rate}%` },
+                          { label: 'Avg Return', value: `${backtestResult.custom_metrics?.avg_return_per_trade_pct}%` },
+                          { label: 'Total Return', value: `${backtestResult.custom_metrics?.total_return_pct}%` },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
+                            <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">{label}</span>
+                            <span className="text-base font-['JetBrains_Mono'] font-bold text-white">{value ?? '—'}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
                 )}
               </div>
+
             </div>
           )}
         </main>
