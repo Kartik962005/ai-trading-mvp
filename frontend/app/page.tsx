@@ -342,14 +342,6 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
               </div>
             ) : (
               <>
-                {/* Logic used label */}
-                {backtestResult.custom_metrics?.logic_used && (
-                  <div className="mb-3 bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 flex gap-2 items-start">
-                    <span className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold shrink-0 mt-0.5 font-['Space_Grotesk']">Logic:</span>
-                    <span className="text-[10px] text-zinc-400 font-['JetBrains_Mono'] break-all">{backtestResult.custom_metrics?.logic_used}</span>
-                  </div>
-                )}
-
                 {/* 4 metric cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
