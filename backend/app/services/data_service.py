@@ -1,43 +1,95 @@
+import requests
 import yfinance as yf
 import pandas as pd
-from functools import lru_cache
-import time
-from app.core.supabase_client import supabase
 
-@lru_cache(maxsize=200)
+# ── Safe Supabase import ───────────────────────────────────────────────────────
+# Wrapped in try/except so a missing env var doesn't crash the server at startup.
+try:
+    from app.core.supabase_client import supabase
+    SUPABASE_OK = True
+except Exception as e:
+    print(f"⚠️  Supabase not available: {e}. Running without DB cache.")
+    supabase = None
+    SUPABASE_OK = False
+
+
 def get_latest_quote(ticker: str):
-    time.sleep(0.3)
-    data = yf.Ticker(ticker).info
-    return {
-        "price": data.get("currentPrice") or data.get("regularMarketPrice"),
-        "change_percent": data.get("regularMarketChangePercent", 0)
+    """
+    Tries 3 sources in order for fastest real-time price.
+    All free, no API key needed.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
     }
 
+    # Source 1: Yahoo Finance v8 query1 (fastest ~200ms)
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+        response = requests.get(url, headers=headers, timeout=4)
+        data = response.json()
+        meta = data['chart']['result'][0]['meta']
+        live_price = float(meta['regularMarketPrice'])
+        prev_close = float(meta['chartPreviousClose'])
+        change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
+        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+    except Exception as e:
+        print(f"[Quote] Yahoo v8 q1 failed for {ticker}: {e}")
+
+    # Source 2: Yahoo Finance v8 query2 (backup)
+    try:
+        url2 = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+        response2 = requests.get(url2, headers=headers, timeout=4)
+        data2 = response2.json()
+        meta2 = data2['chart']['result'][0]['meta']
+        live_price = float(meta2['regularMarketPrice'])
+        prev_close = float(meta2['chartPreviousClose'])
+        change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
+        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+    except Exception as e:
+        print(f"[Quote] Yahoo v8 q2 failed for {ticker}: {e}")
+
+    # Source 3: yfinance fast_info (slowest fallback)
+    try:
+        tkr = yf.Ticker(ticker)
+        info = tkr.fast_info
+        live_price = float(info.last_price)
+        prev_close = float(info.previous_close)
+        change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
+        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+    except Exception as e:
+        print(f"[Quote] yfinance fallback failed for {ticker}: {e}")
+
+    return {"price": None, "change_percent": 0.0}
+
+
 def get_historical_data(ticker: str, days: int = 365):
-    # Step 1: Get or create asset in DB
-    asset = supabase.table("assets").select("asset_id").eq("ticker", ticker).execute()
-    if not asset.data:
-        supabase.table("assets").insert({
-            "ticker": ticker,
-            "name": ticker,
-            "exchange": "NSE" if ".NS" in ticker else "NYSE"
-        }).execute()
-        asset = supabase.table("assets").select("asset_id").eq("ticker", ticker).execute()
-    asset_id = asset.data[0]["asset_id"]
 
-    # Step 2: Check Supabase cache
-    db_data = supabase.table("daily_ohlcv").select("*").eq("asset_id", asset_id).order("date").execute()
-    if db_data.data and len(db_data.data) > 30:
-        return pd.DataFrame(db_data.data)
+    # ── Supabase cache (only if available) ────────────────────────────────────
+    if SUPABASE_OK and supabase:
+        try:
+            asset = supabase.table("assets").select("asset_id").eq("ticker", ticker).execute()
+            if not asset.data:
+                supabase.table("assets").insert({
+                    "ticker": ticker,
+                    "name": ticker,
+                    "exchange": "NSE" if ".NS" in ticker else "NYSE"
+                }).execute()
+                asset = supabase.table("assets").select("asset_id").eq("ticker", ticker).execute()
+            asset_id = asset.data[0]["asset_id"]
 
-    # Step 3: Fetch from yfinance
+            db_data = supabase.table("daily_ohlcv").select("*").eq("asset_id", asset_id).order("date").execute()
+            if db_data.data and len(db_data.data) > 30:
+                return pd.DataFrame(db_data.data)
+        except Exception as e:
+            print(f"[HistData] Supabase error for {ticker}: {e}. Falling back to yfinance.")
+
+    # ── Fetch from yfinance ────────────────────────────────────────────────────
     raw = yf.download(ticker, period=f"{days}d", progress=False, auto_adjust=True)
 
-    # Guard: if no data returned, raise a clean error
     if raw is None or len(raw) == 0:
         raise ValueError(f"No data found for ticker '{ticker}'. It may be delisted or invalid.")
 
-    # Fix MultiIndex columns
     if isinstance(raw.columns, pd.MultiIndex):
         raw.columns = raw.columns.get_level_values(0)
 
@@ -46,25 +98,26 @@ def get_historical_data(ticker: str, days: int = 365):
     df = raw[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
     df = df.dropna()
 
-    # Guard: if after cleaning we have no rows, raise error
     if len(df) == 0:
-        raise ValueError(f"No valid data for ticker '{ticker}'.")
+        raise ValueError(f"No valid OHLCV data for ticker '{ticker}'.")
 
-    # Step 4: Save to Supabase
-    records = []
-    for _, row in df.iterrows():
-        records.append({
-            "asset_id": asset_id,
-            "date": str(row['date'].date()) if hasattr(row['date'], 'date') else str(row['date'])[:10],
-            "open": float(row['open']),
-            "high": float(row['high']),
-            "low": float(row['low']),
-            "close": float(row['close']),
-            "volume": int(row['volume'])
-        })
-
-    # Guard: only upsert if we actually have records
-    if records:
-        supabase.table("daily_ohlcv").upsert(records).execute()
+    # ── Save to Supabase if available ──────────────────────────────────────────
+    if SUPABASE_OK and supabase:
+        try:
+            records = []
+            for _, row in df.iterrows():
+                records.append({
+                    "asset_id": asset_id,
+                    "date": str(row['date'].date()) if hasattr(row['date'], 'date') else str(row['date'])[:10],
+                    "open": float(row['open']),
+                    "high": float(row['high']),
+                    "low": float(row['low']),
+                    "close": float(row['close']),
+                    "volume": int(row['volume'])
+                })
+            if records:
+                supabase.table("daily_ohlcv").upsert(records).execute()
+        except Exception as e:
+            print(f"[HistData] Supabase save failed for {ticker}: {e}")
 
     return df
