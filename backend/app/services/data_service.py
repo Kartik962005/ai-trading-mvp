@@ -1,9 +1,8 @@
 import requests
 import yfinance as yf
 import pandas as pd
+import time
 
-# ── Safe Supabase import ───────────────────────────────────────────────────────
-# Wrapped in try/except so a missing env var doesn't crash the server at startup.
 try:
     from app.core.supabase_client import supabase
     SUPABASE_OK = True
@@ -12,18 +11,22 @@ except Exception as e:
     supabase = None
     SUPABASE_OK = False
 
+_hist_cache: dict = {}
+_quote_cache: dict = {}
+HIST_TTL  = 3600  # 1 hour
+QUOTE_TTL = 15    # 15 seconds
+
 
 def get_latest_quote(ticker: str):
-    """
-    Tries 3 sources in order for fastest real-time price.
-    All free, no API key needed.
-    """
+    now = time.time()
+    if ticker in _quote_cache and now - _quote_cache[ticker]['ts'] < QUOTE_TTL:
+        return _quote_cache[ticker]['data']
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json',
     }
 
-    # Source 1: Yahoo Finance v8 query1 (fastest ~200ms)
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
         response = requests.get(url, headers=headers, timeout=4)
@@ -32,11 +35,12 @@ def get_latest_quote(ticker: str):
         live_price = float(meta['regularMarketPrice'])
         prev_close = float(meta['chartPreviousClose'])
         change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+        result = {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+        _quote_cache[ticker] = {'data': result, 'ts': time.time()}
+        return result
     except Exception as e:
         print(f"[Quote] Yahoo v8 q1 failed for {ticker}: {e}")
 
-    # Source 2: Yahoo Finance v8 query2 (backup)
     try:
         url2 = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
         response2 = requests.get(url2, headers=headers, timeout=4)
@@ -45,18 +49,21 @@ def get_latest_quote(ticker: str):
         live_price = float(meta2['regularMarketPrice'])
         prev_close = float(meta2['chartPreviousClose'])
         change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+        result = {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+        _quote_cache[ticker] = {'data': result, 'ts': time.time()}
+        return result
     except Exception as e:
         print(f"[Quote] Yahoo v8 q2 failed for {ticker}: {e}")
 
-    # Source 3: yfinance fast_info (slowest fallback)
     try:
         tkr = yf.Ticker(ticker)
         info = tkr.fast_info
         live_price = float(info.last_price)
         prev_close = float(info.previous_close)
         change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+        result = {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
+        _quote_cache[ticker] = {'data': result, 'ts': time.time()}
+        return result
     except Exception as e:
         print(f"[Quote] yfinance fallback failed for {ticker}: {e}")
 
@@ -64,6 +71,9 @@ def get_latest_quote(ticker: str):
 
 
 def get_historical_data(ticker: str, days: int = 365):
+    now = time.time()
+    if ticker in _hist_cache and now - _hist_cache[ticker]['ts'] < HIST_TTL:
+        return _hist_cache[ticker]['df'].copy()
 
     # ── Supabase cache (only if available) ────────────────────────────────────
     if SUPABASE_OK and supabase:
@@ -120,4 +130,5 @@ def get_historical_data(ticker: str, days: int = 365):
         except Exception as e:
             print(f"[HistData] Supabase save failed for {ticker}: {e}")
 
+    _hist_cache[ticker] = {'df': df.copy(), 'ts': time.time()}
     return df

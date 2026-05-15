@@ -9,7 +9,11 @@ import html
 import re
 import math
 import numpy as np
+import time
 from datetime import datetime, timedelta
+
+_analysis_cache: dict = {}
+ANALYSIS_TTL = 3600
 
 def fetch_news_sentiment(ticker: str):
     try:
@@ -188,10 +192,43 @@ def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     fiso_base = (evals[1]['score'] + evals[6]['score'] + evals[7]['score'] + evals[9]['score']) / 4
     evals[20] = {"score": int(fiso_base), "desc": f"Quant Matrix: Synthesizing Trend, Volume, VWAP, and RSI yields a multi-factor confidence of {int(fiso_base)}/100."}
 
-    best_id = max(evals.items(), key=lambda x: x[1]['score'])[0]
-    return evals, best_id
+    STRATEGY_NAMES = {
+        1:  "Moving Avg Crossover",
+        2:  "EMA Pullback",
+        3:  "Supertrend",
+        4:  "Breakout Trading",
+        5:  "Trendline Retest",
+        6:  "Volume Anomaly",
+        7:  "Relative Strength",
+        8:  "Momentum Ignition",
+        9:  "VWAP Trend",
+        10: "Gap-Up Momentum",
+        11: "RSI Divergence",
+        12: "MACD Divergence",
+        13: "Mean Reversion",
+        14: "Bollinger Reversal",
+        15: "Volatility Expansion",
+        16: "ATR Breakout",
+        17: "Liquidity Sweep",
+        18: "Order Block",
+        19: "S/R Flip",
+        20: "Multi-Factor Quant",
+    }
+
+    sorted_evals = sorted(
+        [{"id": sid, "name": STRATEGY_NAMES.get(sid, f"Strategy {sid}"), "score": data["score"], "desc": data["desc"]}
+         for sid, data in evals.items()],
+        key=lambda x: x["score"], reverse=True
+    )
+
+    best_id = sorted_evals[0]["id"] if sorted_evals else 1
+    return sorted_evals, best_id
 
 def run_analysis(df: pd.DataFrame, ticker: str):
+    now = time.time()
+    if ticker in _analysis_cache and now - _analysis_cache[ticker]['ts'] < ANALYSIS_TTL:
+        return _analysis_cache[ticker]['result']
+
     df.columns = [str(c).lower() for c in df.columns]
     df = df.dropna(subset=['close', 'high', 'low', 'volume'])
     df = df.reset_index(drop=True)
@@ -260,7 +297,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
 
     strategy_evals, best_id = evaluate_strategies(latest, prev, df)
 
-    return {
+    result = {
         "ticker": ticker,
         "fiso_score": round(fiso, 2),
         "verdict": verdict,
@@ -275,3 +312,5 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "estimated_days": estimated_days,
         "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y')
     }
+    _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+    return result

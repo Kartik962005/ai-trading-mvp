@@ -173,7 +173,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
   const rr = Math.abs(priceDiff / (analysis.stop_loss - analysis.entry)).toFixed(2);
 
-  // AI Backtester state (lifted into FisoDetailPanel so it lives next to the section)
+  // AI Backtester state
   const [aiPrompt, setAiPrompt] = useState('');
   const [backtestResult, setBacktestResult] = useState<any>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
@@ -196,14 +196,42 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
     }
   };
 
-  // ── Enter key handler for AI backtester input
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) {
-      handleCustomBacktest();
-    }
+    if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) handleCustomBacktest();
   };
 
+  // ── Strategy card state ────────────────────────────────────────────────────
+  const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(null);
+  const [strategyBacktests, setStrategyBacktests] = useState<Record<number, any>>({});
+  const [loadingStrategies, setLoadingStrategies] = useState<Record<number, boolean>>({});
+
   const topStrategies = (analysis?.strategy_evals ?? []).slice(0, 10);
+
+  // Auto-run backtests for all 10 strategies as soon as analysis loads
+  useEffect(() => {
+    if (!ticker || topStrategies.length === 0) return;
+    setStrategyBacktests({});
+    setSelectedStrategyId(null);
+    topStrategies.forEach((s: any, i: number) => {
+      setTimeout(async () => {
+        setLoadingStrategies(prev => ({ ...prev, [s.id]: true }));
+        try {
+          const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker, prompt: s.name + ': ' + s.desc })
+          });
+          const data = await res.json();
+          setStrategyBacktests(prev => ({ ...prev, [s.id]: data }));
+        } catch {
+          setStrategyBacktests(prev => ({ ...prev, [s.id]: { error: 'Failed' } }));
+        } finally {
+          setLoadingStrategies(prev => ({ ...prev, [s.id]: false }));
+        }
+      }, i * 350);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, topStrategies.length]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -450,7 +478,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                 Signal<span className="text-cyan-400">X</span> will recommend
               </h3>
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-['JetBrains_Mono']">
-                Top 10 strategies ranked by signal score · Best fit first
+                Top 10 strategies · Win rate auto-backtested · Tap any to expand full metrics
               </span>
             </div>
           </div>
@@ -466,52 +494,130 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
         ) : (
           <div className="flex flex-col gap-3">
             {topStrategies.map((s: any, rank: number) => {
-              const isBestFit = rank === 0;
-              // Using #4ade80 for strong buy (green) and #f87171 for weak/sell (red)
-              const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
+              const isBestFit    = rank === 0;
+              const isSelected   = selectedStrategyId === s.id;
+              const isLoading    = loadingStrategies[s.id];
+              const bResult      = strategyBacktests[s.id];
+              const winRate      = bResult?.win_rate ?? bResult?.custom_metrics?.win_rate;
+              const hasWinRate   = winRate != null && !bResult?.error;
+              const scoreColor   = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
+              const winColor     = hasWinRate ? (winRate >= 55 ? '#4ade80' : winRate >= 45 ? '#fbbf24' : '#f87171') : scoreColor;
+              const displayVal   = isLoading ? '…' : hasWinRate ? `${winRate}%` : `${s.score}`;
+              const displayColor = isLoading ? '#52525b' : hasWinRate ? winColor : scoreColor;
+              const barWidth     = isLoading ? 0 : hasWinRate ? Math.min(winRate, 100) : s.score;
+              const barLabel     = isLoading ? 'loading' : hasWinRate ? 'win rate' : 'score';
+
               return (
                 <div
                   key={s.id}
-                  className={`relative rounded-2xl p-4 transition-all duration-200 ${
-                    isBestFit
-                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
-                      : 'bg-black/30 border border-white/5 hover:border-white/15 hover:bg-white/3'
+                  onClick={() => setSelectedStrategyId(isSelected ? null : s.id)}
+                  className={`relative rounded-2xl p-4 transition-all duration-200 cursor-pointer select-none ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-cyan-900/40 to-fuchsia-900/20 border border-cyan-400/60 shadow-[0_0_25px_rgba(6,182,212,0.18)]'
+                      : isBestFit
+                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)] hover:border-cyan-400/60'
+                      : 'bg-black/30 border border-white/5 hover:border-white/20 hover:bg-white/3'
                   }`}
                 >
                   <div className="flex items-start gap-4">
 
-                    {/* Rank number */}
+                    {/* Rank badge */}
                     <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
-                      isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
+                      isBestFit ? 'bg-cyan-400 text-black' : isSelected ? 'bg-cyan-500/30 text-cyan-300' : 'bg-white/5 text-zinc-500'
                     }`}>
                       {String(rank + 1).padStart(2, '0')}
                     </div>
 
-                    {/* Main content */}
+                    {/* Name + desc + expanded metrics */}
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
+                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit || isSelected ? 'text-white' : 'text-zinc-200'}`}>
                           {s.name}
                         </span>
                         {isBestFit && (
-                          <span className="text-[8px] bg-cyan-400 text-black px-2 py-0.5 rounded-full font-black uppercase tracking-widest">
-                            ★ Best Fit Strategy
+                          <span className="text-[8px] bg-cyan-400 text-black px-2 py-0.5 rounded-full font-black uppercase tracking-widest">★ Best Fit</span>
+                        )}
+                        {hasWinRate && !isLoading && (
+                          <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${
+                            winRate >= 55 ? 'bg-green-500/10 text-green-400 border-green-500/30' :
+                            winRate >= 45 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' :
+                            'bg-red-500/10 text-red-400 border-red-500/30'}`}>
+                            {winRate >= 55 ? '✓ Profitable' : winRate >= 45 ? '~ Neutral' : '✗ Losing'}
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
+
+                      {/* Expanded backtest metrics panel */}
+                      {isSelected && (
+                        <div className="mt-3 pt-3 border-t border-white/10">
+                          {isLoading ? (
+                            <div className="flex items-center gap-2 py-2">
+                              <div className="w-4 h-4 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0" />
+                              <span className="text-[10px] text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Running backtest...</span>
+                            </div>
+                          ) : bResult?.error ? (
+                            <p className="text-[11px] text-amber-400 font-['JetBrains_Mono']">{bResult.error}</p>
+                          ) : hasWinRate ? (
+                            <>
+                              {bResult?.note && (
+                                <p className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] mb-2 italic">{bResult.note}</p>
+                              )}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                                {[
+                                  { label: 'Trades',       value: bResult.total_trades,              suffix: '',  color: 'text-white'    },
+                                  { label: 'Win Rate',     value: winRate,                            suffix: '%', color: winRate >= 55 ? 'text-green-400' : winRate >= 45 ? 'text-yellow-400' : 'text-red-400' },
+                                  { label: 'Avg / Trade',  value: bResult.avg_return_per_trade_pct,  suffix: '%', color: (bResult.avg_return_per_trade_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400' },
+                                  { label: 'Total Return', value: bResult.total_return_pct,           suffix: '%', color: (bResult.total_return_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400' },
+                                ].map(({ label, value, suffix, color }) => (
+                                  <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                    <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-bold block mb-1 font-['Space_Grotesk']">{label}</span>
+                                    <span className={`text-sm font-['JetBrains_Mono'] font-bold ${color}`}>
+                                      {value != null ? `${value}${suffix}` : '—'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                              {/* Secondary metrics row */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {[
+                                  { label: 'Best Trade',  value: bResult.best_trade_pct,  suffix: '%', color: 'text-green-400' },
+                                  { label: 'Worst Trade', value: bResult.worst_trade_pct, suffix: '%', color: 'text-red-400'   },
+                                  { label: 'Avg Win',     value: bResult.avg_win_pct,     suffix: '%', color: 'text-green-400' },
+                                  { label: 'Avg Loss',    value: bResult.avg_loss_pct,    suffix: '%', color: 'text-red-400'   },
+                                ].map(({ label, value, suffix, color }) => (
+                                  <div key={label} className="bg-white/3 rounded-xl p-2.5 border border-white/5">
+                                    <span className="text-[8px] text-zinc-600 uppercase tracking-widest font-bold block mb-0.5 font-['Space_Grotesk']">{label}</span>
+                                    <span className={`text-xs font-['JetBrains_Mono'] font-bold ${color}`}>
+                                      {value != null ? `${value}${suffix}` : '—'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Score */}
-                    <div className="shrink-0 flex flex-col items-end gap-1.5">
-                      <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
-                        {s.score}
-                      </span>
-                      <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
-                      </div>
-                      <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
+                    {/* Win rate / score badge */}
+                    <div className="shrink-0 flex flex-col items-end gap-1.5 min-w-[56px]">
+                      {isLoading ? (
+                        <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin mt-1" />
+                      ) : (
+                        <>
+                          <span className="text-lg font-['JetBrains_Mono'] font-bold leading-none" style={{ color: displayColor }}>
+                            {displayVal}
+                          </span>
+                          <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700"
+                              style={{ width: `${barWidth}%`, backgroundColor: displayColor }} />
+                          </div>
+                          <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">{barLabel}</span>
+                        </>
+                      )}
                     </div>
+
                   </div>
                 </div>
               );
