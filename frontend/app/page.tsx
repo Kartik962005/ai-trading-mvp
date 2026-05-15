@@ -92,11 +92,11 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Target</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-cyan-400 font-bold">{stock.currency}{analysis.target}</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-green-400 font-bold">{stock.currency}{analysis.target}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Stop Loss</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-fuchsia-400 font-bold">{stock.currency}{analysis.stop_loss}</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-red-400 font-bold">{stock.currency}{analysis.stop_loss}</span>
             </div>
             <button
               onMouseDown={() => onSelect(stock)}
@@ -124,7 +124,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const isHold = analysis.verdict === 'Hold';
   const accentColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
   const accentBg = isBull ? 'bg-green-500/10 border-green-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-red-500/10 border-red-500/30';
-  const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(74,222,128,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(248,113,113,0.15)]';
+  const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(74,222,128,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(239,68,68,0.15)]';
   const priceDiff = analysis.target - analysis.entry;
   const pricePct = ((priceDiff / analysis.entry) * 100).toFixed(2);
   const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
@@ -181,7 +181,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
               <span className="text-zinc-400 text-lg mb-0.5">%</span>
             </div>
             <div className="w-full bg-zinc-800 rounded-full h-1 mt-2 overflow-hidden">
-              <div className={`h-full rounded-full ${isBull ? 'bg-cyan-400' : isHold ? 'bg-zinc-400' : 'bg-fuchsia-500'}`} style={{ width: `${analysis.confidence}%` }} />
+              <div className={`h-full rounded-full ${isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-500'}`} style={{ width: `${analysis.confidence}%` }} />
             </div>
           </div>
         </div>
@@ -195,15 +195,15 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
               <span className="text-zinc-600 text-xl mb-1">/100</span>
             </div>
             <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden mb-4">
-              <div className="h-full rounded-full bg-gradient-to-r from-fuchsia-500 via-zinc-400 to-cyan-400 transition-all duration-1000"
+              <div className="h-full rounded-full bg-gradient-to-r from-red-500 via-zinc-400 to-green-400 transition-all duration-1000"
                 style={{ width: `${analysis.fiso_score}%` }} />
             </div>
             <div className="grid grid-cols-4 gap-1 text-center">
               {[['0-20', 'Sell'], ['20-40', 'Weak'], ['40-75', 'Hold'], ['75-100', 'Buy']].map(([range, label]) => (
                 <div key={label} className={`rounded-lg py-1 text-[8px] font-bold uppercase tracking-widest font-['JetBrains_Mono']
-                  ${analysis.fiso_score >= 75 && label === 'Buy' ? 'bg-cyan-500/30 text-cyan-400' :
+                  ${analysis.fiso_score >= 75 && label === 'Buy' ? 'bg-green-500/30 text-green-400' :
                     analysis.fiso_score >= 40 && analysis.fiso_score < 75 && label === 'Hold' ? 'bg-zinc-500/30 text-zinc-300' :
-                    analysis.fiso_score < 40 && (label === 'Sell' || label === 'Weak') ? 'bg-fuchsia-500/30 text-fuchsia-400' :
+                    analysis.fiso_score < 40 && (label === 'Sell' || label === 'Weak') ? 'bg-red-500/30 text-red-400' :
                     'bg-white/5 text-zinc-600'}`}>
                   {label}
                 </div>
@@ -221,15 +221,15 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysis.entry?.toLocaleString()}</span>
               <span className="text-[9px] text-zinc-500 block mt-1">Current position</span>
             </div>
-            <div className="bg-cyan-500/10 border border-cyan-400/30 rounded-2xl p-4">
+            <div className="bg-green-500/10 border border-green-400/30 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Target Price</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-cyan-400">{currency}{analysis.target?.toLocaleString()}</span>
-              <span className="text-[9px] text-cyan-500/70 block mt-1">{priceDiff > 0 ? '+' : ''}{pricePct}% upside</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-green-400">{currency}{analysis.target?.toLocaleString()}</span>
+              <span className="text-[9px] text-green-500/70 block mt-1">{priceDiff > 0 ? '+' : ''}{pricePct}% upside</span>
             </div>
-            <div className="bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-2xl p-4">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Stop Loss</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-fuchsia-400">{currency}{analysis.stop_loss?.toLocaleString()}</span>
-              <span className="text-[9px] text-fuchsia-500/70 block mt-1">{slPct}% downside</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-red-400">{currency}{analysis.stop_loss?.toLocaleString()}</span>
+              <span className="text-[9px] text-red-500/70 block mt-1">{slPct}% downside</span>
             </div>
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Risk:Reward</span>
@@ -247,15 +247,15 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between py-3 border-b border-white/5">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center">
-                  <span className="text-cyan-400 text-xs font-bold">T</span>
+                <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                  <span className="text-green-400 text-xs font-bold">T</span>
                 </div>
                 <div>
                   <span className="text-xs font-bold text-white block">Target Date</span>
                   <span className="text-[10px] text-zinc-500">{analysis.target_date}</span>
                 </div>
               </div>
-              <span className="font-['JetBrains_Mono'] text-cyan-400 font-bold text-sm">{analysis.estimated_days}d</span>
+              <span className="font-['JetBrains_Mono'] text-green-400 font-bold text-sm">{analysis.estimated_days}d</span>
             </div>
             <div className="flex items-center justify-between py-3 border-b border-white/5">
               <div className="flex items-center gap-3">
@@ -267,7 +267,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                   <span className="text-[10px] text-zinc-500">From current price</span>
                 </div>
               </div>
-              <span className={`font-['JetBrains_Mono'] font-bold text-sm ${priceDiff >= 0 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
+              <span className={`font-['JetBrains_Mono'] font-bold text-sm ${priceDiff >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 {priceDiff >= 0 ? '+' : ''}{pricePct}%
               </span>
             </div>
@@ -281,7 +281,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                   <span className="text-[10px] text-zinc-500">If stop loss triggered</span>
                 </div>
               </div>
-              <span className="font-['JetBrains_Mono'] font-bold text-sm text-fuchsia-400">{slPct}%</span>
+              <span className="font-['JetBrains_Mono'] font-bold text-sm text-red-400">{slPct}%</span>
             </div>
           </div>
         </div>
@@ -338,8 +338,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
         {backtestResult && !isBacktesting && (
           <div className="mt-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {backtestResult.error || backtestResult.custom_metrics?.error ? (
-              <div className="bg-fuchsia-500/5 border border-fuchsia-500/20 rounded-2xl p-4">
-                <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">
+              <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
+                <p className="text-red-400 text-sm font-['JetBrains_Mono']">
                   {backtestResult.error || backtestResult.custom_metrics?.error}
                 </p>
               </div>
@@ -373,14 +373,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                       label: 'Avg Return / Trade',
                       value: backtestResult.custom_metrics?.avg_return_per_trade_pct,
                       suffix: '%',
-                      color: (backtestResult.custom_metrics?.avg_return_per_trade_pct ?? 0) >= 0 ? 'text-cyan-400' : 'text-fuchsia-400',
+                      color: (backtestResult.custom_metrics?.avg_return_per_trade_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
                       icon: '⚡'
                     },
                     {
                       label: 'Total Return',
                       value: backtestResult.custom_metrics?.total_return_pct,
                       suffix: '%',
-                      color: (backtestResult.custom_metrics?.total_return_pct ?? 0) >= 0 ? 'text-cyan-400' : 'text-fuchsia-400',
+                      color: (backtestResult.custom_metrics?.total_return_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
                       icon: '💰'
                     },
                   ].map(({ label, value, suffix, color, icon }) => (
@@ -489,12 +489,12 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
       <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
         <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse inline-block"></span>
+            <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse inline-block"></span>
             <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Global NLP Feed</span>
           </div>
           <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
             ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
-              analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' :
+              analysis?.sentiment?.label === 'Bearish' ? 'bg-red-500/10 text-red-400 border-red-500/30' :
               'bg-white/5 text-zinc-400 border-white/10'}`}>
             {analysis?.sentiment?.label || 'ANALYZING'} [{analysis?.sentiment?.score || 0}]
           </span>
@@ -594,7 +594,7 @@ export default function Home() {
 
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
-  const accentColor = isBull ? 'text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]' : isHold ? 'text-zinc-300' : 'text-fuchsia-500 drop-shadow-[0_0_15px_rgba(217,70,239,0.5)]';
+  const accentColor = isBull ? 'text-green-400 drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]' : isHold ? 'text-zinc-300' : 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]';
 
   const TickerContent = () => (
     <>
@@ -751,7 +751,7 @@ export default function Home() {
                   <div className="text-left sm:text-right">
                     <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Live Price</div>
                     <span className="text-3xl sm:text-4xl font-['JetBrains_Mono'] font-bold text-white tracking-tight">{currency}{quote.price.toLocaleString()}</span>
-                    <div className={`text-sm font-['JetBrains_Mono'] font-bold mt-1 tracking-wider ${quote.change_percent > 0 ? 'text-cyan-400' : 'text-fuchsia-500'}`}>
+                    <div className={`text-sm font-['JetBrains_Mono'] font-bold mt-1 tracking-wider ${quote.change_percent > 0 ? 'text-green-400' : 'text-red-500'}`}>
                       {quote.change_percent > 0 ? '▲' : '▼'} {Math.abs(quote.change_percent).toFixed(2)}%
                     </div>
                   </div>
