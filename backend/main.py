@@ -3,8 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from dotenv import load_dotenv
+from pydantic import BaseModel
+from app.strategies.nlp_backtester import run_custom_backtest
 import os
-
 load_dotenv()
 
 limiter = Limiter(key_func=get_remote_address)
@@ -71,6 +72,24 @@ async def strategy_analysis(request: Request, ticker: str, strategy_name: str):
         "selected_strategy": selected,
         "best_strategy": best
     }
+class BacktestRequest(BaseModel):
+    ticker: str
+    prompt: str
+
+@app.post("/api/v1/backtest/custom")
+@limiter.limit("5/minute") # Prevent spam on your free LLM tier
+async def custom_backtest(request: Request, body: BacktestRequest):
+    try:
+        # Fetch data using your existing yfinance function
+        df = get_historical_data(body.ticker) 
+        
+        # Ensure your indicators (SMA, RSI, etc) are calculated on this df first!
+        # (You can copy the indicator calculations from run_analysis in engine.py)
+        
+        result = run_custom_backtest(df, body.prompt)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # =====================================================================
 
 print("✅ FastAPI started - visit http://localhost:8000/health")

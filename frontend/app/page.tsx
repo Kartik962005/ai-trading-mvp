@@ -100,6 +100,9 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<typeof STOCKS>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeMarket, setActiveMarket] = useState<'INDIA' | 'US' | 'CRYPTO' | null>('INDIA');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [backtestResult, setBacktestResult] = useState<any>(null);
+  const [isBacktesting, setIsBacktesting] = useState(false);
   
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -166,7 +169,24 @@ export default function Home() {
     if (activeMarket === 'CRYPTO') return STOCKS.filter(s => s.exchange === 'CRYPTO');
     return [];
   };
-
+  const handleCustomBacktest = async () => {
+    if (!aiPrompt || !ticker) return;
+    setIsBacktesting(true);
+    setBacktestResult(null);
+    try {
+      const res = await fetch('https://ai-trading-backend-jhcl.onrender.com/api/v1/backtest/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: ticker, prompt: aiPrompt })
+      });
+      const data = await res.json();
+      setBacktestResult(data);
+    } catch (err) {
+      console.error("Backtest failed", err);
+    } finally {
+      setIsBacktesting(false);
+    }
+  };
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
   const accentColor = isBull ? 'text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]' : isHold ? 'text-zinc-300 drop-shadow-[0_0_15px_rgba(212,212,216,0.5)]' : 'text-fuchsia-500 drop-shadow-[0_0_15px_rgba(217,70,239,0.5)]';
@@ -482,7 +502,7 @@ export default function Home() {
                               </div>
                             </div>
 
-                            <p className="text-xs text-zinc-500 leading-relaxed border-t border-white/5 pt-3">
+                           <p className="text-xs text-zinc-500 leading-relaxed border-t border-white/5 pt-3">
                               {strategy.desc}
                             </p>
                           </div>
@@ -493,6 +513,72 @@ export default function Home() {
 
                 </div>
               )}
+
+              {/* ========================================= */}
+              {/* AI STRATEGY LAB UI BLOCK                  */}
+              {/* ========================================= */}
+              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mt-6">
+                <h3 className="text-xs font-bold text-cyan-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-4 font-['Space_Grotesk'] flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                  AI Strategy Lab (Beta)
+                </h3>
+                
+                <div className="flex gap-4 mb-6">
+                  <input 
+                    type="text"
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="e.g., 'Buy if price goes down 2 days in a row and RSI is below 30'"
+                    className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white font-['JetBrains_Mono'] focus:border-cyan-400 outline-none"
+                  />
+                  <button 
+                    onClick={handleCustomBacktest}
+                    disabled={isBacktesting}
+                    className="bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500/40 px-6 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
+                  >
+                    {isBacktesting ? 'Simulating...' : 'Backtest'}
+                  </button>
+                </div>
+
+                {/* Results Display */}
+                {backtestResult && (
+                  <div className="p-4 rounded-xl border border-white/10 bg-white/5 animate-in fade-in zoom-in-95 duration-300">
+                    {backtestResult.error ? (
+                      <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">{backtestResult.error}</p>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Total Trades</span>
+                           <span className="text-xl text-white font-['JetBrains_Mono']">{backtestResult.total_trades}</span>
+                        </div>
+                        <div>
+                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Win Rate</span>
+                           <span className={`text-xl font-['JetBrains_Mono'] ${backtestResult.win_rate > 50 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
+                             {backtestResult.win_rate}%
+                           </span>
+                        </div>
+                        <div>
+                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Avg Return / Trade</span>
+                           <span className={`text-xl font-['JetBrains_Mono'] ${backtestResult.avg_return_per_trade_pct > 0 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
+                             {backtestResult.avg_return_per_trade_pct}%
+                           </span>
+                        </div>
+                        <div>
+                           <span className="text-[10px] text-zinc-500 uppercase block mb-1">Total Compound Return</span>
+                           <span className={`text-xl font-['JetBrains_Mono'] ${backtestResult.total_return_pct > 0 ? 'text-cyan-400' : 'text-fuchsia-400'}`}>
+                             {backtestResult.total_return_pct}%
+                           </span>
+                        </div>
+                        <div className="col-span-full mt-2 pt-2 border-t border-white/5">
+                           <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono']">Generated Logic: {backtestResult.logic_used}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* ========================================= */}
+
             </div>
           )}
         </main>
