@@ -52,7 +52,7 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
     }
   }, [stock, onSelect]);
 
-  const { data: analysis } = useSWR(`/api/v1/analyze/${stock.ticker}`, fetcher);
+  const { data: analysis } = useSWR(expanded ? `/api/v1/analyze/${stock.ticker}` : null, fetcher);
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
   const verdictColor = isBull ? 'text-cyan-400' : isHold ? 'text-zinc-300' : 'text-fuchsia-400';
@@ -65,6 +65,12 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
       className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 cursor-pointer group flex flex-col justify-start overflow-hidden select-none
         ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
     >
+      <div className="absolute top-2 right-2 md:hidden">
+        <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
+          {expanded ? '2× open' : 'tap'}
+        </span>
+      </div>
+
       <div className="flex justify-between items-start mb-2">
         <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
         <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
@@ -706,7 +712,7 @@ export default function Home() {
                       ${activeMarket === market ? 'text-white' : 'text-zinc-400'}`}>
                       {market === 'INDIA' ? 'India' : market === 'US' ? 'US' : 'Crypto'}
                     </span>
-                    <span className={`text-[8px] sm:text-[10px] font-['JetBrains_Mono'] mt-1 sm:mt-2 uppercase tracking-widest
+                    <span className={`text-[9px] sm:text-[10px] font-['JetBrains_Mono'] mt-1 sm:mt-2 uppercase tracking-widest hidden sm:block
                       ${activeMarket === market
                         ? market === 'INDIA' ? 'text-cyan-400' : market === 'US' ? 'text-fuchsia-400' : 'text-white'
                         : 'text-zinc-600'}`}>
