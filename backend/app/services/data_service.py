@@ -1,9 +1,9 @@
 import requests
 import yfinance as yf
 import pandas as pd
-import time
 
 # ── Safe Supabase import ───────────────────────────────────────────────────────
+# Wrapped in try/except so a missing env var doesn't crash the server at startup.
 try:
     from app.core.supabase_client import supabase
     SUPABASE_OK = True
@@ -12,25 +12,12 @@ except Exception as e:
     supabase = None
     SUPABASE_OK = False
 
-# ── In-memory caches ───────────────────────────────────────────────────────────
-# Historical OHLCV: re-downloaded once per hour max
-_hist_cache: dict = {}
-HIST_TTL = 3600  # 1 hour
-
-# Quote cache: live price refreshed every 15 seconds
-_quote_cache: dict = {}
-QUOTE_TTL = 15  # 15 seconds
-
 
 def get_latest_quote(ticker: str):
     """
     Tries 3 sources in order for fastest real-time price.
-    Results are cached for 15 seconds to avoid redundant calls.
+    All free, no API key needed.
     """
-    now = time.time()
-    if ticker in _quote_cache and now - _quote_cache[ticker]['ts'] < QUOTE_TTL:
-        return _quote_cache[ticker]['data']
-
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json',
@@ -45,9 +32,7 @@ def get_latest_quote(ticker: str):
         live_price = float(meta['regularMarketPrice'])
         prev_close = float(meta['chartPreviousClose'])
         change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-        result = {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
-        _quote_cache[ticker] = {'data': result, 'ts': time.time()}
-        return result
+        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
     except Exception as e:
         print(f"[Quote] Yahoo v8 q1 failed for {ticker}: {e}")
 
@@ -60,9 +45,7 @@ def get_latest_quote(ticker: str):
         live_price = float(meta2['regularMarketPrice'])
         prev_close = float(meta2['chartPreviousClose'])
         change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-        result = {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
-        _quote_cache[ticker] = {'data': result, 'ts': time.time()}
-        return result
+        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
     except Exception as e:
         print(f"[Quote] Yahoo v8 q2 failed for {ticker}: {e}")
 
@@ -73,9 +56,7 @@ def get_latest_quote(ticker: str):
         live_price = float(info.last_price)
         prev_close = float(info.previous_close)
         change_pct = ((live_price - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
-        result = {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
-        _quote_cache[ticker] = {'data': result, 'ts': time.time()}
-        return result
+        return {"price": round(live_price, 2), "change_percent": round(change_pct, 2)}
     except Exception as e:
         print(f"[Quote] yfinance fallback failed for {ticker}: {e}")
 
@@ -83,12 +64,6 @@ def get_latest_quote(ticker: str):
 
 
 def get_historical_data(ticker: str, days: int = 365):
-
-    # ── In-memory cache check (fastest — microseconds) ─────────────────────
-    now = time.time()
-    if ticker in _hist_cache and now - _hist_cache[ticker]['ts'] < HIST_TTL:
-        print(f"[HistData] Cache hit for {ticker}")
-        return _hist_cache[ticker]['df'].copy()
 
     # ── Supabase cache (only if available) ────────────────────────────────────
     if SUPABASE_OK and supabase:
@@ -144,9 +119,5 @@ def get_historical_data(ticker: str, days: int = 365):
                 supabase.table("daily_ohlcv").upsert(records).execute()
         except Exception as e:
             print(f"[HistData] Supabase save failed for {ticker}: {e}")
-
-    # ── Store in memory cache ──────────────────────────────────────────────────
-    _hist_cache[ticker] = {'df': df.copy(), 'ts': time.time()}
-    print(f"[HistData] Cached {ticker} ({len(df)} rows)")
 
     return df
