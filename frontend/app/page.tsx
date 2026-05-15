@@ -67,7 +67,6 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
         <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
         <div className="flex items-center gap-1.5">
           <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
-          <span className="md:hidden text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">{expanded ? '2×' : 'tap'}</span>
         </div>
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
@@ -131,6 +130,31 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const [aiPrompt, setAiPrompt] = useState('');
   const [backtestResult, setBacktestResult] = useState<any>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
+
+  // ── Strategy card backtest state
+  const [selectedStrategy, setSelectedStrategy] = useState<any>(null);
+  const [strategyBacktest, setStrategyBacktest] = useState<any>(null);
+  const [isStrategyTesting, setIsStrategyTesting] = useState(false);
+
+  const handleStrategyClick = async (strategy: any) => {
+    if (!ticker) return;
+    setSelectedStrategy(strategy);
+    setStrategyBacktest(null);
+    setIsStrategyTesting(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, prompt: strategy.name + ': ' + strategy.desc })
+      });
+      const data = await res.json();
+      setStrategyBacktest(data);
+    } catch {
+      setStrategyBacktest({ error: "Failed to connect to backend." });
+    } finally {
+      setIsStrategyTesting(false);
+    }
+  };
 
   const handleCustomBacktest = async () => {
     if (!aiPrompt || !ticker) return;
@@ -404,7 +428,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                 Signal<span className="text-cyan-400">X</span> will recommend
               </h3>
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-['JetBrains_Mono']">
-                Top 10 strategies ranked by signal score · Best fit first
+                Top 10 strategies ranked by signal score · Tap any strategy to run backtest
               </span>
             </div>
           </div>
@@ -421,22 +445,27 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
           <div className="flex flex-col gap-3">
             {topStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
-              // Using #4ade80 for strong buy (green) and #f87171 for weak/sell (red)
+              const isSelected = selectedStrategy?.id === s.id;
               const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
+              const bResult = isSelected ? strategyBacktest : null;
+              const winRate = bResult?.custom_metrics?.win_rate ?? bResult?.win_rate;
+              const winRateColor = winRate != null ? (winRate >= 55 ? '#4ade80' : winRate >= 45 ? '#fbbf24' : '#f87171') : scoreColor;
               return (
                 <div
                   key={s.id}
-                  className={`relative rounded-2xl p-4 transition-all duration-200 ${
-                    isBestFit
-                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
-                      : 'bg-black/30 border border-white/5 hover:border-white/15 hover:bg-white/3'
+                  onClick={() => handleStrategyClick(s)}
+                  className={`relative rounded-2xl p-4 transition-all duration-200 cursor-pointer ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-cyan-900/40 to-fuchsia-900/20 border border-cyan-400/60 shadow-[0_0_25px_rgba(6,182,212,0.18)]'
+                      : isBestFit
+                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)] hover:border-cyan-400/60'
+                      : 'bg-black/30 border border-white/5 hover:border-white/20 hover:bg-white/3'
                   }`}
                 >
                   <div className="flex items-start gap-4">
-
                     {/* Rank number */}
                     <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
-                      isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
+                      isBestFit ? 'bg-cyan-400 text-black' : isSelected ? 'bg-cyan-500/30 text-cyan-300' : 'bg-white/5 text-zinc-500'
                     }`}>
                       {String(rank + 1).padStart(2, '0')}
                     </div>
@@ -444,7 +473,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                     {/* Main content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
+                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit || isSelected ? 'text-white' : 'text-zinc-200'}`}>
                           {s.name}
                         </span>
                         {isBestFit && (
@@ -454,17 +483,65 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                         )}
                       </div>
                       <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
+
+                      {/* Inline backtest result panel */}
+                      {isSelected && (
+                        <div className="mt-3 pt-3 border-t border-white/10">
+                          {isStrategyTesting ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
+                              <span className="text-[10px] text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Running backtest...</span>
+                            </div>
+                          ) : bResult ? (
+                            bResult.error || bResult.custom_metrics?.error ? (
+                              <p className="text-[11px] text-red-400 font-['JetBrains_Mono']">
+                                {bResult.error || bResult.custom_metrics?.error}
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {[
+                                  { label: 'Trades', value: bResult.custom_metrics?.total_trades ?? bResult.total_trades, suffix: '', color: 'text-white' },
+                                  { label: 'Win Rate', value: winRate, suffix: '%', color: winRate != null ? (winRate >= 55 ? 'text-green-400' : winRate >= 45 ? 'text-yellow-400' : 'text-red-400') : 'text-white' },
+                                  { label: 'Avg/Trade', value: bResult.custom_metrics?.avg_return_per_trade_pct ?? bResult.avg_return_per_trade_pct, suffix: '%', color: ((bResult.custom_metrics?.avg_return_per_trade_pct ?? bResult.avg_return_per_trade_pct) ?? 0) >= 0 ? 'text-green-400' : 'text-red-400' },
+                                  { label: 'Total Return', value: bResult.custom_metrics?.total_return_pct ?? bResult.total_return_pct, suffix: '%', color: ((bResult.custom_metrics?.total_return_pct ?? bResult.total_return_pct) ?? 0) >= 0 ? 'text-green-400' : 'text-red-400' },
+                                ].map(({ label, value, suffix, color }) => (
+                                  <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                    <span className="text-[8px] text-zinc-500 uppercase tracking-widest font-bold block mb-1 font-['Space_Grotesk']">{label}</span>
+                                    <span className={`text-sm font-['JetBrains_Mono'] font-bold ${color}`}>
+                                      {value !== undefined && value !== null ? `${value}${suffix}` : '—'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          ) : null}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Score */}
+                    {/* Win Rate badge (shows win rate after backtest, score before) */}
                     <div className="shrink-0 flex flex-col items-end gap-1.5">
-                      <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
-                        {s.score}
-                      </span>
-                      <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
-                      </div>
-                      <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
+                      {isSelected && winRate != null ? (
+                        <>
+                          <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">Win</span>
+                          <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: winRateColor }}>
+                            {winRate}%
+                          </span>
+                          <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(winRate, 100)}%`, backgroundColor: winRateColor }} />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
+                            {s.score}
+                          </span>
+                          <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
+                          </div>
+                          <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">tap</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -674,15 +751,6 @@ export default function Home() {
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
             <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
-
-              {/* Mobile hint */}
-              <div className="md:hidden bg-cyan-500/5 border border-cyan-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
-                <span className="text-cyan-400 text-lg">👆</span>
-                <div>
-                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-widest font-['Space_Grotesk'] block">Mobile Guide</span>
-                  <span className="text-[11px] text-zinc-400 font-['JetBrains_Mono']">Single tap = preview · Double tap = full analysis</span>
-                </div>
-              </div>
 
               {/* Market tabs */}
               <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
