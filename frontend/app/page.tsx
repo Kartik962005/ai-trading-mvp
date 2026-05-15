@@ -23,8 +23,7 @@ const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string
       {data?.price ? (
         <div className="flex items-center gap-2">
           <span className="text-sm font-['JetBrains_Mono'] text-white">{currency}{data.price.toLocaleString()}</span>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${data.change_percent > 0 ? 'bg-cyan-500/20 text-cyan-400' : 'bg-fuchsia-500/20 text-fuchsia-400'}`}>
-            {data.change_percent > 0 ? '▲' : '▼'}{Math.abs(data.change_percent).toFixed(2)}%
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${data.change_percent > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>            {data.change_percent > 0 ? '▲' : '▼'}{Math.abs(data.change_percent).toFixed(2)}%
           </span>
         </div>
       ) : <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] tracking-widest">SYNCING...</span>}
@@ -55,8 +54,7 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
   const { data: analysis } = useSWR(expanded ? `/api/v1/analyze/${stock.ticker}` : null, fetcher);
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
-  const verdictColor = isBull ? 'text-cyan-400' : isHold ? 'text-zinc-300' : 'text-fuchsia-400';
-
+  const verdictColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
   return (
     <div
       onMouseEnter={handleMouseEnter}
@@ -124,10 +122,9 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
 
   const isBull = analysis.verdict?.includes('Buy');
   const isHold = analysis.verdict === 'Hold';
-  const accentColor = isBull ? 'text-cyan-400' : isHold ? 'text-zinc-300' : 'text-fuchsia-400';
-  const accentBg = isBull ? 'bg-cyan-500/10 border-cyan-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-fuchsia-500/10 border-fuchsia-500/30';
-  const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(34,211,238,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(217,70,239,0.15)]';
-
+  const accentColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
+  const accentBg = isBull ? 'bg-green-500/10 border-green-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-red-500/10 border-red-500/30';
+  const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(74,222,128,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(248,113,113,0.15)]';
   const priceDiff = analysis.target - analysis.entry;
   const pricePct = ((priceDiff / analysis.entry) * 100).toFixed(2);
   const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
@@ -370,8 +367,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                       label: 'Win Rate',
                       value: backtestResult.custom_metrics?.win_rate,
                       suffix: '%',
-                      color: (backtestResult.custom_metrics?.win_rate ?? 0) >= 50 ? 'text-cyan-400' : 'text-fuchsia-400',
-                      icon: '🎯'
+                      color: (backtestResult.custom_metrics?.win_rate ?? 0) >= 50 ? 'text-green-400' : 'text-red-400',                      icon: '🎯'
                     },
                     {
                       label: 'Avg Return / Trade',
@@ -436,8 +432,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
           <div className="flex flex-col gap-3">
             {topStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
-              const scoreColor = s.score >= 80 ? '#22d3ee' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#d946ef';
-
+              // Using #4ade80 for strong buy (green) and #f87171 for weak/sell (red)
+              const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
               return (
                 <div
                   key={s.id}
@@ -565,9 +561,10 @@ export default function Home() {
         grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
         crosshair: { mode: 1 },
       });
+      
       const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#22d3ee', downColor: '#d946ef',
-        borderVisible: false, wickUpColor: '#22d3ee', wickDownColor: '#d946ef'
+        upColor: '#22c55e', downColor: '#ef4444',
+        borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
       });
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
