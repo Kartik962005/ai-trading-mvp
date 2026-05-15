@@ -32,26 +32,22 @@ const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string
   );
 };
 
-// ─── MARKET ASSET CARD — desktop hover / mobile single+double tap ─────────────
+// ─── MARKET ASSET CARD ────────────────────────────────────────────────────────
 const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelect: (s: typeof STOCKS[0]) => void }) => {
   const [expanded, setExpanded] = useState(false);
   const lastTap = useRef<number>(0);
 
-  // Desktop: hover controls expansion
   const handleMouseEnter = () => setExpanded(true);
   const handleMouseLeave = () => setExpanded(false);
 
-  // Mobile: single tap = expand, double tap = open full analysis
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
     const now = Date.now();
     const gap = now - lastTap.current;
     lastTap.current = now;
     if (gap < 350 && gap > 0) {
-      // double tap → open full stock analysis
       onSelect(stock);
     } else {
-      // single tap → toggle expand
       setExpanded(prev => !prev);
     }
   }, [stock, onSelect]);
@@ -66,11 +62,9 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchEnd={handleTouchEnd}
-      onClick={() => { /* desktop click still selects */ }}
       className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 cursor-pointer group flex flex-col justify-start overflow-hidden select-none
         ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
     >
-      {/* Mobile hint badge */}
       <div className="absolute top-2 right-2 md:hidden">
         <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
           {expanded ? '2× open' : 'tap'}
@@ -83,7 +77,6 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
 
-      {/* Expandable content */}
       <div className={`transition-all duration-300 ease-in-out ${expanded ? 'max-h-52 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
         {analysis && !analysis.error ? (
           <div className="space-y-2.5">
@@ -107,7 +100,6 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Stop Loss</span>
               <span className="text-sm font-['JetBrains_Mono'] text-fuchsia-400 font-bold">{stock.currency}{analysis.stop_loss}</span>
             </div>
-            {/* Desktop: click to open full. Mobile: hint */}
             <button
               onMouseDown={() => onSelect(stock)}
               onTouchEnd={(e) => { e.stopPropagation(); onSelect(stock); }}
@@ -127,7 +119,7 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
 };
 
 // ─── DETAILED FISO PANEL ──────────────────────────────────────────────────────
-const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: string }) => {
+const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; currency: string; ticker: string }) => {
   if (!analysis || analysis.error) return null;
 
   const isBull = analysis.verdict?.includes('Buy');
@@ -140,6 +132,38 @@ const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: stri
   const pricePct = ((priceDiff / analysis.entry) * 100).toFixed(2);
   const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
   const rr = Math.abs(priceDiff / (analysis.stop_loss - analysis.entry)).toFixed(2);
+
+  // AI Backtester state (lifted into FisoDetailPanel so it lives next to the section)
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [backtestResult, setBacktestResult] = useState<any>(null);
+  const [isBacktesting, setIsBacktesting] = useState(false);
+
+  const handleCustomBacktest = async () => {
+    if (!aiPrompt || !ticker) return;
+    setIsBacktesting(true);
+    setBacktestResult(null);
+    try {
+      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, prompt: aiPrompt })
+      });
+      setBacktestResult(await res.json());
+    } catch {
+      setBacktestResult({ error: "Failed to connect to backend." });
+    } finally {
+      setIsBacktesting(false);
+    }
+  };
+
+  // ── Enter key handler for AI backtester input
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) {
+      handleCustomBacktest();
+    }
+  };
+
+  const topStrategies = (analysis?.strategy_evals ?? []).slice(0, 10);
 
   return (
     <div className="flex flex-col gap-6">
@@ -165,7 +189,7 @@ const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: stri
           </div>
         </div>
 
-        {/* FISO Score detailed */}
+        {/* FISO Score */}
         <div className="lg:col-span-3 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 flex flex-col justify-between">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">FISO Math Score</span>
           <div>
@@ -177,7 +201,6 @@ const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: stri
               <div className="h-full rounded-full bg-gradient-to-r from-fuchsia-500 via-zinc-400 to-cyan-400 transition-all duration-1000"
                 style={{ width: `${analysis.fiso_score}%` }} />
             </div>
-            {/* Score breakdown buckets */}
             <div className="grid grid-cols-4 gap-1 text-center">
               {[['0-20', 'Sell'], ['20-40', 'Weak'], ['40-75', 'Hold'], ['75-100', 'Buy']].map(([range, label]) => (
                 <div key={label} className={`rounded-lg py-1 text-[8px] font-bold uppercase tracking-widest font-['JetBrains_Mono']
@@ -192,7 +215,7 @@ const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: stri
           </div>
         </div>
 
-        {/* Price targets block */}
+        {/* Price targets */}
         <div className="lg:col-span-6 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Predictive Price Vectors</span>
           <div className="grid grid-cols-2 gap-4">
@@ -220,10 +243,8 @@ const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: stri
         </div>
       </div>
 
-      {/* ── Row 2: Timeline + Sentiment ── */}
+      {/* ── Row 2: Trade Timeline ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* Timeline card */}
         <div className="lg:col-span-5 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Trade Timeline</span>
           <div className="flex flex-col gap-4">
@@ -268,56 +289,240 @@ const FisoDetailPanel = ({ analysis, currency }: { analysis: any; currency: stri
           </div>
         </div>
 
-        {/* Sentiment / NLP */}
-        <div className="lg:col-span-7 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Global NLP Feed</span>
-            <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
-              ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
-                analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' :
-                'bg-white/5 text-zinc-400 border-white/10'}`}>
-              {analysis?.sentiment?.label || 'ANALYZING'} [{analysis?.sentiment?.score || 0}]
-            </span>
+        {/* Spacer column — NLP feed moved to bottom */}
+        <div className="lg:col-span-7 bg-black/20 backdrop-blur-2xl border border-white/5 rounded-3xl p-6 flex flex-col justify-center items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-400/20 to-fuchsia-600/20 border border-white/10 flex items-center justify-center">
+            <span className="text-xl">🧠</span>
           </div>
-          <ul className="space-y-3">
-            {analysis?.sentiment?.headlines?.map((h: string, i: number) => (
-              <li key={i} className="text-xs text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-4 py-1 hover:border-cyan-400 hover:text-white transition-all cursor-pointer">
-                {h}
-              </li>
-            ))}
-          </ul>
+          <span className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] text-center">
+            Strategy Intelligence & NLP Feed below
+          </span>
+          <span className="text-[10px] text-zinc-600 font-['JetBrains_Mono'] text-center">
+            Run a backtest · See top 10 strategies · Read the news feed
+          </span>
         </div>
       </div>
 
-      {/* ── Row 3: Strategy Matrix ── */}
-      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
-        <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-6 border-b border-white/10 pb-4 font-['Space_Grotesk'] flex items-center gap-2">
+      {/* ── Section 3: AI Strategy Backtester ── */}
+      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+        <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
-          Tactical Strategy Matrix
+          AI Strategy Backtester
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {(analysis?.strategy_evals ?? []).slice(0, 8).map((s: any, rank: number) => (
-            <div key={s.id} className={`relative border rounded-2xl p-4 transition-all
-              ${rank === 0 ? 'bg-cyan-900/20 border-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.15)]' : 'bg-black/50 border-white/5 hover:border-white/20'}`}>
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-['JetBrains_Mono'] text-[9px] font-bold opacity-50 uppercase text-white tracking-widest">#{String(rank + 1).padStart(2, '0')}</span>
-                {rank === 0 && <span className="text-[8px] bg-cyan-400 text-black px-1.5 py-0.5 uppercase font-black rounded-sm tracking-widest">Optimal</span>}
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            value={aiPrompt}
+            onChange={e => setAiPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="e.g. RSI below 30 and volume spike... (press Enter or click Backtest)"
+            className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-600 transition-all"
+          />
+          <button
+            onClick={handleCustomBacktest}
+            disabled={isBacktesting || !aiPrompt.trim()}
+            className="bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-xs px-6 py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0"
+          >
+            {isBacktesting ? 'Running...' : 'Backtest'}
+          </button>
+        </div>
+
+        {/* Backtest loading */}
+        {isBacktesting && (
+          <div className="mt-4 flex items-center gap-3 py-4">
+            <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
+            <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
+              Running strategy against {analysis.estimated_days * 3}+ days of historical data...
+            </span>
+          </div>
+        )}
+
+        {/* Backtest results */}
+        {backtestResult && !isBacktesting && (
+          <div className="mt-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {backtestResult.error || backtestResult.custom_metrics?.error ? (
+              <div className="bg-fuchsia-500/5 border border-fuchsia-500/20 rounded-2xl p-4">
+                <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">
+                  {backtestResult.error || backtestResult.custom_metrics?.error}
+                </p>
               </div>
-              <span className="font-bold text-xs uppercase block mb-2 font-['Space_Grotesk'] text-white">{s.name}</span>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] font-['JetBrains_Mono'] font-bold text-zinc-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded">SCR: {s.score}</span>
-                <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{
-                    width: `${s.score}%`,
-                    background: s.score >= 80 ? '#22d3ee' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#d946ef'
-                  }} />
+            ) : (
+              <>
+                {/* Logic used label */}
+                {backtestResult.custom_metrics?.logic_used && (
+                  <div className="mb-3 bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 flex gap-2 items-start">
+                    <span className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold shrink-0 mt-0.5 font-['Space_Grotesk']">Logic:</span>
+                    <span className="text-[10px] text-zinc-400 font-['JetBrains_Mono'] break-all">{backtestResult.custom_metrics?.logic_used}</span>
+                  </div>
+                )}
+
+                {/* 4 metric cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    {
+                      label: 'Total Trades',
+                      value: backtestResult.custom_metrics?.total_trades,
+                      suffix: '',
+                      color: 'text-white',
+                      icon: '📈'
+                    },
+                    {
+                      label: 'Win Rate',
+                      value: backtestResult.custom_metrics?.win_rate,
+                      suffix: '%',
+                      color: (backtestResult.custom_metrics?.win_rate ?? 0) >= 50 ? 'text-cyan-400' : 'text-fuchsia-400',
+                      icon: '🎯'
+                    },
+                    {
+                      label: 'Avg Return / Trade',
+                      value: backtestResult.custom_metrics?.avg_return_per_trade_pct,
+                      suffix: '%',
+                      color: (backtestResult.custom_metrics?.avg_return_per_trade_pct ?? 0) >= 0 ? 'text-cyan-400' : 'text-fuchsia-400',
+                      icon: '⚡'
+                    },
+                    {
+                      label: 'Total Return',
+                      value: backtestResult.custom_metrics?.total_return_pct,
+                      suffix: '%',
+                      color: (backtestResult.custom_metrics?.total_return_pct ?? 0) >= 0 ? 'text-cyan-400' : 'text-fuchsia-400',
+                      icon: '💰'
+                    },
+                  ].map(({ label, value, suffix, color, icon }) => (
+                    <div key={label} className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{icon}</span>
+                        <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk']">{label}</span>
+                      </div>
+                      <span className={`text-xl font-['JetBrains_Mono'] font-bold ${color}`}>
+                        {value !== undefined && value !== null ? `${value}${suffix}` : '—'}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <p className="text-[10px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">{s.desc}</p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 4: SignalX Top 10 Recommended Strategies ── */}
+      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/10 pb-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+              <span className="font-black text-black font-['Space_Grotesk'] text-sm">X</span>
             </div>
+            <div>
+              <h3 className="text-sm font-black text-white tracking-widest uppercase font-['Space_Grotesk']">
+                Signal<span className="text-cyan-400">X</span> will recommend
+              </h3>
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-['JetBrains_Mono']">
+                Top 10 strategies ranked by signal score · Best fit first
+              </span>
+            </div>
+          </div>
+          <span className="text-[9px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono'] self-start sm:self-auto">
+            {topStrategies.length} Active Signals
+          </span>
+        </div>
+
+        {topStrategies.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Computing signal matrix...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {topStrategies.map((s: any, rank: number) => {
+              const isBestFit = rank === 0;
+              const scoreColor = s.score >= 80 ? '#22d3ee' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#d946ef';
+
+              return (
+                <div
+                  key={s.id}
+                  className={`relative rounded-2xl p-4 transition-all duration-200 ${
+                    isBestFit
+                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
+                      : 'bg-black/30 border border-white/5 hover:border-white/15 hover:bg-white/3'
+                  }`}
+                >
+                  <div className="flex items-start gap-4">
+
+                    {/* Rank number */}
+                    <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
+                      isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
+                    }`}>
+                      {String(rank + 1).padStart(2, '0')}
+                    </div>
+
+                    {/* Main content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
+                          {s.name}
+                        </span>
+                        {isBestFit && (
+                          <span className="text-[8px] bg-cyan-400 text-black px-2 py-0.5 rounded-full font-black uppercase tracking-widest">
+                            ★ Best Fit Strategy
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
+                    </div>
+
+                    {/* Score */}
+                    <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
+                        {s.score}
+                      </span>
+                      <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
+                      </div>
+                      <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 5: Global NLP Feed (LAST) ── */}
+      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
+        <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse inline-block"></span>
+            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Global NLP Feed</span>
+          </div>
+          <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
+            ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
+              analysis?.sentiment?.label === 'Bearish' ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' :
+              'bg-white/5 text-zinc-400 border-white/10'}`}>
+            {analysis?.sentiment?.label || 'ANALYZING'} [{analysis?.sentiment?.score || 0}]
+          </span>
+        </div>
+
+        <ul className="space-y-3">
+          {analysis?.sentiment?.headlines?.map((h: string, i: number) => (
+            <li key={i} className="text-xs text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-4 py-1.5 hover:border-cyan-400 hover:text-white transition-all cursor-pointer group">
+              <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest block mb-0.5 group-hover:text-cyan-400/70 transition-colors">
+                Headline {String(i + 1).padStart(2, '0')}
+              </span>
+              {h}
+            </li>
           ))}
+        </ul>
+
+        <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 inline-block"></span>
+          <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
+            Sentiment derived via NLP · Refreshed on each analysis
+          </span>
         </div>
       </div>
+
     </div>
   );
 };
@@ -330,9 +535,6 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<typeof STOCKS>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeMarket, setActiveMarket] = useState<'INDIA' | 'US' | 'CRYPTO'>('INDIA');
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [backtestResult, setBacktestResult] = useState<any>(null);
-  const [isBacktesting, setIsBacktesting] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 10000 });
@@ -393,24 +595,6 @@ export default function Home() {
     return [];
   };
 
-  const handleCustomBacktest = async () => {
-    if (!aiPrompt || !ticker) return;
-    setIsBacktesting(true);
-    setBacktestResult(null);
-    try {
-      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, prompt: aiPrompt })
-      });
-      setBacktestResult(await res.json());
-    } catch {
-      setBacktestResult({ error: "Failed to connect to backend." });
-    } finally {
-      setIsBacktesting(false);
-    }
-  };
-
   const isBull = analysis?.verdict?.includes('Buy');
   const isHold = analysis?.verdict === 'Hold';
   const accentColor = isBull ? 'text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]' : isHold ? 'text-zinc-300' : 'text-fuchsia-500 drop-shadow-[0_0_15px_rgba(217,70,239,0.5)]';
@@ -457,7 +641,7 @@ export default function Home() {
 
         {/* NAV */}
         <nav className="relative z-20 w-full px-4 sm:px-6 py-4 sm:py-5 flex flex-col md:flex-row justify-between items-center gap-4 sm:gap-8 max-w-[1600px] mx-auto border-b border-white/5 bg-black/20 backdrop-blur-sm">
-          <div className="flex flex-col items-start cursor-pointer group shrink-0 w-full md:w-auto" onClick={() => { setTicker(null); }}>
+          <div className="flex flex-col items-start cursor-pointer group shrink-0 w-full md:w-auto" onClick={() => setTicker(null)}>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
                 <span className="font-black text-black font-['Space_Grotesk'] text-lg">X</span>
@@ -502,7 +686,7 @@ export default function Home() {
           {!ticker && (
             <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
 
-              {/* Mobile hint banner */}
+              {/* Mobile hint */}
               <div className="md:hidden bg-cyan-500/5 border border-cyan-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
                 <span className="text-cyan-400 text-lg">👆</span>
                 <div>
@@ -521,6 +705,9 @@ export default function Home() {
                         : market === 'US' ? 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_30px_rgba(217,70,239,0.2)]'
                         : 'bg-zinc-800/50 border-white/50 shadow-[0_0_30px_rgba(255,255,255,0.1)]'
                         : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'}`}>
+                    <span className={`text-2xl sm:text-4xl mb-2 sm:mb-4 ${activeMarket === market ? 'opacity-100' : 'opacity-40'}`}>
+                      {market === 'INDIA' ? '🇮🇳' : market === 'US' ? '🇺🇸' : '₿'}
+                    </span>
                     <span className={`text-base sm:text-2xl font-black uppercase tracking-tight font-['Space_Grotesk']
                       ${activeMarket === market ? 'text-white' : 'text-zinc-400'}`}>
                       {market === 'INDIA' ? 'India' : market === 'US' ? 'US' : 'Crypto'}
@@ -592,9 +779,9 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Detailed FISO Analysis Panel */}
+              {/* FISO Analysis + all sections in order */}
               {analysis && !analysis.error
-                ? <FisoDetailPanel analysis={analysis} currency={currency} />
+                ? <FisoDetailPanel analysis={analysis} currency={currency} ticker={ticker} />
                 : !analysis && (
                   <div className="flex items-center justify-center py-16">
                     <div className="flex flex-col items-center gap-4">
@@ -604,47 +791,6 @@ export default function Home() {
                   </div>
                 )
               }
-
-              {/* AI Backtester */}
-              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
-                <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
-                  AI Strategy Backtester
-                </h3>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <input
-                    value={aiPrompt}
-                    onChange={e => setAiPrompt(e.target.value)}
-                    placeholder="e.g. RSI below 30 and volume spike..."
-                    className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-600"
-                  />
-                  <button onClick={handleCustomBacktest} disabled={isBacktesting || !aiPrompt}
-                    className="bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-xs px-6 py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0">
-                    {isBacktesting ? 'Running...' : 'Backtest'}
-                  </button>
-                </div>
-                {backtestResult && (
-                  <div className="mt-4 bg-black/40 border border-white/5 rounded-2xl p-4">
-                    {backtestResult.error ? (
-                      <p className="text-fuchsia-400 text-sm font-['JetBrains_Mono']">{backtestResult.error}</p>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[
-                          { label: 'Total Trades', value: backtestResult.custom_metrics?.total_trades },
-                          { label: 'Win Rate', value: `${backtestResult.custom_metrics?.win_rate}%` },
-                          { label: 'Avg Return', value: `${backtestResult.custom_metrics?.avg_return_per_trade_pct}%` },
-                          { label: 'Total Return', value: `${backtestResult.custom_metrics?.total_return_pct}%` },
-                        ].map(({ label, value }) => (
-                          <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
-                            <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">{label}</span>
-                            <span className="text-base font-['JetBrains_Mono'] font-bold text-white">{value ?? '—'}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
 
             </div>
           )}

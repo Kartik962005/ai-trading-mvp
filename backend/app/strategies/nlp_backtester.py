@@ -5,8 +5,17 @@ from dotenv import load_dotenv
 # Force this specific file to open the .env vault
 load_dotenv()
 # Initialize Groq client (Make sure to add GROQ_API_KEY to your .env file)
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+# ADD THIS INSTEAD:
+_client = None  # Will be created only when first needed
 
+def get_client():
+    global _client
+    if _client is None:  # Only create it once
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY environment variable is not set.")
+        _client = Groq(api_key=api_key)
+    return _client
 def translate_to_pandas(user_prompt: str) -> str:
     """Uses LLM to convert english into a Pandas boolean expression."""
     system_prompt = """
@@ -23,7 +32,8 @@ def translate_to_pandas(user_prompt: str) -> str:
        Example Output: (df['close'] < df['close'].shift(1)) & (df['close'].shift(1) < df['close'].shift(2))
     """
     
-    completion = client.chat.completions.create(
+    completion = get_client().chat.completions.create(
+
         model="llama-3.3-70b-versatile", # Free tier model
         messages=[
             {"role": "system", "content": system_prompt},
