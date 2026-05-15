@@ -63,15 +63,12 @@ const MarketAssetCard = ({ stock, onSelect }: { stock: typeof STOCKS[0]; onSelec
       className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 cursor-pointer group flex flex-col justify-start overflow-hidden select-none
         ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
     >
-      <div className="absolute top-2 right-2 md:hidden">
-        <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
-          {expanded ? '2× open' : 'tap'}
-        </span>
-      </div>
-
       <div className="flex justify-between items-start mb-2">
         <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
-        <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
+          <span className="md:hidden text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">{expanded ? '2×' : 'tap'}</span>
+        </div>
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
 
@@ -665,10 +662,13 @@ export default function Home() {
             />
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute z-50 w-full bg-black/95 backdrop-blur-3xl border border-white/10 rounded-2xl mt-2 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
-                {suggestions.map((stock, i) => (
-                  <div key={i} onMouseDown={() => selectStock(stock)} className="flex justify-between items-center px-5 py-3.5 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 group transition-all">
+                {suggestions.map((stock) => (
+                  <div key={stock.ticker} onMouseDown={() => selectStock(stock)} className="flex justify-between items-center px-5 py-3.5 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 group transition-all">
                     <span className="font-bold text-sm text-zinc-300 group-hover:text-white uppercase tracking-wider font-['Space_Grotesk']">{stock.name}</span>
-                    <span className="text-xs font-['JetBrains_Mono'] text-cyan-500/70 group-hover:text-cyan-400 ml-2 shrink-0">{stock.symbol}</span>
+                    <div className="flex items-center gap-2 ml-2 shrink-0">
+                      <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-500 font-['JetBrains_Mono'] uppercase">{stock.exchange}</span>
+                      <span className="text-xs font-['JetBrains_Mono'] text-cyan-500/70 group-hover:text-cyan-400">{stock.symbol}</span>
+                    </div>
                   </div>
                 ))}
               </div>
