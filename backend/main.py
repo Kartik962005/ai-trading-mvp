@@ -5,7 +5,6 @@ from slowapi.util import get_remote_address
 from dotenv import load_dotenv
 from pydantic import BaseModel
 import asyncio
-import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import os
 
@@ -90,40 +89,45 @@ async def strategy_analysis(request: Request, ticker: str, strategy_name: str):
     return {"selected_strategy": selected, "best_strategy": best}
 
 
+class BacktestRequest(BaseModel):
+    ticker: str
+    prompt: str
+
+
 class ChatRequest(BaseModel):
     ticker: str
     message: str
+
 
 @app.post("/api/v1/chat")
 @limiter.limit("20/minute")
 async def ai_chat(request: Request, body: ChatRequest):
     try:
-        from app.services.data_service import get_historical_data
         from app.strategies.nlp_backtester import run_custom_backtest, get_client
         import re, json
 
         ticker  = body.ticker
         message = body.message.strip()
 
-        # ── Step 1: classify intent via LLM ──────────────────────────────────
+        # Step 1: classify intent
         classify_prompt = f"""
-You are a trading assistant router. Classify this user message into ONE of these intents:
-- "price_query"   → user asks about historical price on a specific date
-- "backtest"      → user wants to test a trading strategy
-- "general"       → anything else (analysis, advice, explanation)
+Classify this user message into ONE intent:
+- "price_query"  → asking about price on a specific date
+- "backtest"     → wants to test a trading strategy
+- "general"      → anything else
 
 User message: "{message}"
-Ticker in context: {ticker}
+Ticker: {ticker}
 
-Reply with ONLY a JSON object: {{"intent": "...", "date": "YYYY-MM-DD or null", "notes": "brief"}}
+Reply ONLY with JSON: {{"intent": "...", "date": "YYYY-MM-DD or null"}}
 """
         groq_client = get_client()
-        classify_resp = groq_client.chat.completions.create(
+        cls_resp = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": classify_prompt}],
             temperature=0.0,
         )
-        raw_cls = classify_resp.choices[0].message.content.strip()
+        raw_cls = cls_resp.choices[0].message.content.strip()
         raw_cls = re.sub(r"```[\w]*", "", raw_cls).replace("```", "").strip()
         try:
             cls = json.loads(raw_cls)
@@ -133,100 +137,78 @@ Reply with ONLY a JSON object: {{"intent": "...", "date": "YYYY-MM-DD or null", 
 
         intent = cls.get("intent", "backtest")
 
-        # ── Step 2: price query ───────────────────────────────────────────────
+        # Step 2: price query
         if intent == "price_query":
-            date_str = cls.get("date")
             df = get_historical_data(ticker)
             df['date'] = pd.to_datetime(df['date'])
+            date_str = cls.get("date")
 
-            if date_str:
-                target = pd.to_datetime(date_str)
-                row = df[df['date'].dt.date == target.date()]
-            else:
-                # Try to extract date from message using LLM
+            if not date_str or date_str == "null":
                 date_resp = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
-                    messages=[{
-                        "role": "user",
-                        "content": f"Extract the date from this message and return ONLY a date in YYYY-MM-DD format. Message: '{message}'. If no date found return 'null'."
-                    }],
+                    messages=[{"role": "user", "content": f"Extract date from: '{message}'. Return ONLY YYYY-MM-DD or null."}],
                     temperature=0.0,
                 )
-                extracted = date_resp.choices[0].message.content.strip()
-                try:
-                    target = pd.to_datetime(extracted)
-                    row = df[df['date'].dt.date == target.date()]
-                except Exception:
-                    row = pd.DataFrame()
+                date_str = date_resp.choices[0].message.content.strip()
+
+            try:
+                target = pd.to_datetime(date_str)
+                row = df[df['date'].dt.date == target.date()]
+            except Exception:
+                row = pd.DataFrame()
 
             if not row.empty:
                 r = row.iloc[0]
                 return {
-                    "type": "price_query",
-                    "found": True,
-                    "ticker": ticker,
+                    "type": "price_query", "found": True, "ticker": ticker,
                     "date": str(r['date'].date()),
-                    "open":   round(float(r['open']),   2),
-                    "high":   round(float(r['high']),   2),
-                    "low":    round(float(r['low']),    2),
-                    "close":  round(float(r['close']),  2),
+                    "open":   round(float(r['open']),  2),
+                    "high":   round(float(r['high']),  2),
+                    "low":    round(float(r['low']),   2),
+                    "close":  round(float(r['close']), 2),
                     "volume": int(r['volume']),
-                    "message": f"{ticker} on {str(r['date'].date())}: Open ₹{round(float(r['open']),2)} | High ₹{round(float(r['high']),2)} | Low ₹{round(float(r['low']),2)} | Close ₹{round(float(r['close']),2)}"
                 }
             else:
-                # Find nearest date
-                if date_str:
-                    target = pd.to_datetime(date_str)
-                    df['diff'] = abs(df['date'] - target)
-                    nearest = df.loc[df['diff'].idxmin()]
-                    return {
-                        "type": "price_query",
-                        "found": False,
-                        "ticker": ticker,
-                        "message": f"No data for that exact date (possibly a holiday or weekend). Nearest trading day: {str(nearest['date'].date())} — Close ₹{round(float(nearest['close']),2)}"
-                    }
+                if date_str and date_str != "null":
+                    try:
+                        target = pd.to_datetime(date_str)
+                        df['_diff'] = abs(df['date'] - target)
+                        nearest = df.loc[df['_diff'].idxmin()]
+                        return {
+                            "type": "price_query", "found": False, "ticker": ticker,
+                            "message": f"No data for that exact date (holiday/weekend). Nearest trading day: {str(nearest['date'].date())} — Close ₹{round(float(nearest['close']),2)}"
+                        }
+                    except Exception:
+                        pass
                 return {"type": "price_query", "found": False, "message": "Could not find price data for that date."}
 
-        # ── Step 3: backtest ──────────────────────────────────────────────────
+        # Step 3: backtest
         elif intent == "backtest":
             df = get_historical_data(ticker)
             result = run_custom_backtest(df, message)
             result["type"] = "backtest"
             return result
 
-        # ── Step 4: general AI response ───────────────────────────────────────
+        # Step 4: general AI answer
         else:
             df = get_historical_data(ticker)
             import ta
             df.columns = [c.lower() for c in df.columns]
-            close = df['close']
-            rsi   = ta.momentum.rsi(close, window=14).iloc[-1]
-            sma50 = close.rolling(50).mean().iloc[-1]
-            sma200= close.rolling(200).mean().iloc[-1]
-            cur   = float(close.iloc[-1])
+            close  = df['close']
+            rsi    = ta.momentum.rsi(close, window=14).iloc[-1]
+            sma50  = close.rolling(50).mean().iloc[-1]
+            sma200 = close.rolling(200).mean().iloc[-1]
+            cur    = float(close.iloc[-1])
 
-            general_resp = groq_client.chat.completions.create(
+            gen_resp = groq_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{
-                    "role": "system",
-                    "content": f"""You are SignalX, an AI trading assistant. 
-Current stock: {ticker}
-Current price: ₹{round(cur,2)}
-RSI(14): {round(rsi,1)}
-SMA50: ₹{round(sma50,2)}
-SMA200: ₹{round(sma200,2)}
-Answer the user's question concisely and helpfully. Be direct."""
-                }, {
-                    "role": "user",
-                    "content": message
-                }],
-                temperature=0.3,
-                max_tokens=400,
+                messages=[
+                    {"role": "system", "content": f"You are SignalX, an AI trading assistant.\nStock: {ticker} | Price: ₹{round(cur,2)} | RSI: {round(rsi,1)} | SMA50: ₹{round(sma50,2)} | SMA200: ₹{round(sma200,2)}\nAnswer concisely and helpfully."},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.3, max_tokens=400,
             )
-            return {
-                "type": "general",
-                "message": general_resp.choices[0].message.content.strip()
-            }
+            return {"type": "general", "message": gen_resp.choices[0].message.content.strip()}
 
     except Exception as e:
         return {"type": "error", "message": f"Something went wrong: {str(e)}"}
