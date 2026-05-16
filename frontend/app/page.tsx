@@ -181,11 +181,9 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const handleChat = async () => {
     const msg = chatInput.trim();
     if (!msg || !ticker || chatLoading) return;
-
     setChatHistory(prev => [...prev, { role: 'user', content: msg }]);
     setChatInput('');
     setChatLoading(true);
-
     try {
       const res  = await fetch(`${BACKEND}/api/v1/chat`, {
         method: 'POST',
@@ -195,7 +193,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
       const data = await res.json();
       setChatHistory(prev => [...prev, { role: 'ai', content: data.message || '', data }]);
     } catch {
-      setChatHistory(prev => [...prev, { role: 'ai', content: 'Failed to connect to backend.', data: { type: 'error' } }]);
+      setChatHistory(prev => [...prev, { role: 'ai', content: 'Failed to connect.', data: { type: 'error' } }]);
     } finally {
       setChatLoading(false);
     }
@@ -205,32 +203,20 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
     if (e.key === 'Enter') handleChat();
   };
 
-  // keep old backtest state for strategy cards (they still use /backtest/custom)
+  // keep for strategy cards
   const [aiPrompt, setAiPrompt] = useState('');
   const [backtestResult, setBacktestResult] = useState<any>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
-
   const handleCustomBacktest = async () => {
     if (!aiPrompt || !ticker) return;
-    setIsBacktesting(true);
-    setBacktestResult(null);
+    setIsBacktesting(true); setBacktestResult(null);
     try {
-      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, prompt: aiPrompt })
-      });
+      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker, prompt: aiPrompt }) });
       setBacktestResult(await res.json());
-    } catch {
-      setBacktestResult({ error: 'Failed to connect to backend.' });
-    } finally {
-      setIsBacktesting(false);
-    }
+    } catch { setBacktestResult({ error: 'Failed to connect.' }); }
+    finally { setIsBacktesting(false); }
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) handleCustomBacktest();
-  };
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) handleCustomBacktest(); };
 
   const topStrategies = (analysis?.strategy_evals ?? []).slice(0, 10);
 
@@ -372,56 +358,36 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
         </div>
       </div>
 
-      {/* ── Section 3: AI Strategy Backtester ── */}
-      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-        <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
-          AI Strategy Backtester
-        </h3>
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            value={aiPrompt}
-            onChange={e => setAiPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="e.g. RSI below 30 and volume spike... (press Enter or click Backtest)"
-            className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-600 transition-all"
-          />
       {/* ── Section 3: SignalX AI Assistant ── */}
       <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
 
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-white/10 pb-4 mb-4">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shrink-0">
-            <span className="font-black text-black text-xs font-['Space_Grotesk']">X</span>
+        <div className="flex items-center gap-3 border-b border-white/10 pb-3 mb-4">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shrink-0">
+            <span className="font-black text-black text-[10px]">X</span>
           </div>
           <div>
             <h3 className="text-[11px] font-black text-white tracking-widest uppercase font-['Space_Grotesk']">
               Signal<span className="text-cyan-400">X</span> AI Assistant
             </h3>
-            <p className="text-[9px] text-zinc-600 font-['JetBrains_Mono']">
-              Ask price history · Backtest any strategy · Get analysis
-            </p>
+            <p className="text-[9px] text-zinc-600 font-['JetBrains_Mono']">Ask price on a date · Backtest any strategy · Get market analysis</p>
           </div>
         </div>
 
-        {/* Example chips */}
+        {/* Example prompts — shown when chat is empty */}
         {chatHistory.length === 0 && (
-          <div className="mb-4 space-y-2">
-            <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-['Space_Grotesk']">Try asking:</p>
+          <div className="mb-4">
+            <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-['Space_Grotesk'] mb-2">Try asking:</p>
             <div className="flex flex-wrap gap-2">
               {[
-                `What was the price on 14 Jan 2026?`,
-                `Buy if RSI crosses above 30, sell when above 70`,
-                `Buy if up 1% two days in a row, sell on two consecutive -1% days`,
-                `What is the current trend?`,
-                `Buy after 5% weekly fall, sell after 3% recovery`,
+                'What was the price on 12 Feb 2026?',
+                'Buy if RSI crosses above 30, sell when above 70',
+                'Buy if up 1% two days in a row, sell on two -1% days',
+                'Buy after 5% weekly fall, sell after 3% recovery',
+                'What is the current trend?',
               ].map(ex => (
-                <button
-                  key={ex}
-                  onClick={() => { setChatInput(ex); }}
-                  className="text-[10px] bg-white/5 border border-white/10 text-zinc-400 px-3 py-1.5 rounded-full font-['JetBrains_Mono'] hover:border-cyan-500/40 hover:text-cyan-400 transition-all text-left"
-                >
+                <button key={ex} onClick={() => setChatInput(ex)}
+                  className="text-[10px] bg-white/5 border border-white/10 text-zinc-400 px-3 py-1.5 rounded-full font-['JetBrains_Mono'] hover:border-cyan-500/40 hover:text-cyan-400 transition-all text-left">
                   {ex}
                 </button>
               ))}
@@ -431,13 +397,12 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
 
         {/* Chat history */}
         {chatHistory.length > 0 && (
-          <div className="mb-4 space-y-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="mb-4 space-y-3 max-h-[700px] overflow-y-auto">
             {chatHistory.map((msg, idx) => (
               <div key={idx}>
-
                 {/* User bubble */}
                 {msg.role === 'user' && (
-                  <div className="flex justify-end mb-1">
+                  <div className="flex justify-end">
                     <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[85%]">
                       <p className="text-sm text-cyan-300 font-['JetBrains_Mono']">{msg.content}</p>
                     </div>
@@ -448,84 +413,71 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                 {msg.role === 'ai' && (() => {
                   const d = msg.data || {};
 
-                  // ── Price query result ────────────────────────────────────
-                  if (d.type === 'price_query') {
-                    return (
-                      <div className="bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm p-4">
-                        {d.found ? (
-                          <>
-                            <p className="text-[10px] text-zinc-500 font-['Space_Grotesk'] uppercase tracking-widest mb-3">
-                              {d.ticker} · {d.date}
-                            </p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                              {[
-                                { label: 'Open',   value: d.open,   color: 'text-white' },
-                                { label: 'High',   value: d.high,   color: 'text-green-400' },
-                                { label: 'Low',    value: d.low,    color: 'text-red-400' },
-                                { label: 'Close',  value: d.close,  color: 'text-cyan-400' },
-                              ].map(({ label, value, color }) => (
-                                <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
-                                  <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold mb-1 font-['Space_Grotesk']">{label}</p>
-                                  <p className={`text-base font-['JetBrains_Mono'] font-bold ${color}`}>₹{value}</p>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] text-zinc-600 font-['JetBrains_Mono']">
-                              <span>Volume: {d.volume?.toLocaleString('en-IN')}</span>
-                              <span>·</span>
-                              <span className={(d.close > d.open) ? 'text-green-400' : 'text-red-400'}>
-                                {d.close > d.open ? '▲' : '▼'} {Math.abs(((d.close - d.open) / d.open) * 100).toFixed(2)}% intraday
-                              </span>
-                            </div>
-                          </>
-                        ) : (
-                          <p className="text-sm text-zinc-400 font-['JetBrains_Mono']">{d.message}</p>
-                        )}
-                      </div>
-                    );
-                  }
+                  // Price query result
+                  if (d.type === 'price_query') return (
+                    <div className="bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm p-4">
+                      {d.found ? (
+                        <>
+                          <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-['Space_Grotesk'] mb-3">{d.ticker} · {d.date}</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                            {[
+                              { label: 'Open',  value: d.open,  color: 'text-white'      },
+                              { label: 'High',  value: d.high,  color: 'text-green-400'  },
+                              { label: 'Low',   value: d.low,   color: 'text-red-400'    },
+                              { label: 'Close', value: d.close, color: 'text-cyan-400'   },
+                            ].map(({ label, value, color }) => (
+                              <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
+                                <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold mb-1 font-['Space_Grotesk']">{label}</p>
+                                <p className={`text-base font-['JetBrains_Mono'] font-bold ${color}`}>₹{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-zinc-600 font-['JetBrains_Mono']">
+                            Volume: {d.volume?.toLocaleString('en-IN')} &nbsp;·&nbsp;
+                            <span className={d.close > d.open ? 'text-green-400' : 'text-red-400'}>
+                              {d.close > d.open ? '▲' : '▼'} {Math.abs(((d.close - d.open) / d.open) * 100).toFixed(2)}% intraday
+                            </span>
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-zinc-400 font-['JetBrains_Mono']">{d.message}</p>
+                      )}
+                    </div>
+                  );
 
-                  // ── Backtest result ───────────────────────────────────────
+                  // Backtest result
                   if (d.type === 'backtest') {
                     const s      = d.summary || {};
                     const trades = d.trades  || [];
                     const open   = d.open_trade;
                     const signal = d.current_signal || 'HOLD';
-                    const hasData = s.total_trades > 0;
-
-                    const signalCls = signal === 'BUY'
-                      ? 'text-green-400 border-green-500/30 bg-green-500/10'
-                      : signal === 'SELL'
-                      ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                      : 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
-
+                    const hasData = (s.total_trades ?? 0) > 0;
+                    const sigCls = signal === 'BUY' ? 'text-green-400 border-green-500/30 bg-green-500/10'
+                                 : signal === 'SELL' ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                                 : 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
                     return (
-                      <div className="bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm p-4 space-y-4">
-
-                        {/* Error */}
-                        {d.error && <p className="text-red-400 text-sm font-['JetBrains_Mono']">{d.error}</p>}
+                      <div className="bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm p-4 space-y-3">
+                        {d.error   && <p className="text-red-400 text-sm font-['JetBrains_Mono']">{d.error}</p>}
                         {d.warning && <p className="text-yellow-400 text-sm font-['JetBrains_Mono']">{d.warning}</p>}
-
                         {/* Signal banner */}
-                        <div className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${signalCls}`}>
+                        <div className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${sigCls}`}>
                           <div>
                             <p className="text-[9px] uppercase tracking-widest font-bold opacity-60 font-['Space_Grotesk'] mb-0.5">Current Signal</p>
                             <p className="text-2xl font-black font-['JetBrains_Mono']">{signal}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-[9px] uppercase tracking-widest opacity-60 font-['Space_Grotesk'] mb-0.5">Mode</p>
+                            <p className="text-[9px] uppercase opacity-60 font-['Space_Grotesk'] mb-0.5">Mode</p>
                             <p className="text-[10px] font-['JetBrains_Mono'] opacity-70 capitalize">{d.mode} simulation</p>
                           </div>
                         </div>
-
                         {/* Primary metrics */}
                         {hasData && (
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {[
-                              { label: 'Trades',       value: s.total_trades,             suffix: '',  color: 'text-white' },
-                              { label: 'Win Rate',     value: s.win_rate,                 suffix: '%', color: (s.win_rate??0)>=55?'text-green-400':(s.win_rate??0)>=45?'text-yellow-400':'text-red-400' },
-                              { label: 'Avg / Trade',  value: s.avg_return_per_trade_pct, suffix: '%', color: (s.avg_return_per_trade_pct??0)>=0?'text-green-400':'text-red-400' },
-                              { label: 'Total Return', value: s.total_return_pct,         suffix: '%', color: (s.total_return_pct??0)>=0?'text-green-400':'text-red-400' },
+                              { label:'Trades',       value: s.total_trades,             suffix:'',  color:'text-white' },
+                              { label:'Win Rate',     value: s.win_rate,                 suffix:'%', color:(s.win_rate??0)>=55?'text-green-400':(s.win_rate??0)>=45?'text-yellow-400':'text-red-400' },
+                              { label:'Avg / Trade',  value: s.avg_return_per_trade_pct, suffix:'%', color:(s.avg_return_per_trade_pct??0)>=0?'text-green-400':'text-red-400' },
+                              { label:'Total Return', value: s.total_return_pct,         suffix:'%', color:(s.total_return_pct??0)>=0?'text-green-400':'text-red-400' },
                             ].map(({ label, value, suffix, color }) => (
                               <div key={label} className="bg-white/5 rounded-xl p-3 border border-white/5">
                                 <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-1">{label}</p>
@@ -534,15 +486,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                             ))}
                           </div>
                         )}
-
                         {/* Secondary metrics */}
                         {hasData && (
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {[
-                              { label: 'Best Trade',   value: s.best_trade_pct,    suffix: '%', color: 'text-green-400' },
-                              { label: 'Worst Trade',  value: s.worst_trade_pct,   suffix: '%', color: 'text-red-400'   },
-                              { label: 'Risk/Reward',  value: s.risk_reward_ratio, suffix: 'x', color: 'text-cyan-400'  },
-                              { label: 'Max Drawdown', value: s.max_drawdown_pct,  suffix: '%', color: 'text-red-400'   },
+                              { label:'Best Trade',   value: s.best_trade_pct,    suffix:'%', color:'text-green-400' },
+                              { label:'Worst Trade',  value: s.worst_trade_pct,   suffix:'%', color:'text-red-400'   },
+                              { label:'Risk/Reward',  value: s.risk_reward_ratio, suffix:'x', color:'text-cyan-400'  },
+                              { label:'Max Drawdown', value: s.max_drawdown_pct,  suffix:'%', color:'text-red-400'   },
                             ].map(({ label, value, suffix, color }) => (
                               <div key={label} className="bg-white/3 rounded-xl p-2.5 border border-white/5">
                                 <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-0.5">{label}</p>
@@ -551,25 +502,23 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                             ))}
                           </div>
                         )}
-
                         {/* Win/loss bar */}
                         {hasData && (
                           <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                             <div className="flex justify-between text-[9px] text-zinc-500 font-['JetBrains_Mono'] mb-1.5">
-                              <span>Wins: {s.wins} (avg +{s.avg_win_pct}%)</span>
-                              <span>Losses: {s.losses} (avg {s.avg_loss_pct}%) · PF: {s.profit_factor}x</span>
+                              <span>Wins: {s.wins} · avg +{s.avg_win_pct}%</span>
+                              <span>Losses: {s.losses} · avg {s.avg_loss_pct}% · PF: {s.profit_factor}x · {s.avg_holding_days}d avg hold</span>
                             </div>
                             <div className="flex h-2 rounded-full overflow-hidden">
-                              <div className="bg-green-500 transition-all duration-700" style={{ width: `${s.win_rate}%` }} />
+                              <div className="bg-green-500 transition-all duration-700" style={{ width:`${s.win_rate}%` }} />
                               <div className="bg-red-500 flex-1" />
                             </div>
                           </div>
                         )}
-
                         {/* Open trade */}
                         {open && (
                           <div className={`rounded-xl p-3 border text-[11px] font-['JetBrains_Mono'] ${(open.unrealised_pnl??0)>=0?'bg-green-500/5 border-green-500/20':'bg-red-500/5 border-red-500/20'}`}>
-                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-2">Open Trade</p>
+                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-2">Open Trade (not yet closed)</p>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                               <div><span className="text-zinc-600 text-[9px] block">Bought</span><span className="text-white font-bold">{open.buy_date}</span></div>
                               <div><span className="text-zinc-600 text-[9px] block">Buy price</span><span className="text-white font-bold">₹{open.buy_price}</span></div>
@@ -582,14 +531,13 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                             </div>
                           </div>
                         )}
-
                         {/* Trades table */}
                         {trades.length > 0 && (
                           <div className="bg-white/5 rounded-xl border border-white/5 overflow-hidden">
                             <div className="px-3 py-2 border-b border-white/10">
-                              <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk']">Trade History · 100 shares per trade</p>
+                              <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk']">Trade History · 100 shares/trade</p>
                             </div>
-                            <div className="overflow-x-auto max-h-60">
+                            <div className="overflow-x-auto max-h-56">
                               <table className="w-full text-[10px] font-['JetBrains_Mono']">
                                 <thead className="sticky top-0 bg-black/80">
                                   <tr className="border-b border-white/5">
@@ -600,7 +548,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                                 </thead>
                                 <tbody>
                                   {[...trades].reverse().map((t: any, i: number) => (
-                                    <tr key={i} className="border-b border-white/5">
+                                    <tr key={i} className="border-b border-white/5 hover:bg-white/3">
                                       <td className="px-2 py-1.5 text-zinc-500 whitespace-nowrap">{t.buy_date}</td>
                                       <td className="px-2 py-1.5 text-white font-bold">₹{t.buy_price}</td>
                                       <td className="px-2 py-1.5 text-zinc-500 whitespace-nowrap">{t.sell_date}</td>
@@ -613,9 +561,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                                         {(t.return_pct??0)>=0?'+':''}{t.return_pct}%
                                       </td>
                                       <td className="px-2 py-1.5">
-                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${t.result==='WIN'?'bg-green-500/20 text-green-400':'bg-red-500/20 text-red-400'}`}>
-                                          {t.result}
-                                        </span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${t.result==='WIN'?'bg-green-500/20 text-green-400':'bg-red-500/20 text-red-400'}`}>{t.result}</span>
                                       </td>
                                     </tr>
                                   ))}
@@ -628,7 +574,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                     );
                   }
 
-                  // ── General AI response ───────────────────────────────────
+                  // General AI response
                   return (
                     <div className="bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[90%]">
                       <p className="text-sm text-zinc-300 font-['JetBrains_Mono'] leading-relaxed whitespace-pre-wrap">{d.message || msg.content}</p>
@@ -638,7 +584,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
               </div>
             ))}
 
-            {/* Loading bubble */}
+            {/* Typing indicator */}
             {chatLoading && (
               <div className="flex items-center gap-2 px-4 py-3 bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm w-fit">
                 <div className="w-3 h-3 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0" />
@@ -649,13 +595,13 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
         )}
 
         {/* Input bar */}
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <input
             value={chatInput}
             onChange={e => setChatInput(e.target.value)}
             onKeyDown={handleChatKey}
             disabled={chatLoading}
-            placeholder={ticker ? `Ask anything about ${ticker.replace('.NS','')} — price on a date, backtest a strategy, get analysis...` : 'Select a stock first'}
+            placeholder={ticker ? `Ask anything about ${ticker.replace('.NS','').replace('.BO','')} — price on a date, backtest a strategy, get analysis...` : 'Select a stock first to start chatting'}
             className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-700 transition-all disabled:opacity-50"
           />
           <button
@@ -666,11 +612,10 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
             {chatLoading ? '...' : 'Ask'}
           </button>
           {chatHistory.length > 0 && (
-            <button
-              onClick={() => setChatHistory([])}
-              className="bg-white/5 border border-white/10 text-zinc-500 text-xs px-3 py-3 rounded-xl hover:bg-white/10 transition-all font-['Space_Grotesk'] shrink-0"
-              title="Clear chat"
-            >✕</button>
+            <button onClick={() => setChatHistory([])}
+              className="bg-white/5 border border-white/10 text-zinc-500 text-xs px-3 py-3 rounded-xl hover:bg-white/10 transition-all shrink-0"
+              title="Clear chat">✕
+            </button>
           )}
         </div>
       </div>
@@ -856,8 +801,6 @@ export default function Home() {
     setTicker(stock.ticker);
     setCurrency(stock.currency);
     setInput('');
-    setChatHistory([]);
-    setChatInput('');
     setShowSuggestions(false);
   };
 
