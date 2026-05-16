@@ -582,7 +582,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                     );
                   }
 
-                  // General AI response
+                  // Error type
+                  if (d.type === 'error') return (
+                    <div className="bg-red-500/5 border border-red-500/20 rounded-2xl rounded-tl-sm px-4 py-3">
+                      <p className="text-sm text-red-400 font-['JetBrains_Mono']">{d.message || 'An error occurred.'}</p>
+                    </div>
+                  );
+
+                  // General AI response (also fallback for unknown types)
                   return (
                     <div className="bg-black/30 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[90%]">
                       <p className="text-sm text-zinc-300 font-['JetBrains_Mono'] leading-relaxed whitespace-pre-wrap">{d.message || msg.content}</p>
