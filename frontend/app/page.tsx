@@ -369,169 +369,189 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
 
         {/* Backtest loading */}
         {isBacktesting && (
-          <div className="mt-4 flex items-center gap-3 py-4">
+          <div className="mt-4 flex items-center gap-3 py-6">
             <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
-            <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
-              Translating strategy → running simulation → computing metrics...
-            </span>
+            <div>
+              <span className="text-xs text-zinc-400 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse block">
+                Translating strategy → running simulation...
+              </span>
+              <span className="text-[10px] text-zinc-600 font-['JetBrains_Mono']">This may take 5-10 seconds</span>
+            </div>
           </div>
         )}
 
         {/* ── RICH BACKTEST RESULTS ── */}
-        {backtestResult && !isBacktesting && (
-          <div className="mt-5 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {backtestResult && !isBacktesting && (() => {
+          const r   = backtestResult;
+          const s   = r.summary || {};
+          const trades = r.trades || [];
+          const open   = r.open_trade;
+          const signal = r.current_signal || 'HOLD';
+          const hasData = s.total_trades > 0;
 
-            {/* Error state */}
-            {backtestResult.error ? (
-              <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
-                <p className="text-red-400 text-sm font-['JetBrains_Mono']">{backtestResult.error}</p>
-              </div>
-            ) : (() => {
-              const s = backtestResult.summary || {};
-              const trades = backtestResult.trades || [];
-              const open   = backtestResult.open_trade;
-              const signal = backtestResult.current_signal || 'HOLD';
-              const signalColor = signal === 'BUY' ? 'text-green-400 border-green-500/30 bg-green-500/10'
-                                : signal === 'SELL' ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                                : 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
+          const signalCls = signal === 'BUY'
+            ? 'text-green-400 border-green-500/30 bg-green-500/10'
+            : signal === 'SELL'
+            ? 'text-red-400 border-red-500/30 bg-red-500/10'
+            : 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
 
-              return (
-                <>
-                  {/* Note if simplified */}
-                  {backtestResult.note && (
-                    <p className="text-[10px] text-zinc-600 font-['JetBrains_Mono'] italic">{backtestResult.note}</p>
-                  )}
+          return (
+            <div className="mt-5 space-y-4">
 
-                  {/* Current signal banner */}
-                  <div className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${signalColor}`}>
+              {/* Error */}
+              {r.error && (
+                <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
+                  <p className="text-red-400 text-sm font-['JetBrains_Mono']">{r.error}</p>
+                </div>
+              )}
+
+              {/* Warning — no trades */}
+              {!r.error && r.warning && (
+                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-2xl p-4">
+                  <p className="text-yellow-400 text-sm font-['JetBrains_Mono']">{r.warning}</p>
+                  <p className="text-[10px] text-zinc-600 font-['JetBrains_Mono'] mt-1">Logic used: {r.buy_expr}</p>
+                </div>
+              )}
+
+              {/* Note if simplified */}
+              {r.note && <p className="text-[10px] text-zinc-600 font-['JetBrains_Mono'] italic px-1">{r.note}</p>}
+
+              {/* Current signal */}
+              {!r.error && (
+                <div className={`flex items-center justify-between px-4 py-3 rounded-2xl border ${signalCls}`}>
+                  <div>
+                    <p className="text-[9px] uppercase tracking-widest font-bold font-['Space_Grotesk'] opacity-60 mb-0.5">Current Signal</p>
+                    <p className="text-2xl font-black font-['JetBrains_Mono']">{signal}</p>
+                  </div>
+                  <div className="text-right max-w-[60%]">
+                    <p className="text-[9px] uppercase tracking-widest opacity-60 font-['Space_Grotesk'] mb-0.5">Strategy</p>
+                    <p className="text-[10px] font-['JetBrains_Mono'] opacity-70 truncate">{r.prompt}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Primary 4 metrics */}
+              {hasData && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total Trades',  value: s.total_trades,             suffix: '',  color: 'text-white' },
+                    { label: 'Win Rate',      value: s.win_rate,                 suffix: '%', color: (s.win_rate??0)>=55?'text-green-400':(s.win_rate??0)>=45?'text-yellow-400':'text-red-400' },
+                    { label: 'Avg / Trade',   value: s.avg_return_per_trade_pct, suffix: '%', color: (s.avg_return_per_trade_pct??0)>=0?'text-green-400':'text-red-400' },
+                    { label: 'Total Return',  value: s.total_return_pct,         suffix: '%', color: (s.total_return_pct??0)>=0?'text-green-400':'text-red-400' },
+                  ].map(({ label, value, suffix, color }) => (
+                    <div key={label} className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-2">{label}</p>
+                      <p className={`text-xl font-['JetBrains_Mono'] font-bold ${color}`}>
+                        {value != null ? `${value}${suffix}` : '—'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Secondary metrics */}
+              {hasData && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Best Trade',   value: s.best_trade_pct,    suffix: '%', color: 'text-green-400' },
+                    { label: 'Worst Trade',  value: s.worst_trade_pct,   suffix: '%', color: 'text-red-400'   },
+                    { label: 'Risk/Reward',  value: s.risk_reward_ratio, suffix: 'x', color: 'text-cyan-400'  },
+                    { label: 'Max Drawdown', value: s.max_drawdown_pct,  suffix: '%', color: 'text-red-400'   },
+                  ].map(({ label, value, suffix, color }) => (
+                    <div key={label} className="bg-white/3 rounded-xl p-3 border border-white/5">
+                      <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-1">{label}</p>
+                      <p className={`text-sm font-['JetBrains_Mono'] font-bold ${color}`}>
+                        {value != null ? `${value}${suffix}` : '—'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Win/loss bar */}
+              {hasData && (
+                <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                  <div className="flex justify-between text-[10px] text-zinc-500 font-['JetBrains_Mono'] mb-2">
+                    <span>Wins: {s.wins} &nbsp;·&nbsp; Avg win: +{s.avg_win_pct}%</span>
+                    <span>Losses: {s.losses} &nbsp;·&nbsp; Avg loss: {s.avg_loss_pct}%</span>
+                  </div>
+                  <div className="flex h-3 rounded-full overflow-hidden">
+                    <div className="bg-green-500 transition-all duration-700" style={{ width: `${s.win_rate}%` }} />
+                    <div className="bg-red-500 flex-1" />
+                  </div>
+                  <div className="flex justify-between text-[9px] text-zinc-600 font-['JetBrains_Mono'] mt-1.5">
+                    <span>{s.win_rate}% win rate</span>
+                    <span>Profit factor: {s.profit_factor}x &nbsp;·&nbsp; Avg hold: {s.avg_holding_days} days</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Open trade */}
+              {open && (
+                <div className={`rounded-2xl p-4 border ${(open.unrealised_pnl??0)>=0?'bg-green-500/5 border-green-500/20':'bg-red-500/5 border-red-500/20'}`}>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-3">Open Trade — not closed yet</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-['JetBrains_Mono']">
+                    <div><span className="text-zinc-600 text-[9px] block mb-0.5">Bought</span><span className="text-white font-bold">{open.buy_date}</span></div>
+                    <div><span className="text-zinc-600 text-[9px] block mb-0.5">Buy price</span><span className="text-white font-bold">₹{open.buy_price}</span></div>
+                    <div><span className="text-zinc-600 text-[9px] block mb-0.5">Current</span><span className="text-white font-bold">₹{open.current_price}</span></div>
                     <div>
-                      <p className="text-[9px] uppercase tracking-widest font-bold font-['Space_Grotesk'] opacity-70">Current Signal</p>
-                      <p className="text-lg font-black font-['JetBrains_Mono']">{signal}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[9px] uppercase tracking-widest opacity-70 font-['Space_Grotesk']">Strategy</p>
-                      <p className="text-[11px] font-['JetBrains_Mono'] opacity-80 max-w-[200px] truncate">{backtestResult.prompt}</p>
+                      <span className="text-zinc-600 text-[9px] block mb-0.5">Unrealised P&L (100 qty)</span>
+                      <span className={`font-bold ${(open.unrealised_pnl??0)>=0?'text-green-400':'text-red-400'}`}>
+                        {(open.unrealised_pnl??0)>=0?'+':''}₹{open.unrealised_pnl} ({open.return_pct}%)
+                      </span>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Primary 4 metrics */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { label: 'Total Trades',    value: s.total_trades,              suffix: '',  color: 'text-white' },
-                      { label: 'Win Rate',         value: s.win_rate,                  suffix: '%', color: (s.win_rate??0)>=55?'text-green-400':(s.win_rate??0)>=45?'text-yellow-400':'text-red-400' },
-                      { label: 'Avg / Trade',      value: s.avg_return_per_trade_pct,  suffix: '%', color: (s.avg_return_per_trade_pct??0)>=0?'text-green-400':'text-red-400' },
-                      { label: 'Total Return',     value: s.total_return_pct,          suffix: '%', color: (s.total_return_pct??0)>=0?'text-green-400':'text-red-400' },
-                    ].map(({ label, value, suffix, color }) => (
-                      <div key={label} className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-2">{label}</p>
-                        <p className={`text-xl font-['JetBrains_Mono'] font-bold ${color}`}>
-                          {value != null ? `${value}${suffix}` : '—'}
-                        </p>
-                      </div>
-                    ))}
+              {/* Trades table */}
+              {trades.length > 0 && (
+                <div className="bg-white/5 rounded-2xl border border-white/5 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-white/10 flex justify-between items-center">
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold font-['Space_Grotesk']">
+                      Trade History ({trades.length} shown)
+                    </p>
+                    <p className="text-[9px] text-zinc-600 font-['JetBrains_Mono']">100 shares per trade</p>
                   </div>
-
-                  {/* Secondary 4 metrics */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { label: 'Best Trade',      value: s.best_trade_pct,     suffix: '%', color: 'text-green-400' },
-                      { label: 'Worst Trade',     value: s.worst_trade_pct,    suffix: '%', color: 'text-red-400'   },
-                      { label: 'Risk/Reward',     value: s.risk_reward_ratio,  suffix: 'x', color: 'text-cyan-400'  },
-                      { label: 'Max Drawdown',    value: s.max_drawdown_pct,   suffix: '%', color: 'text-red-400'   },
-                    ].map(({ label, value, suffix, color }) => (
-                      <div key={label} className="bg-white/3 rounded-xl p-3 border border-white/5">
-                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-1">{label}</p>
-                        <p className={`text-sm font-['JetBrains_Mono'] font-bold ${color}`}>
-                          {value != null ? `${value}${suffix}` : '—'}
-                        </p>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto max-h-72">
+                    <table className="w-full text-[11px] font-['JetBrains_Mono']">
+                      <thead className="sticky top-0 bg-black/80 backdrop-blur">
+                        <tr className="border-b border-white/5">
+                          {['Buy Date','Buy ₹','Sell Date','Sell ₹','Days','P&L (100)','Return %',''].map(h => (
+                            <th key={h} className="px-3 py-2 text-left text-[9px] text-zinc-600 uppercase tracking-widest font-bold whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...trades].reverse().map((t: any, i: number) => (
+                          <tr key={i} className={`border-b border-white/5 transition-colors ${t.result==='WIN'?'hover:bg-green-500/5':'hover:bg-red-500/5'}`}>
+                            <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{t.buy_date}</td>
+                            <td className="px-3 py-2 text-white font-bold">₹{t.buy_price}</td>
+                            <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{t.sell_date}</td>
+                            <td className="px-3 py-2 text-white font-bold">₹{t.sell_price}</td>
+                            <td className="px-3 py-2 text-zinc-500">{t.holding_days}d</td>
+                            <td className={`px-3 py-2 font-bold ${(t.pnl_100shares??0)>=0?'text-green-400':'text-red-400'}`}>
+                              {(t.pnl_100shares??0)>=0?'+':''}₹{t.pnl_100shares}
+                            </td>
+                            <td className={`px-3 py-2 font-bold ${(t.return_pct??0)>=0?'text-green-400':'text-red-400'}`}>
+                              {(t.return_pct??0)>=0?'+':''}{t.return_pct}%
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                t.result==='WIN'?'bg-green-500/20 text-green-400':'bg-red-500/20 text-red-400'
+                              }`}>{t.result}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
+                </div>
+              )}
 
-                  {/* Win/Loss bar */}
-                  {s.total_trades > 0 && (
-                    <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                      <div className="flex justify-between text-[10px] text-zinc-500 font-['JetBrains_Mono'] mb-2">
-                        <span>Wins: {s.wins} (avg +{s.avg_win_pct}%)</span>
-                        <span>Losses: {s.losses} (avg {s.avg_loss_pct}%)</span>
-                      </div>
-                      <div className="flex h-3 rounded-full overflow-hidden gap-0.5">
-                        <div className="bg-green-500 rounded-l-full transition-all duration-700"
-                          style={{ width: `${s.win_rate}%` }} />
-                        <div className="bg-red-500 rounded-r-full flex-1" />
-                      </div>
-                      <div className="flex justify-between text-[9px] text-zinc-600 font-['JetBrains_Mono'] mt-1">
-                        <span>{s.win_rate}% win rate</span>
-                        <span>Profit factor: {s.profit_factor}x</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Open trade */}
-                  {open && (
-                    <div className={`rounded-2xl p-4 border ${open.unrealised_pnl >= 0 ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
-                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] mb-2">Open Trade (not closed yet)</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-['JetBrains_Mono']">
-                        <div><span className="text-zinc-600">Bought</span><br /><span className="text-white font-bold">{open.buy_date}</span></div>
-                        <div><span className="text-zinc-600">Buy price</span><br /><span className="text-white font-bold">₹{open.buy_price}</span></div>
-                        <div><span className="text-zinc-600">Current</span><br /><span className="text-white font-bold">₹{open.current_price}</span></div>
-                        <div><span className="text-zinc-600">Unrealised P&L</span><br />
-                          <span className={`font-bold ${open.unrealised_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            ₹{open.unrealised_pnl} ({open.return_pct}%)
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Trades table */}
-                  {trades.length > 0 && (
-                    <div className="bg-white/5 rounded-2xl border border-white/5 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-white/10">
-                        <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold font-['Space_Grotesk']">
-                          Last {trades.length} Trades
-                        </p>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-[11px] font-['JetBrains_Mono']">
-                          <thead>
-                            <tr className="border-b border-white/5">
-                              {['Buy Date','Buy ₹','Sell Date','Sell ₹','Days','P&L (100)','Return','Result'].map(h => (
-                                <th key={h} className="px-3 py-2 text-left text-[9px] text-zinc-600 uppercase tracking-widest font-bold">{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[...trades].reverse().map((t: any, i: number) => (
-                              <tr key={i} className={`border-b border-white/5 ${t.result === 'WIN' ? 'hover:bg-green-500/5' : 'hover:bg-red-500/5'}`}>
-                                <td className="px-3 py-2 text-zinc-400">{t.buy_date}</td>
-                                <td className="px-3 py-2 text-white">₹{t.buy_price}</td>
-                                <td className="px-3 py-2 text-zinc-400">{t.sell_date}</td>
-                                <td className="px-3 py-2 text-white">₹{t.sell_price}</td>
-                                <td className="px-3 py-2 text-zinc-500">{t.holding_days}d</td>
-                                <td className={`px-3 py-2 font-bold ${t.pnl_100shares >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                  {t.pnl_100shares >= 0 ? '+' : ''}₹{t.pnl_100shares}
-                                </td>
-                                <td className={`px-3 py-2 font-bold ${t.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                  {t.return_pct >= 0 ? '+' : ''}{t.return_pct}%
-                                </td>
-                                <td className="px-3 py-2">
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                    t.result === 'WIN' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                                  }`}>{t.result}</span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Section 4: SignalX Top 10 Recommended Strategies ── */}
