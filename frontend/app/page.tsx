@@ -177,6 +177,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const [chatInput,   setChatInput]   = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatHistory, setChatHistory] = useState<Array<{role:'user'|'ai', content:string, data?:any}>>([]);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom whenever chat history updates or loading changes
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatHistory, chatLoading]);
 
   const handleChat = async () => {
     const msg = chatInput.trim();
@@ -397,7 +405,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
 
         {/* Chat history */}
         {chatHistory.length > 0 && (
-          <div className="mb-4 space-y-3 max-h-[700px] overflow-y-auto">
+          <div ref={chatScrollRef} className="mb-4 space-y-3 max-h-[700px] overflow-y-auto scroll-smooth">
             {chatHistory.map((msg, idx) => (
               <div key={idx}>
                 {/* User bubble */}
