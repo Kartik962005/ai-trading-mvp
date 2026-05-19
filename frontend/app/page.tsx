@@ -48,6 +48,48 @@ function normalizeStrategyEvals(strategyEvals: any) {
     .sort((a, b) => b.score - a.score);
 }
 
+const MONTH_INDEX: Record<string, string> = {
+  jan: '01', january: '01',
+  feb: '02', february: '02',
+  mar: '03', march: '03',
+  apr: '04', april: '04',
+  may: '05',
+  jun: '06', june: '06',
+  jul: '07', july: '07',
+  aug: '08', august: '08',
+  sep: '09', sept: '09', september: '09',
+  oct: '10', october: '10',
+  nov: '11', november: '11',
+  dec: '12', december: '12',
+};
+
+function parseRequestedDate(prompt: string) {
+  const clean = prompt.toLowerCase();
+  const namedDate = clean.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(\d{4}))?\b/);
+  if (namedDate) {
+    const year = namedDate[3] ?? String(new Date().getFullYear());
+    const month = MONTH_INDEX[namedDate[2]];
+    const day = namedDate[1].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const numericDate = clean.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/) ?? clean.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?\b/);
+  if (!numericDate) return null;
+
+  if (numericDate[0].includes('-') && numericDate[1].length === 4) {
+    return `${numericDate[1]}-${numericDate[2].padStart(2, '0')}-${numericDate[3].padStart(2, '0')}`;
+  }
+
+  const year = numericDate[3] ?? String(new Date().getFullYear());
+  const day = numericDate[1].padStart(2, '0');
+  const month = numericDate[2].padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isPriceLookupPrompt(prompt: string) {
+  return /\b(price|open|opening|close|closing|ohlc|candle|high|low)\b/i.test(prompt) && !!parseRequestedDate(prompt);
+}
+
 function getLevenshteinDistance(s: string, t: string) {
   if (!s.length) return t.length;
   if (!t.length) return s.length;
@@ -202,7 +244,7 @@ const MarketAssetCard = ({
 };
 
 // ─── DETAILED FISO PANEL ──────────────────────────────────────────────────────
-const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; currency: string; ticker: string }) => {
+const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: any; currency: string; ticker: string; chartData: any }) => {
   if (!analysis || analysis.error) return null;
 
   const isBull = analysis.verdict?.includes('Buy');
@@ -215,33 +257,47 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
   const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
   const rr = Math.abs(priceDiff / (analysis.stop_loss - analysis.entry)).toFixed(2);
 
-  // AI Backtester state (lifted into FisoDetailPanel so it lives next to the section)
+  // AI search state (lifted into FisoDetailPanel so it lives next to the section)
   const [aiPrompt, setAiPrompt] = useState('');
-  const [backtestResult, setBacktestResult] = useState<any>(null);
-  const [isBacktesting, setIsBacktesting] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [isAiRunning, setIsAiRunning] = useState(false);
 
-  const handleCustomBacktest = async () => {
+  const handleAiSearch = async () => {
     if (!aiPrompt || !ticker) return;
-    setIsBacktesting(true);
-    setBacktestResult(null);
+    setIsAiRunning(true);
+    setAiResult(null);
     try {
+      if (isPriceLookupPrompt(aiPrompt)) {
+        const requestedDate = parseRequestedDate(aiPrompt);
+        const candle = Array.isArray(chartData)
+          ? chartData.find((d: any) => d.date?.toString().slice(0, 10) === requestedDate)
+          : null;
+
+        setAiResult({
+          type: 'price_lookup',
+          requestedDate,
+          candle,
+        });
+        return;
+      }
+
       const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, prompt: aiPrompt })
       });
-      setBacktestResult(await res.json());
+      setAiResult({ type: 'strategy_test', ...(await res.json()) });
     } catch {
-      setBacktestResult({ error: "Failed to connect to backend." });
+      setAiResult({ error: "Failed to connect to backend." });
     } finally {
-      setIsBacktesting(false);
+      setIsAiRunning(false);
     }
   };
 
-  // ── Enter key handler for AI backtester input
+  // ── Enter key handler for AI search input
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && aiPrompt.trim() && !isBacktesting) {
-      handleCustomBacktest();
+    if (e.key === 'Enter' && aiPrompt.trim() && !isAiRunning) {
+      handleAiSearch();
     }
   };
 
@@ -380,16 +436,16 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
             Strategy Intelligence & NLP Feed below
           </span>
           <span className="text-[10px] text-zinc-600 font-['JetBrains_Mono'] text-center">
-            Run a backtest · See top 10 strategies · Read the news feed
+            Ask prices by date · Test ideas · Read the news feed
           </span>
         </div>
       </div>
 
-      {/* ── Section 3: AI Strategy Backtester ── */}
+      {/* ── Section 3: AI Market Search ── */}
       <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
         <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
-          AI Strategy Backtester
+          AI Market Search
         </h3>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -397,36 +453,66 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="e.g. RSI below 30 and volume spike... (press Enter or click Backtest)"
+            placeholder="Ask a price question or test a strategy, e.g. opening price on 12th Feb"
             className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-600 transition-all"
           />
           <button
-            onClick={handleCustomBacktest}
-            disabled={isBacktesting || !aiPrompt.trim()}
+            onClick={handleAiSearch}
+            disabled={isAiRunning || !aiPrompt.trim()}
             className="bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-xs px-6 py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0"
           >
-            {isBacktesting ? 'Running...' : 'Backtest'}
+            {isAiRunning ? 'Thinking...' : 'Ask AI'}
           </button>
         </div>
 
-        {/* Backtest loading */}
-        {isBacktesting && (
+        {/* AI loading */}
+        {isAiRunning && (
           <div className="mt-4 flex items-center gap-3 py-4">
             <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
             <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
-              Running strategy against {analysis.estimated_days * 3}+ days of historical data...
+              Reading market data for {ticker}...
             </span>
           </div>
         )}
 
-        {/* Backtest results */}
-        {backtestResult && !isBacktesting && (
+        {/* AI results */}
+        {aiResult && !isAiRunning && (
           <div className="mt-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {backtestResult.error || backtestResult.custom_metrics?.error ? (
+            {aiResult.error || aiResult.custom_metrics?.error ? (
               <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-4">
                 <p className="text-red-400 text-sm font-['JetBrains_Mono']">
-                  {backtestResult.error || backtestResult.custom_metrics?.error}
+                  {aiResult.error || aiResult.custom_metrics?.error}
                 </p>
+              </div>
+            ) : aiResult.type === 'price_lookup' ? (
+              <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+                {aiResult.candle ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold font-['Space_Grotesk']">Price Lookup</span>
+                      <span className="text-[10px] text-zinc-500 font-['JetBrains_Mono']">{ticker} · {aiResult.requestedDate}</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        ['Open', aiResult.candle.open],
+                        ['High', aiResult.candle.high],
+                        ['Low', aiResult.candle.low],
+                        ['Close', aiResult.candle.close],
+                      ].map(([label, value]) => (
+                        <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{label}</span>
+                          <span className="text-lg font-['JetBrains_Mono'] font-bold text-white">
+                            {currency}{Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-cyan-200/80 text-sm font-['JetBrains_Mono']">
+                    No candle found for {ticker} on {aiResult.requestedDate}. Try a trading day with available chart data.
+                  </p>
+                )}
               </div>
             ) : (
               <>
@@ -435,29 +521,29 @@ const FisoDetailPanel = ({ analysis, currency, ticker }: { analysis: any; curren
                   {[
                     {
                       label: 'Total Trades',
-                      value: backtestResult.custom_metrics?.total_trades,
+                      value: aiResult.custom_metrics?.total_trades,
                       suffix: '',
                       color: 'text-white',
                       icon: '📈'
                     },
                     {
                       label: 'Win Rate',
-                      value: backtestResult.custom_metrics?.win_rate,
+                      value: aiResult.custom_metrics?.win_rate,
                       suffix: '%',
-                      color: (backtestResult.custom_metrics?.win_rate ?? 0) >= 50 ? 'text-green-400' : 'text-red-400',                      icon: '🎯'
+                      color: (aiResult.custom_metrics?.win_rate ?? 0) >= 50 ? 'text-green-400' : 'text-red-400',                      icon: '🎯'
                     },
                     {
                       label: 'Avg Return / Trade',
-                      value: backtestResult.custom_metrics?.avg_return_per_trade_pct,
+                      value: aiResult.custom_metrics?.avg_return_per_trade_pct,
                       suffix: '%',
-                      color: (backtestResult.custom_metrics?.avg_return_per_trade_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
+                      color: (aiResult.custom_metrics?.avg_return_per_trade_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
                       icon: '⚡'
                     },
                     {
                       label: 'Total Return',
-                      value: backtestResult.custom_metrics?.total_return_pct,
+                      value: aiResult.custom_metrics?.total_return_pct,
                       suffix: '%',
-                      color: (backtestResult.custom_metrics?.total_return_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
+                      color: (aiResult.custom_metrics?.total_return_pct ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
                       icon: '💰'
                     },
                   ].map(({ label, value, suffix, color, icon }) => (
@@ -1001,7 +1087,7 @@ export default function Home() {
 
               {/* FISO Analysis + all sections in order */}
               {analysis && !analysis.error
-                ? <FisoDetailPanel analysis={analysis} currency={currency} ticker={ticker} />
+                ? <FisoDetailPanel analysis={analysis} currency={currency} ticker={ticker} chartData={chartData} />
                 : !analysis && (
                   <div className="flex items-center justify-center py-16">
                     <div className="flex flex-col items-center gap-4">
