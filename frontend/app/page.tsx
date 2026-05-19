@@ -294,19 +294,19 @@ const MarketAssetCard = ({
 
   return (
     <div
-      className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none
+      className={`relative p-3 sm:p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none
         ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
     >
-      <div className="flex justify-between items-start mb-2">
-        <span className={`text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
-        <div className="flex items-center gap-1.5">
+      <div className="flex justify-between items-start gap-2 mb-2">
+        <span className={`min-w-0 flex-1 truncate text-[10px] sm:text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Live verdict dot — green/red/grey based on prefetch status */}
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysis.verdict : 'Loading...'} />
-          <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
+          <span className="text-[8px] sm:text-[9px] bg-white/5 px-1.5 sm:px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setExpanded(prev => !prev); }}
-            className="w-7 h-7 -mr-1 rounded-lg border border-white/10 bg-white/5 text-cyan-500 hover:bg-cyan-500/15 hover:border-cyan-400/40 transition-all flex items-center justify-center"
+            className="w-8 h-8 rounded-lg border border-white/10 bg-white/5 text-cyan-500 hover:bg-cyan-500/15 hover:border-cyan-400/40 transition-all flex items-center justify-center shrink-0"
             aria-label={`${expanded ? 'Hide' : 'Show'} ${stock.symbol} preview`}
             title={`${expanded ? 'Hide' : 'Show'} preview`}
           >
@@ -1027,6 +1027,7 @@ export default function Home() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
 
   // Check if Supabase is available
   const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1043,10 +1044,25 @@ export default function Home() {
       });
       sb.auth.onAuthStateChange((_event, session) => {
         setUser(session?.user ?? null);
-        if (session?.user) setShowAuthModal(false);
+        if (session?.user) {
+          setShowAuthModal(false);
+          setShowProfileMenu(false);
+        }
       });
     }).catch(() => {});
   }, [supabaseAvailable]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!showProfileMenu) return;
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [showProfileMenu]);
 
   const getSupabaseClient = async () => {
     const { createClient } = await import('@supabase/supabase-js');
@@ -1089,7 +1105,8 @@ export default function Home() {
         if (data.user) {
           setUser(data.user);
           setShowAuthModal(false);
-          setShowProfileMenu(true);
+          setShowProfileMenu(false);
+          goHome();
         }
         setAuthSuccess('Account created! Check your email to verify.');
       } else {
@@ -1097,7 +1114,8 @@ export default function Home() {
         if (error) throw error;
         setUser(data.user ?? null);
         setShowAuthModal(false);
-        setShowProfileMenu(true);
+        setShowProfileMenu(false);
+        goHome();
       }
     } catch (err: any) {
       setAuthError(err.message || 'Authentication failed. Try again.');
@@ -1111,6 +1129,7 @@ export default function Home() {
     const sb = await getSupabaseClient();
     await sb.auth.signOut();
     setUser(null);
+    setShowProfileMenu(false);
   };
 
   useEffect(() => {
@@ -1438,82 +1457,99 @@ export default function Home() {
             )}
           </div>
 
-          {/* Login/User button */}
-          {user ? (
-            <div className="flex items-center gap-3 shrink-0">
-              <button
-                onClick={() => setShowProfileMenu(prev => !prev)}
-                className="h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/50 text-cyan-500 font-black uppercase flex items-center gap-3 px-2.5 pr-4 shadow-[0_12px_32px_rgba(6,182,212,0.16)] hover:bg-cyan-500/25 transition-all"
-                title="Open user dashboard"
-              >
-                <span className="w-8 h-8 rounded-full bg-white border border-cyan-200 text-cyan-700 flex items-center justify-center overflow-hidden">
-                  {user.user_metadata?.avatar_url ? (
-                    <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
-                  )}
-                </span>
-                <span className="hidden sm:flex flex-col items-start leading-none">
-                  <span className="text-[9px] text-slate-500 tracking-widest font-['JetBrains_Mono']">SIGNED IN</span>
-                  <span className="text-[11px] text-slate-900 tracking-widest font-['Space_Grotesk']">
-                    Dashboard
-                  </span>
-                </span>
-              </button>
-              {showProfileMenu && (
-                <div className="absolute right-4 md:right-6 top-[136px] md:top-24 z-50 w-80 rounded-2xl border border-white/10 bg-white/95 text-slate-900 shadow-2xl p-5">
-                  <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-cyan-100 text-cyan-700 font-black flex items-center justify-center overflow-hidden">
-                      {user.user_metadata?.avatar_url ? (
-                        <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-                      ) : (
-                        (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-black text-sm truncate font-['Space_Grotesk']">{user.user_metadata?.full_name || 'Signed in user'}</div>
-                      <div className="text-xs text-slate-500 truncate font-['JetBrains_Mono']">{user.email}</div>
-                    </div>
-                  </div>
-                  <div className="mb-4">
-                    <div className="text-[10px] uppercase tracking-widest text-cyan-700 font-black font-['Space_Grotesk']">Dashboard</div>
-                    <div className="text-xs text-slate-500 mt-1 font-['JetBrains_Mono']">Your signed-in Bullseye workspace</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Market</span>
-                      <div className="text-sm font-bold">{activeMarket}</div>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Viewing</span>
-                      <div className="text-sm font-bold truncate">{ticker || 'Overview'}</div>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Saved scans</span>
-                      <div className="text-sm font-bold">{Object.keys(prefetchCache).length}</div>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Cache</span>
-                      <div className="text-sm font-bold">{cachedAnalysis ? 'Ready' : 'Live'}</div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleSignOut}
-                    className="w-full rounded-xl bg-slate-900 text-white py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
-                  >
-                    Sign Out
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
+          {/* Account menu */}
+          <div ref={accountMenuRef} className="relative shrink-0 self-end md:self-auto">
             <button
-              onClick={() => setShowAuthModal(true)}
-              className="shrink-0 bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-xs px-5 py-3 rounded-xl hover:bg-cyan-500/30 transition-all font-['Space_Grotesk']"
+              type="button"
+              onPointerDown={(e) => { e.stopPropagation(); setShowProfileMenu(prev => !prev); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowProfileMenu(prev => !prev);
+                }
+              }}
+              className="h-12 w-12 rounded-full bg-white border border-cyan-200 text-cyan-700 font-black uppercase flex items-center justify-center shadow-[0_12px_32px_rgba(6,182,212,0.16)] hover:bg-cyan-50 hover:border-cyan-400 transition-all overflow-hidden"
+              title={user ? 'Open user dashboard' : 'Open account menu'}
+              aria-label={user ? 'Open user dashboard' : 'Open account menu'}
+              aria-expanded={showProfileMenu}
             >
-              Sign In
+              {user?.user_metadata?.avatar_url ? (
+                <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+              ) : user ? (
+                (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
+              ) : (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              )}
             </button>
-          )}
+
+            {showProfileMenu && (
+              <div className="absolute right-0 top-full mt-3 z-50 w-[min(calc(100vw-2rem),20rem)] max-h-[calc(100vh-9rem)] overflow-y-auto rounded-2xl border border-white/10 bg-white/95 text-slate-900 shadow-2xl p-4 sm:p-5">
+                {user ? (
+                  <>
+                    <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-4">
+                      <div className="w-12 h-12 rounded-full bg-cyan-100 text-cyan-700 font-black flex items-center justify-center overflow-hidden shrink-0">
+                        {user.user_metadata?.avatar_url ? (
+                          <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-black text-sm truncate font-['Space_Grotesk']">{user.user_metadata?.full_name || 'Signed in user'}</div>
+                        <div className="text-xs text-slate-500 truncate font-['JetBrains_Mono']">{user.email}</div>
+                      </div>
+                    </div>
+                    <div className="mb-4">
+                      <div className="text-[10px] uppercase tracking-widest text-cyan-700 font-black font-['Space_Grotesk']">Dashboard</div>
+                      <div className="text-xs text-slate-500 mt-1 font-['JetBrains_Mono']">Your signed-in Bullseye workspace</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                        <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Market</span>
+                        <div className="text-sm font-bold">{activeMarket}</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                        <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Viewing</span>
+                        <div className="text-sm font-bold truncate">{ticker || 'Overview'}</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                        <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Saved scans</span>
+                        <div className="text-sm font-bold">{Object.keys(prefetchCache).length}</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                        <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Cache</span>
+                        <div className="text-sm font-bold">{cachedAnalysis ? 'Ready' : 'Live'}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="w-full rounded-xl bg-slate-900 text-white py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
+                    >
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <div className="text-[10px] uppercase tracking-widest text-cyan-700 font-black font-['Space_Grotesk']">Account</div>
+                      <div className="text-xs text-slate-500 mt-1 font-['JetBrains_Mono']">Sign in to open your Bullseye dashboard.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setShowProfileMenu(false); setShowAuthModal(true); }}
+                      className="w-full rounded-xl bg-slate-900 text-white py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
+                    >
+                      Sign In
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* MAIN */}
