@@ -10,13 +10,24 @@ import os
 
 load_dotenv()
 
+default_origins = [
+    "https://ai-trading-mvp.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", ",".join(default_origins)).split(",")
+    if origin.strip()
+]
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="AI Trading Assistant - MVP")
 app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ai-trading-mvp.vercel.app"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,7 +41,7 @@ from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_pre
 
 @app.get("/health")
 async def health():
-    return {"status": "✅ Backend is running!"}
+    return {"status": "Backend is running"}
 
 
 @app.get("/api/v1/quote/{ticker}")
@@ -122,4 +133,4 @@ async def custom_backtest(request: Request, body: BacktestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-print("✅ FastAPI started - visit http://localhost:8000/health")
+print("FastAPI started - visit http://localhost:8000/health")

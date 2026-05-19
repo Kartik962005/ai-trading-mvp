@@ -6,10 +6,13 @@ import time
 # ── Safe Supabase import ───────────────────────────────────────────────────────
 try:
     from app.core.supabase_client import supabase
-    SUPABASE_OK = True
-    print("✅ Supabase connected")
+    SUPABASE_OK = supabase is not None
+    if SUPABASE_OK:
+        print("[Supabase] connected")
+    else:
+        print("[Supabase] env vars missing. Running without DB cache.")
 except Exception as e:
-    print(f"⚠️  Supabase not available: {e}. Running without DB cache.")
+    print(f"[Supabase] not available: {e}. Running without DB cache.")
     supabase = None
     SUPABASE_OK = False
 
