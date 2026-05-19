@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
-const BACKEND = 'https://ai-trading-backend-jhcl.onrender.com';
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ai-trading-backend-jhcl.onrender.com';
 const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json());
 const CACHE_TTL = 1000 * 60 * 60 * 6;
 
@@ -788,6 +788,95 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                     </div>
                   ))}
                 </div>
+                <div className="mt-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-cyan-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Strategy analysis</span>
+                      <p className="mt-2 text-sm text-zinc-300 leading-relaxed font-['JetBrains_Mono']">
+                        {aiResult.custom_metrics?.analysis_text || aiResult.custom_metrics?.warning || 'Strategy completed. Review the trade log below for entries and exits.'}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 shrink-0 min-w-[240px]">
+                      {[
+                        ['Wins', aiResult.custom_metrics?.summary?.wins ?? aiResult.custom_metrics?.wins ?? 0],
+                        ['Losses', aiResult.custom_metrics?.summary?.losses ?? aiResult.custom_metrics?.losses ?? 0],
+                        ['Best', `${aiResult.custom_metrics?.summary?.best_trade_pct ?? aiResult.custom_metrics?.best_trade_pct ?? 0}%`],
+                        ['Worst', `${aiResult.custom_metrics?.summary?.worst_trade_pct ?? aiResult.custom_metrics?.worst_trade_pct ?? 0}%`],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl bg-black/25 border border-white/5 p-3">
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block">{label}</span>
+                          <span className="text-sm text-white font-bold font-['JetBrains_Mono']">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-black/25 border border-white/5 p-3">
+                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry rule</span>
+                      <span className="text-xs text-zinc-300 font-['JetBrains_Mono'] break-words">{aiResult.custom_metrics?.buy_expr}</span>
+                    </div>
+                    <div className="rounded-xl bg-black/25 border border-white/5 p-3">
+                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Exit rule</span>
+                      <span className="text-xs text-zinc-300 font-['JetBrains_Mono'] break-words">{aiResult.custom_metrics?.sell_expr}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {aiResult.custom_metrics?.open_trade && (
+                  <div className="mt-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
+                    <span className="text-[10px] text-amber-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Open trade</span>
+                    <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-3">
+                      {[
+                        ['Buy date', `${aiResult.custom_metrics.open_trade.buy_date} (${aiResult.custom_metrics.open_trade.buy_day || '-'})`],
+                        ['Buy price', aiResult.custom_metrics.open_trade.buy_price],
+                        ['Target', aiResult.custom_metrics.open_trade.target_price ?? '-'],
+                        ['Current', aiResult.custom_metrics.open_trade.current_price],
+                        ['Return', `${aiResult.custom_metrics.open_trade.return_pct}%`],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl bg-black/25 border border-white/5 p-3">
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block">{label}</span>
+                          <span className="text-sm text-white font-bold font-['JetBrains_Mono']">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiResult.custom_metrics?.trades?.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-white/10 overflow-hidden">
+                    <div className="px-4 py-3 bg-black/30 border-b border-white/10 flex items-center justify-between">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Trade log</span>
+                      <span className="text-[9px] text-zinc-500 font-['JetBrains_Mono']">Latest {aiResult.custom_metrics.trades.length}</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[820px] text-left">
+                        <thead className="bg-black/20">
+                          <tr>
+                            {['Buy day', 'Buy date', 'Buy', 'Sell day', 'Sell date', 'Sell', 'Hold', 'Return', 'Result'].map(label => (
+                              <th key={label} className="px-4 py-3 text-[9px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {aiResult.custom_metrics.trades.map((trade: any, index: number) => (
+                            <tr key={`${trade.buy_date}-${trade.sell_date}-${index}`} className="border-t border-white/5">
+                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.buy_day || '-'}</td>
+                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.buy_date}</td>
+                              <td className="px-4 py-3 text-xs text-white font-bold font-['JetBrains_Mono']">{currency}{trade.buy_price}</td>
+                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.sell_day || '-'}</td>
+                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.sell_date}</td>
+                              <td className="px-4 py-3 text-xs text-white font-bold font-['JetBrains_Mono']">{currency}{trade.sell_price}</td>
+                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.holding_days}d</td>
+                              <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${trade.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>{trade.return_pct}%</td>
+                              <td className={`px-4 py-3 text-xs font-black font-['Space_Grotesk'] ${trade.result === 'WIN' ? 'text-green-400' : 'text-red-400'}`}>{trade.result}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1030,6 +1119,8 @@ export default function Home() {
     if (!urlTicker || ticker) return;
     const stock = STOCKS.find(s => s.ticker === urlTicker);
     if (stock) {
+      window.history.replaceState({ view: 'home' }, '', '/');
+      window.history.pushState({ view: 'stock', ticker: stock.ticker }, '', `/?ticker=${encodeURIComponent(stock.ticker)}`);
       setCachedChart(getCache(`chart:${stock.ticker}`));
       setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
       setTicker(stock.ticker);
@@ -1037,6 +1128,30 @@ export default function Home() {
       setActiveMarket(stock.exchange === 'CRYPTO' ? 'CRYPTO' : stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? 'US' : 'INDIA');
     }
   }, [ticker]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlTicker = params.get('ticker');
+      if (!urlTicker) {
+        setTicker(null);
+        setInput('');
+        setShowSuggestions(false);
+        setShowProfileMenu(false);
+        return;
+      }
+      const stock = STOCKS.find(s => s.ticker === urlTicker);
+      if (!stock) return;
+      setCachedChart(getCache(`chart:${stock.ticker}`));
+      setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
+      setTicker(stock.ticker);
+      setCurrency(stock.currency);
+      setActiveMarket(stock.exchange === 'CRYPTO' ? 'CRYPTO' : stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? 'US' : 'INDIA');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!ticker) {
@@ -1121,13 +1236,13 @@ export default function Home() {
     setCurrency(stock.currency);
     setInput('');
     setShowSuggestions(false);
-    window.history.replaceState(null, '', `/?ticker=${encodeURIComponent(stock.ticker)}`);
+    window.history.pushState({ view: 'stock', ticker: stock.ticker }, '', `/?ticker=${encodeURIComponent(stock.ticker)}`);
   };
 
   const goHome = () => {
     setTicker(null);
     setShowProfileMenu(false);
-    window.history.replaceState(null, '', '/');
+    window.history.pushState({ view: 'home' }, '', '/');
   };
 
   const getMarketStocks = () => {

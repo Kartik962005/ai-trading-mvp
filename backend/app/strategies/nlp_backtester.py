@@ -182,8 +182,11 @@ def _normalise_prompt(user_prompt: str) -> str:
         "dyas": "days",
         "purchased": "buy",
         "purchase": "buy",
+        "buyed": "buy",
         "sold": "sell",
         "sells": "sell",
+        "dip": "down",
+        "dipped": "down",
     }
     for src, dst in replacements.items():
         p = p.replace(src, dst)
@@ -240,6 +243,9 @@ def _parse_percent_strategy(user_prompt: str) -> dict | None:
 
     buy_days = 1
     sell_days = 1
+    has_sell_consecutive = bool(re.search(r"(?:next|then|sell|exit).{0,45}?\b\d+\s*consecutive\s*(?:days?|sessions?)\b", p))
+    wants_target_exit = bool(sell_match and re.search(r"\b(?:sell|exit|sold)\b", p) and not has_sell_consecutive)
+
     if re.search(r"\b2\s*(?:consecutive\s*)?(?:days?|sessions?)\b.*\bthen\b", p) or "2 consecutive" in p:
         buy_days = 2
     sell_days_match = re.search(r"(?:next|then|sell|exit).{0,45}?\b(\d+)\s*consecutive\s*(?:days?|sessions?)\b", p)
@@ -247,6 +253,15 @@ def _parse_percent_strategy(user_prompt: str) -> dict | None:
         sell_days = max(1, int(sell_days_match.group(1)))
     elif "2 consecutive" in p and "then" in p:
         sell_days = 2
+
+    if wants_target_exit:
+        return {
+            "buy_expr": _consecutive_return_expr(buy_direction, buy_pct, buy_days),
+            "sell_expr": f"target {sell_direction} {sell_pct}%",
+            "mode": "target_exit",
+            "target_pct": sell_pct,
+            "target_direction": sell_direction,
+        }
 
     return {
         "buy_expr": _consecutive_return_expr(buy_direction, buy_pct, buy_days),
@@ -400,9 +415,11 @@ def _run_crossover(df, buy_expr, sell_expr):
             sell_rsi   = round(float(row.get('RSI_14', np.nan)), 1) if not pd.isna(row.get('RSI_14', np.nan)) else None
             trades.append({
                 "buy_date":      str(buy_date.date()),
+                "buy_day":       _weekday_name(buy_date),
                 "buy_price":     round(buy_price, 2),
                 "buy_rsi":       buy_rsi,
                 "sell_date":     str(row['date'].date()),
+                "sell_day":      _weekday_name(row['date']),
                 "sell_price":    round(sell_price, 2),
                 "sell_rsi":      sell_rsi,
                 "holding_days":  (row['date'] - buy_date).days,
@@ -419,6 +436,7 @@ def _run_crossover(df, buy_expr, sell_expr):
         cur  = float(last['close'])
         open_trade = {
             "buy_date":       str(buy_date.date()),
+            "buy_day":        _weekday_name(buy_date),
             "buy_price":      round(buy_price, 2),
             "current_price":  round(cur, 2),
             "current_rsi":    round(float(last.get('RSI_14', np.nan)), 1) if not pd.isna(last.get('RSI_14', np.nan)) else None,
@@ -426,6 +444,82 @@ def _run_crossover(df, buy_expr, sell_expr):
             "unrealised_pnl": round((cur - buy_price) * 100, 2),
             "return_pct":     round((cur - buy_price) / buy_price * 100, 2)
         }
+    return trades, open_trade
+
+
+def _weekday_name(value) -> str:
+    return pd.to_datetime(value).day_name()
+
+
+def _run_target_exit(df, buy_expr, target_pct, target_direction):
+    buy_sig = _eval_safe(buy_expr, df)
+    target_pct = abs(float(target_pct))
+    target_direction = "down" if target_direction == "down" else "up"
+
+    trades = []
+    open_trade = None
+    i = 2
+    while i < len(df) - 1:
+        if not bool(buy_sig.iloc[i]):
+            i += 1
+            continue
+
+        buy_row = df.iloc[i]
+        buy_date = buy_row["date"]
+        buy_price = float(buy_row["close"])
+        target_price = buy_price * (1 + target_pct / 100) if target_direction == "up" else buy_price * (1 - target_pct / 100)
+        exited = False
+
+        for j in range(i + 1, len(df)):
+            row = df.iloc[j]
+            hit_target = (
+                float(row["high"]) >= target_price
+                if target_direction == "up"
+                else float(row["low"]) <= target_price
+            )
+            if not hit_target:
+                continue
+
+            sell_price = target_price
+            pnl_pct = (sell_price - buy_price) / buy_price * 100
+            trades.append({
+                "buy_date": str(buy_date.date()),
+                "buy_day": _weekday_name(buy_date),
+                "buy_price": round(buy_price, 2),
+                "buy_rsi": round(float(buy_row.get("RSI_14", np.nan)), 1) if not pd.isna(buy_row.get("RSI_14", np.nan)) else None,
+                "sell_date": str(row["date"].date()),
+                "sell_day": _weekday_name(row["date"]),
+                "sell_price": round(sell_price, 2),
+                "sell_rsi": round(float(row.get("RSI_14", np.nan)), 1) if not pd.isna(row.get("RSI_14", np.nan)) else None,
+                "holding_days": (row["date"] - buy_date).days,
+                "pnl_per_share": round(sell_price - buy_price, 2),
+                "pnl_100shares": round((sell_price - buy_price) * 100, 2),
+                "return_pct": round(pnl_pct, 2),
+                "result": "WIN" if pnl_pct > 0 else "LOSS",
+                "entry_reason": "Buy signal triggered",
+                "exit_reason": f"{target_pct:g}% {'profit target' if target_direction == 'up' else 'downside target'} touched",
+            })
+            i = j + 1
+            exited = True
+            break
+
+        if not exited:
+            last = df.iloc[-1]
+            cur = float(last["close"])
+            open_trade = {
+                "buy_date": str(buy_date.date()),
+                "buy_day": _weekday_name(buy_date),
+                "buy_price": round(buy_price, 2),
+                "target_price": round(target_price, 2),
+                "current_price": round(cur, 2),
+                "current_rsi": round(float(last.get("RSI_14", np.nan)), 1) if not pd.isna(last.get("RSI_14", np.nan)) else None,
+                "holding_days": (last["date"] - buy_date).days,
+                "unrealised_pnl": round((cur - buy_price) * 100, 2),
+                "return_pct": round((cur - buy_price) / buy_price * 100, 2),
+                "exit_reason": f"Still open; {target_pct:g}% target not touched yet",
+            }
+            break
+
     return trades, open_trade
 
 
@@ -443,9 +537,11 @@ def _run_simple(df, buy_expr):
         rsi  = round(float(row.get('RSI_14', np.nan)), 1) if not pd.isna(row.get('RSI_14', np.nan)) else None
         trades.append({
             "buy_date":      str(row['date'].date()),
+            "buy_day":       _weekday_name(row['date']),
             "buy_price":     round(float(row['close']), 2),
             "buy_rsi":       rsi,
             "sell_date":     str(nrow['date'].date()),
+            "sell_day":      _weekday_name(nrow['date']),
             "sell_price":    round(float(nrow['close']), 2),
             "sell_rsi":      None,
             "holding_days":  1,
@@ -499,6 +595,37 @@ def _summary(trades):
 
 
 # ── Step 6: Main entry ────────────────────────────────────────────────────────
+def _build_analysis_text(user_prompt, summary, trades, open_trade, lookback_days, mode):
+    scope = f"last {lookback_days} loaded trading rows" if lookback_days else "loaded price history"
+    if not summary:
+        if open_trade:
+            return (
+                f"One entry is still open over the {scope}. The exit condition has not been reached yet, "
+                f"so it is not counted as a closed win or loss."
+            )
+        return (
+            f"No closed trades matched this strategy over the {scope}. The entry rule, exit rule, or lookback "
+            f"window may be too strict for this stock's candles."
+        )
+
+    best = max(trades, key=lambda t: t["return_pct"]) if trades else None
+    worst = min(trades, key=lambda t: t["return_pct"]) if trades else None
+    detail = (
+        f"Tested over the {scope}. The strategy produced {summary['total_trades']} closed trades, "
+        f"with {summary['wins']} wins and {summary['losses']} losses. Win rate was {summary['win_rate']}%, "
+        f"average return per trade was {summary['avg_return_per_trade_pct']}%, and total compounded return was "
+        f"{summary['total_return_pct']}%."
+    )
+    if best and worst:
+        detail += (
+            f" Best trade was {best['return_pct']}% from {best['buy_date']} to {best['sell_date']}; "
+            f"worst trade was {worst['return_pct']}% from {worst['buy_date']} to {worst['sell_date']}."
+        )
+    if mode == "target_exit":
+        detail += " Exit prices are recorded at the requested percentage target once the candle high/low touches that level."
+    return detail
+
+
 def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
     try:
         df = _prepare_df(df)
@@ -530,6 +657,8 @@ def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
         buy_expr  = strategy.get("buy_expr", "")
         sell_expr = strategy.get("sell_expr", "")
         mode      = strategy.get("mode", "crossover")
+        target_pct = strategy.get("target_pct")
+        target_direction = strategy.get("target_direction", "up")
 
         print(f"[Backtest] buy_expr:  {buy_expr}")
         print(f"[Backtest] sell_expr: {sell_expr}")
@@ -537,7 +666,9 @@ def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
 
         # Run simulation
         try:
-            if mode == "crossover":
+            if mode == "target_exit":
+                trades, open_trade = _run_target_exit(df, buy_expr, target_pct or 0, target_direction)
+            elif mode == "crossover":
                 trades, open_trade = _run_crossover(df, buy_expr, sell_expr)
             else:
                 trades, open_trade = _run_simple(df, buy_expr)
@@ -585,6 +716,9 @@ def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
             "buy_expr":       buy_expr,
             "sell_expr":      sell_expr,
             "mode":           mode,
+            "target_pct":     target_pct,
+            "target_direction": target_direction if mode == "target_exit" else None,
+            "analysis_text":   _build_analysis_text(user_prompt, summary, trades, open_trade, lookback_days, mode),
             "current_signal": current_signal,
             "summary":        summary,
             "trades":         trades[-30:],
