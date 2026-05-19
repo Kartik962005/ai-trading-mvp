@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
@@ -271,22 +271,6 @@ const MarketAssetCard = ({
   prefetchedAnalysis?: any;
 }) => {
   const [expanded, setExpanded] = useState(false);
-  const lastTap = useRef<number>(0);
-
-  const handleMouseEnter = () => setExpanded(true);
-  const handleMouseLeave = () => setExpanded(false);
-
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    const now = Date.now();
-    const gap = now - lastTap.current;
-    lastTap.current = now;
-    if (gap < 350 && gap > 0) {
-      onSelect(stock);
-    } else {
-      setExpanded(prev => !prev);
-    }
-  }, [stock, onSelect]);
 
   // Only hit the API if we have no prefetched data yet
   const { data: fetchedAnalysis } = useSWR(
@@ -310,10 +294,7 @@ const MarketAssetCard = ({
 
   return (
     <div
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onTouchEnd={handleTouchEnd}
-      className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 cursor-pointer group flex flex-col justify-start overflow-hidden select-none
+      className={`relative p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none
         ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
     >
       <div className="flex justify-between items-start mb-2">
@@ -322,6 +303,15 @@ const MarketAssetCard = ({
           {/* Live verdict dot — green/red/grey based on prefetch status */}
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysis.verdict : 'Loading...'} />
           <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setExpanded(prev => !prev); }}
+            className="w-7 h-7 -mr-1 rounded-lg border border-white/10 bg-white/5 text-cyan-500 hover:bg-cyan-500/15 hover:border-cyan-400/40 transition-all flex items-center justify-center"
+            aria-label={`${expanded ? 'Hide' : 'Show'} ${stock.symbol} preview`}
+            title={`${expanded ? 'Hide' : 'Show'} preview`}
+          >
+            <span className={`text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>⌄</span>
+          </button>
         </div>
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
@@ -368,8 +358,7 @@ const MarketAssetCard = ({
               <span className="text-sm font-['JetBrains_Mono'] text-red-400 font-bold">{stock.currency}{analysis.stop_loss}</span>
             </div>
             <button
-              onMouseDown={() => onSelect(stock)}
-              onTouchEnd={(e) => { e.stopPropagation(); onSelect(stock); }}
+              onClick={(e) => { e.stopPropagation(); onSelect(stock); }}
               className="w-full mt-1 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-500/20 transition-all"
             >
               Full Analysis →
@@ -1006,12 +995,20 @@ export default function Home() {
     try {
       const sb = await getSupabaseClient();
       if (authMode === 'signup') {
-        const { error } = await sb.auth.signUp({ email: authEmail, password: authPassword });
+        const { data, error } = await sb.auth.signUp({ email: authEmail, password: authPassword });
         if (error) throw error;
+        if (data.user) {
+          setUser(data.user);
+          setShowAuthModal(false);
+          setShowProfileMenu(true);
+        }
         setAuthSuccess('Account created! Check your email to verify.');
       } else {
-        const { error } = await sb.auth.signInWithPassword({ email: authEmail, password: authPassword });
+        const { data, error } = await sb.auth.signInWithPassword({ email: authEmail, password: authPassword });
         if (error) throw error;
+        setUser(data.user ?? null);
+        setShowAuthModal(false);
+        setShowProfileMenu(true);
       }
     } catch (err: any) {
       setAuthError(err.message || 'Authentication failed. Try again.');
@@ -1329,24 +1326,24 @@ export default function Home() {
           {/* Login/User button */}
           {user ? (
             <div className="flex items-center gap-3 shrink-0">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
-                {user.user_metadata?.avatar_url && (
-                  <img src={user.user_metadata.avatar_url} alt="avatar" className="w-6 h-6 rounded-full" />
-                )}
-                <span className="text-[11px] text-zinc-300 font-['Space_Grotesk'] font-bold hidden sm:block">
-                  {user.user_metadata?.full_name || user.email?.split('@')[0]}
-                </span>
-              </div>
               <button
                 onClick={() => setShowProfileMenu(prev => !prev)}
-                className="w-10 h-10 rounded-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-black uppercase flex items-center justify-center overflow-hidden"
-                title="Profile"
+                className="h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/50 text-cyan-500 font-black uppercase flex items-center gap-3 px-2.5 pr-4 shadow-[0_12px_32px_rgba(6,182,212,0.16)] hover:bg-cyan-500/25 transition-all"
+                title="Open user dashboard"
               >
-                {user.user_metadata?.avatar_url ? (
-                  <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-                ) : (
-                  (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
-                )}
+                <span className="w-8 h-8 rounded-full bg-white border border-cyan-200 text-cyan-700 flex items-center justify-center overflow-hidden">
+                  {user.user_metadata?.avatar_url ? (
+                    <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
+                  )}
+                </span>
+                <span className="hidden sm:flex flex-col items-start leading-none">
+                  <span className="text-[9px] text-slate-500 tracking-widest font-['JetBrains_Mono']">SIGNED IN</span>
+                  <span className="text-[11px] text-slate-900 tracking-widest font-['Space_Grotesk']">
+                    Dashboard
+                  </span>
+                </span>
               </button>
               {showProfileMenu && (
                 <div className="absolute right-4 md:right-6 top-[136px] md:top-24 z-50 w-80 rounded-2xl border border-white/10 bg-white/95 text-slate-900 shadow-2xl p-5">
@@ -1410,15 +1407,6 @@ export default function Home() {
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
             <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
-
-              {/* Mobile hint */}
-              <div className="md:hidden bg-cyan-500/5 border border-cyan-500/20 rounded-2xl px-4 py-3 flex items-center gap-3">
-                <span className="text-cyan-400 text-lg">👆</span>
-                <div>
-                  <span className="text-xs font-bold text-cyan-400 uppercase tracking-widest font-['Space_Grotesk'] block">Mobile Guide</span>
-                  <span className="text-[11px] text-zinc-400 font-['JetBrains_Mono']">Single tap = preview · Double tap = full analysis</span>
-                </div>
-              </div>
 
               {/* Market tabs */}
               <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-6">

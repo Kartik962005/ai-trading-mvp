@@ -128,7 +128,19 @@ async def custom_backtest(request: Request, body: BacktestRequest):
         latest = df.iloc[-1]
         prev = df.iloc[-2]
         all_strategies, best_id = evaluate_strategies(latest, prev, df)
-        return {"custom_metrics": custom_result, "top_20": all_strategies[:20]}
+        ranked_strategies = sorted(
+            [
+                {"id": strategy_id, **strategy}
+                for strategy_id, strategy in all_strategies.items()
+            ],
+            key=lambda item: item.get("score", 0),
+            reverse=True,
+        )
+        return {
+            "custom_metrics": custom_result,
+            "top_20": ranked_strategies[:20],
+            "best_strategy_id": best_id,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

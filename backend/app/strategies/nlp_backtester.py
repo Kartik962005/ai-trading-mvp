@@ -170,6 +170,100 @@ User: "RSI below 30"
 Output: {"buy_expr": "df['RSI_14'] < 30", "sell_expr": "df['RSI_14'] > 70", "mode": "simple"}
 """
 
+def _normalise_prompt(user_prompt: str) -> str:
+    p = user_prompt.lower()
+    replacements = {
+        "percnt": "percent",
+        "prcnt": "percent",
+        "consectue": "consecutive",
+        "consective": "consecutive",
+        "consecutive dyas": "consecutive days",
+        "dya": "day",
+        "dyas": "days",
+        "purchased": "buy",
+        "purchase": "buy",
+        "sold": "sell",
+        "sells": "sell",
+    }
+    for src, dst in replacements.items():
+        p = p.replace(src, dst)
+    number_words = {
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5",
+        "six": "6",
+        "seven": "7",
+        "eight": "8",
+        "nine": "9",
+        "ten": "10",
+    }
+    for word, value in number_words.items():
+        p = re.sub(rf"\b{word}\b", value, p)
+    p = re.sub(r"(\d+(?:\.\d+)?)\s*(?:percent|pct)\b", r"\1%", p)
+    return re.sub(r"\s+", " ", p).strip()
+
+
+def _consecutive_return_expr(direction: str, pct: float, days: int) -> str:
+    op = "<=" if direction == "down" else ">="
+    value = -abs(pct) if direction == "down" else abs(pct)
+    parts = [f"(df['day_return'].shift({i}) {op} {value})" for i in range(days)]
+    return " & ".join(parts)
+
+
+def _parse_percent_strategy(user_prompt: str) -> dict | None:
+    p = _normalise_prompt(user_prompt)
+
+    buy_match = re.search(
+        r"(?:buy|bought|entry|enter|purchased|test if i buy|test if i)\D{0,35}?(\d+(?:\.\d+)?)%\s*(down|up)",
+        p,
+    ) or re.search(r"(\d+(?:\.\d+)?)%\s*(down|up)\D{0,35}?(?:buy|entry|enter)", p)
+    sell_match = re.search(
+        r"(?:sell|exit|sold)\D{0,35}?(\d+(?:\.\d+)?)%\s*(up|down)",
+        p,
+    ) or re.search(r"then\D{0,25}?(\d+(?:\.\d+)?)%\s*(up|down)", p)
+
+    if not buy_match and re.search(r"\bdown\b.*\bthen\b.*\bup\b", p):
+        nums = re.findall(r"(\d+(?:\.\d+)?)%\s*(down|up)", p)
+        if len(nums) >= 2:
+            buy_match = type("_M", (), {"group": lambda self, i: nums[0][i - 1]})()
+            sell_match = type("_M", (), {"group": lambda self, i: nums[1][i - 1]})()
+
+    if not buy_match:
+        return None
+
+    buy_pct = float(buy_match.group(1))
+    buy_direction = buy_match.group(2)
+    sell_pct = float(sell_match.group(1)) if sell_match else buy_pct
+    sell_direction = sell_match.group(2) if sell_match else ("up" if buy_direction == "down" else "down")
+
+    buy_days = 1
+    sell_days = 1
+    if re.search(r"\b2\s*(?:consecutive\s*)?(?:days?|sessions?)\b.*\bthen\b", p) or "2 consecutive" in p:
+        buy_days = 2
+    sell_days_match = re.search(r"(?:next|then|sell|exit).{0,45}?\b(\d+)\s*consecutive\s*(?:days?|sessions?)\b", p)
+    if sell_days_match:
+        sell_days = max(1, int(sell_days_match.group(1)))
+    elif "2 consecutive" in p and "then" in p:
+        sell_days = 2
+
+    return {
+        "buy_expr": _consecutive_return_expr(buy_direction, buy_pct, buy_days),
+        "sell_expr": _consecutive_return_expr(sell_direction, sell_pct, sell_days),
+        "mode": "crossover",
+    }
+
+
+def _parse_lookback_days(user_prompt: str) -> int | None:
+    p = _normalise_prompt(user_prompt)
+    match = re.search(r"\b(?:past|last|previous)\s*(\d+)\s*(?:trading\s*)?(?:days?|sessions?)\b", p)
+    if not match:
+        return None
+    days = int(match.group(1))
+    return days if days > 0 else None
+
+
 def translate_strategy(user_prompt: str) -> dict:
     completion = get_client().chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -267,7 +361,11 @@ RULE_PATTERNS = [
 ]
 
 def _rule_engine_fallback(user_prompt: str) -> dict | None:
-    p = user_prompt.lower()
+    percent_strategy = _parse_percent_strategy(user_prompt)
+    if percent_strategy:
+        return percent_strategy
+
+    p = _normalise_prompt(user_prompt)
     for pattern, buy_expr, sell_expr, mode in RULE_PATTERNS:
         if re.search(pattern, p):
             return {"buy_expr": buy_expr, "sell_expr": sell_expr, "mode": mode}
@@ -404,9 +502,12 @@ def _summary(trades):
 def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
     try:
         df = _prepare_df(df)
+        lookback_days = _parse_lookback_days(user_prompt)
+        if lookback_days:
+            df = df.tail(lookback_days + 5).reset_index(drop=True)
 
         # Detect indicator for chart
-        p = user_prompt.lower()
+        p = _normalise_prompt(user_prompt)
         indicator_col = (
             'RSI_14'      if 'rsi'     in p else
             'MACD'        if 'macd'    in p else
