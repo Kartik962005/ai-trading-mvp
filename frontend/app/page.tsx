@@ -5,6 +5,7 @@ import { STOCKS } from './stocks';
 
 const BACKEND = 'https://ai-trading-backend-jhcl.onrender.com';
 const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json());
+const CACHE_TTL = 1000 * 60 * 60 * 6;
 
 const STRATEGY_NAMES: Record<number, string> = {
   1: 'Moving Average Crossover',
@@ -88,6 +89,39 @@ function parseRequestedDate(prompt: string) {
 
 function isPriceLookupPrompt(prompt: string) {
   return /\b(price|open|opening|close|closing|ohlc|candle|high|low)\b/i.test(prompt) && !!parseRequestedDate(prompt);
+}
+
+function getCache<T>(key: string): T | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || Date.now() - parsed.ts > CACHE_TTL) return undefined;
+    return parsed.data;
+  } catch {
+    return undefined;
+  }
+}
+
+function setCache(key: string, data: any) {
+  if (typeof window === 'undefined' || !data || data.error) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+  } catch {}
+}
+
+function getNearestCandles(chartData: any, requestedDate: string | null) {
+  if (!requestedDate || !Array.isArray(chartData)) return { previous: null, next: null };
+  const candles = chartData
+    .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
+    .map((d: any) => ({ ...d, day: d.date.toString().slice(0, 10) }))
+    .sort((a: any, b: any) => a.day.localeCompare(b.day));
+
+  return {
+    previous: [...candles].reverse().find((d: any) => d.day < requestedDate) ?? null,
+    next: candles.find((d: any) => d.day > requestedDate) ?? null,
+  };
 }
 
 function getLevenshteinDistance(s: string, t: string) {
@@ -277,6 +311,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
           type: 'price_lookup',
           requestedDate,
           candle,
+          nearest: getNearestCandles(chartData, requestedDate),
         });
         return;
       }
@@ -509,9 +544,32 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                     </div>
                   </>
                 ) : (
-                  <p className="text-cyan-200/80 text-sm font-['JetBrains_Mono']">
-                    No candle found for {ticker} on {aiResult.requestedDate}. Try a trading day with available chart data.
-                  </p>
+                  <div className="flex flex-col gap-4">
+                    <p className="text-cyan-200/80 text-sm font-['JetBrains_Mono']">
+                      No candle found for {ticker} on {aiResult.requestedDate}. It may be a market holiday, weekend, or outside loaded chart history.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {([
+                        ['Previous trading day', aiResult.nearest?.previous],
+                        ['Next trading day', aiResult.nearest?.next],
+                      ] as Array<[string, any]>).map(([label, candle]) => (
+                        <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">{label}</span>
+                          {candle ? (
+                            <div className="grid grid-cols-2 gap-2 text-xs font-['JetBrains_Mono']">
+                              <span className="text-cyan-300 col-span-2">{candle.day}</span>
+                              <span>O: {currency}{Number(candle.open).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                              <span>C: {currency}{Number(candle.close).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                              <span>H: {currency}{Number(candle.high).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                              <span>L: {currency}{Number(candle.low).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-zinc-500 font-['JetBrains_Mono']">Not available in loaded data</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             ) : (
@@ -574,8 +632,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               <span className="font-black text-black font-['Space_Grotesk'] text-sm">X</span>
             </div>
             <div>
-              <h3 className="text-sm font-black text-white tracking-widest uppercase font-['Space_Grotesk']">
-                Bull<span className="text-cyan-400">seye</span> will recommend
+              <h3 className="text-sm font-black text-white uppercase font-['Space_Grotesk']">
+                <span className="tracking-widest"><span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span></span> will recommend
               </h3>
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-['JetBrains_Mono']">
                 Top 10 strategies ranked by signal score · Best fit first
@@ -705,6 +763,9 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [cachedChart, setCachedChart] = useState<any>(undefined);
+  const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
 
   // Check if Supabase is available
   const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -776,9 +837,49 @@ export default function Home() {
     setUser(null);
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlTicker = params.get('ticker');
+    if (!urlTicker || ticker) return;
+    const stock = STOCKS.find(s => s.ticker === urlTicker);
+    if (stock) {
+      setCachedChart(getCache(`chart:${stock.ticker}`));
+      setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
+      setTicker(stock.ticker);
+      setCurrency(stock.currency);
+      setActiveMarket(stock.exchange === 'CRYPTO' ? 'CRYPTO' : stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? 'US' : 'INDIA');
+    }
+  }, [ticker]);
+
+  useEffect(() => {
+    if (!ticker) {
+      setCachedChart(undefined);
+      setCachedAnalysis(undefined);
+      return;
+    }
+    setCachedChart(getCache(`chart:${ticker}`));
+    setCachedAnalysis(getCache(`analysis:${ticker}`));
+  }, [ticker]);
+
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 10000 });
-  const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}` : null, fetcher);
-  const { data: analysis } = useSWR(ticker ? `/api/v1/analyze/${ticker}` : null, fetcher);
+  const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}` : null, fetcher, {
+    fallbackData: cachedChart,
+    revalidateIfStale: !cachedChart,
+    revalidateOnMount: !cachedChart,
+  });
+  const { data: analysis } = useSWR(ticker ? `/api/v1/analyze/${ticker}` : null, fetcher, {
+    fallbackData: cachedAnalysis,
+    revalidateIfStale: !cachedAnalysis,
+    revalidateOnMount: !cachedAnalysis,
+  });
+
+  useEffect(() => {
+    if (ticker && chartData) setCache(`chart:${ticker}`, chartData);
+  }, [chartData, ticker]);
+
+  useEffect(() => {
+    if (ticker && analysis) setCache(`analysis:${ticker}`, analysis);
+  }, [analysis, ticker]);
 
   useEffect(() => {
     if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
@@ -800,8 +901,8 @@ export default function Home() {
       const chart = createChart(chartRef.current!, {
         width: chartRef.current!.clientWidth || 800,
         height: 320,
-        layout: { background: { color: 'transparent' }, textColor: '#71717a' },
-        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+        layout: { background: { color: 'transparent' }, textColor: '#475569' },
+        grid: { vertLines: { color: 'rgba(15,23,42,0.08)' }, horzLines: { color: 'rgba(15,23,42,0.08)' } },
         crosshair: { mode: 1 },
       });
       
@@ -822,10 +923,19 @@ export default function Home() {
   }, [chartData, ticker]);
 
   const selectStock = (stock: typeof STOCKS[0]) => {
+    setCachedChart(getCache(`chart:${stock.ticker}`));
+    setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
     setTicker(stock.ticker);
     setCurrency(stock.currency);
     setInput('');
     setShowSuggestions(false);
+    window.history.replaceState(null, '', `/?ticker=${encodeURIComponent(stock.ticker)}`);
+  };
+
+  const goHome = () => {
+    setTicker(null);
+    setShowProfileMenu(false);
+    window.history.replaceState(null, '', '/');
   };
 
   const getMarketStocks = () => {
@@ -843,6 +953,17 @@ export default function Home() {
   // hammering the backend. Results are cached so hover is instant.
   useEffect(() => {
     const visibleStocks = getMarketStocks();
+    const cachedVisible = visibleStocks.reduce((acc, stock) => {
+      const cached = getCache(`analysis:${stock.ticker}`);
+      if (cached) acc[stock.ticker] = cached;
+      return acc;
+    }, {} as Record<string, any>);
+
+    if (Object.keys(cachedVisible).length > 0) {
+      setPrefetchCache(prev => ({ ...cachedVisible, ...prev }));
+      Object.keys(cachedVisible).forEach(t => prefetchedRef.current.add(t));
+    }
+
     const toFetch = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker));
     if (toFetch.length === 0) return;
 
@@ -856,6 +977,7 @@ export default function Home() {
           if (!res.ok) return;
           const data = await res.json();
           if (data && !data.error) {
+            setCache(`analysis:${stock.ticker}`, data);
             setPrefetchCache(prev => ({ ...prev, [stock.ticker]: data }));
           }
         } catch {
@@ -889,17 +1011,90 @@ export default function Home() {
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-100%); } }
         .animate-marquee { animation: marquee 35s linear infinite; }
+        @keyframes marketPulse { 0%, 100% { transform: translateY(0) scale(1); opacity: 0.72; } 50% { transform: translateY(-16px) scale(1.03); opacity: 1; } }
+        @keyframes dataDrift { 0% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(14px, -10px, 0); } 100% { transform: translate3d(0, 0, 0); } }
+        @keyframes scanLine { 0% { transform: translateX(-30%); opacity: 0; } 18%, 72% { opacity: 0.55; } 100% { transform: translateX(130%); opacity: 0; } }
+        .bullseye-light {
+          background:
+            radial-gradient(circle at 16% 8%, rgba(6,182,212,0.22), transparent 30%),
+            radial-gradient(circle at 82% 6%, rgba(16,185,129,0.18), transparent 28%),
+            linear-gradient(180deg, #f8fcff 0%, #edf7f8 45%, #ffffff 100%);
+          color: #0f172a !important;
+        }
+        .bullseye-light video { display: none; }
+        .bullseye-light [class*="bg-black"],
+        .bullseye-light [class*="bg-zinc-950"],
+        .bullseye-light [class*="bg-zinc-900"] {
+          background-color: rgba(255,255,255,0.78) !important;
+          backdrop-filter: blur(18px);
+        }
+        .bullseye-light [class*="border-white"] { border-color: rgba(15,23,42,0.10) !important; }
+        .bullseye-light [class*="text-white"],
+        .bullseye-light [class*="text-zinc-200"],
+        .bullseye-light [class*="text-zinc-300"] { color: #0f172a !important; }
+        .bullseye-light [class*="text-zinc-400"],
+        .bullseye-light [class*="text-zinc-500"],
+        .bullseye-light [class*="text-zinc-600"] { color: #64748b !important; }
+        .bullseye-light input {
+          background: rgba(255,255,255,0.92) !important;
+          color: #0f172a !important;
+          border-color: rgba(8,145,178,0.35) !important;
+          box-shadow: 0 12px 40px rgba(15,23,42,0.08);
+        }
+        .bullseye-light input::placeholder { color: #94a3b8 !important; }
+        .bullseye-light .fixed.inset-0.z-0 {
+          background: transparent !important;
+        }
+        .brand-mark {
+          box-shadow: 0 16px 40px rgba(8,145,178,0.22), inset 0 1px 0 rgba(255,255,255,0.9);
+        }
+        .market-visual {
+          background-image:
+            linear-gradient(rgba(8,145,178,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(8,145,178,0.08) 1px, transparent 1px);
+          background-size: 42px 42px;
+          mask-image: linear-gradient(to bottom, black 0%, transparent 76%);
+        }
+        .market-orbit {
+          animation: marketPulse 7s ease-in-out infinite;
+        }
+        .market-card-float {
+          animation: dataDrift 8s ease-in-out infinite;
+        }
+        .market-scan {
+          animation: scanLine 6s ease-in-out infinite;
+        }
+        .disclaimer-panel {
+          background: linear-gradient(135deg, rgba(255,251,235,0.98), rgba(254,243,199,0.92)) !important;
+          border-color: rgba(217,119,6,0.34) !important;
+          box-shadow: 0 16px 42px rgba(146,64,14,0.10);
+        }
+        .disclaimer-panel, .disclaimer-panel * {
+          color: #78350f !important;
+        }
       `}} />
 
-      <div className="min-h-screen text-zinc-200 selection:bg-cyan-500/30 selection:text-white flex flex-col font-['Inter']">
+      <div className="bullseye-light min-h-screen text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
 
         {/* BACKGROUND */}
-        <div className="fixed inset-0 z-0 pointer-events-none bg-black">
-          <video autoPlay loop muted playsInline className="absolute top-1/2 left-1/2 min-w-full min-h-full w-auto h-auto object-cover -translate-x-1/2 -translate-y-1/2 opacity-60 mix-blend-screen">
-            <source src="/background.mp4" type="video/mp4" />
-          </video>
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_10%,_#000000_100%)] opacity-90" />
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+          <div className="absolute inset-0 market-visual opacity-90" />
+          <div className="market-scan absolute top-0 h-full w-1/3 bg-gradient-to-r from-transparent via-cyan-300/20 to-transparent blur-xl" />
+          <div className="market-orbit absolute -top-24 left-[8%] h-80 w-80 rounded-full bg-cyan-200/45 blur-3xl" />
+          <div className="market-orbit absolute top-14 right-[6%] h-72 w-72 rounded-full bg-emerald-200/45 blur-3xl [animation-delay:1.5s]" />
+          <div className="market-card-float absolute top-32 right-[12%] hidden lg:block rounded-2xl border border-cyan-200 bg-white/70 px-5 py-4 shadow-xl backdrop-blur-xl">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Live Risk Pulse</div>
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-3xl font-black text-cyan-600 font-['Space_Grotesk']">72</span>
+              <span className="mb-1 text-xs font-bold text-emerald-600">+4.8%</span>
+            </div>
+          </div>
+          <div className="market-card-float absolute bottom-28 left-[6%] hidden xl:block rounded-2xl border border-emerald-200 bg-white/70 px-5 py-4 shadow-xl backdrop-blur-xl [animation-delay:2s]">
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Signal Queue</div>
+            <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400" />
+            </div>
+          </div>
         </div>
 
         {/* TICKER TAPE */}
@@ -912,13 +1107,13 @@ export default function Home() {
 
         {/* NAV */}
         <nav className="relative z-20 w-full px-4 sm:px-6 py-4 sm:py-5 flex flex-col md:flex-row justify-between items-center gap-4 sm:gap-8 max-w-[1600px] mx-auto border-b border-white/5 bg-black/20 backdrop-blur-sm">
-          <div className="flex flex-col items-start cursor-pointer group shrink-0 w-full md:w-auto" onClick={() => setTicker(null)}>
+          <div className="flex flex-col items-start cursor-pointer group shrink-0 w-full md:w-auto" onClick={goHome}>
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)]">
-                <span className="font-black text-black font-['Space_Grotesk'] text-sm">B</span>
+              <div className="brand-mark w-11 h-11 rounded-2xl bg-gradient-to-br from-white via-cyan-100 to-emerald-100 border border-cyan-200 flex items-center justify-center">
+                <span className="font-black text-cyan-700 font-['Space_Grotesk'] text-base">BE</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-[0.2em] uppercase text-white font-['Space_Grotesk']">
-                Bull<span className="text-cyan-400">seye</span>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-[0.18em] uppercase font-['Space_Grotesk']">
+                <span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span>
               </h1>
             </div>
             <p className="text-[10px] text-zinc-400 uppercase tracking-widest mt-1 ml-[48px] font-['Space_Grotesk'] font-bold hidden sm:block">
@@ -964,11 +1159,49 @@ export default function Home() {
                 </span>
               </div>
               <button
-                onClick={handleSignOut}
-                className="text-[10px] text-zinc-500 hover:text-white font-['Space_Grotesk'] uppercase tracking-widest transition-colors"
+                onClick={() => setShowProfileMenu(prev => !prev)}
+                className="w-10 h-10 rounded-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-black uppercase flex items-center justify-center overflow-hidden"
+                title="Profile"
               >
-                Sign Out
+                {user.user_metadata?.avatar_url ? (
+                  <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
+                )}
               </button>
+              {showProfileMenu && (
+                <div className="absolute right-4 md:right-6 top-[136px] md:top-24 z-50 w-80 rounded-2xl border border-white/10 bg-white/95 text-slate-900 shadow-2xl p-5">
+                  <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-4">
+                    <div className="w-12 h-12 rounded-full bg-cyan-100 text-cyan-700 font-black flex items-center justify-center overflow-hidden">
+                      {user.user_metadata?.avatar_url ? (
+                        <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-black text-sm truncate font-['Space_Grotesk']">{user.user_metadata?.full_name || 'Signed in user'}</div>
+                      <div className="text-xs text-slate-500 truncate font-['JetBrains_Mono']">{user.email}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Market</span>
+                      <div className="text-sm font-bold">{activeMarket}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Viewing</span>
+                      <div className="text-sm font-bold truncate">{ticker || 'Overview'}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleSignOut}
+                    className="w-full rounded-xl bg-slate-900 text-white py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button
@@ -1050,7 +1283,7 @@ export default function Home() {
               {/* Header */}
               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-5 gap-3">
                 <div>
-                  <button onClick={() => setTicker(null)}
+                  <button onClick={goHome}
                     className="text-zinc-400 font-bold uppercase text-[10px] hover:text-white transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                     ← Overview
                   </button>
@@ -1100,10 +1333,10 @@ export default function Home() {
 
               {/* ── DISCLAIMER ── shown after every analysis */}
               {analysis && !analysis.error && (
-                <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex gap-3">
+                <div className="disclaimer-panel rounded-2xl p-4 flex gap-3">
                   <span className="text-amber-400 text-lg shrink-0 mt-0.5">⚠️</span>
-                  <p className="text-[11px] text-amber-200/70 font-['JetBrains_Mono'] leading-relaxed">
-                    <span className="font-bold text-amber-300">Disclaimer: </span>
+                  <p className="text-[11px] font-['JetBrains_Mono'] leading-relaxed font-semibold">
+                    <span className="font-black">Disclaimer: </span>
                     Bullseye is an AI-powered predictive tool and is NOT a SEBI-registered investment advisor.
                     Predictions generated by the app are for educational and informational purposes only,
                     and should not be construed as financial or investment advice. Invest at your own risk.
@@ -1128,7 +1361,7 @@ export default function Home() {
                   <span className="font-black text-black text-sm">B</span>
                 </div>
                 <h2 className="text-lg font-black text-white tracking-widest uppercase font-['Space_Grotesk']">
-                  Bull<span className="text-cyan-400">seye</span>
+                  <span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span>
                 </h2>
               </div>
               <button onClick={() => { setShowAuthModal(false); setAuthError(''); setAuthSuccess(''); }}
