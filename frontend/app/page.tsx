@@ -124,6 +124,117 @@ function getNearestCandles(chartData: any, requestedDate: string | null) {
   };
 }
 
+function getChartCandles(chartData: any) {
+  if (!Array.isArray(chartData)) return [];
+  return chartData
+    .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
+    .map((d: any) => ({ ...d, day: d.date.toString().slice(0, 10) }))
+    .sort((a: any, b: any) => a.day.localeCompare(b.day));
+}
+
+function parseShareQuantity(prompt: string) {
+  const clean = prompt.toLowerCase();
+  const match =
+    clean.match(/\b(?:bought|buy|purchased|purchase|held|holding)\s+(\d+(?:,\d{3})*|\d+(?:\.\d+)?)\s*(?:shares|stocks|qty|quantity)?\b/) ??
+    clean.match(/\b(\d+(?:,\d{3})*|\d+(?:\.\d+)?)\s*(?:shares|stocks|qty|quantity)\b/);
+  if (!match) return null;
+  const value = Number(String(match[1]).replace(/,/g, ''));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function parseDaysAgo(prompt: string) {
+  const match = prompt.toLowerCase().match(/\b(\d+)\s*(?:trading\s*)?(?:days?|sessions?)\s*ago\b/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function resolveHoldingPnl(prompt: string, chartData: any) {
+  const quantity = parseShareQuantity(prompt);
+  const daysAgo = parseDaysAgo(prompt);
+  const candles = getChartCandles(chartData);
+  const wantsPnl = /\b(profit|loss|pnl|p&l|return|earned|made|gain|gained)\b/i.test(prompt);
+  const hasHoldingIntent = /\b(bought|buy|purchased|purchase|invested|held|holding|shares|stocks)\b/i.test(prompt);
+
+  if (!quantity || !daysAgo || !wantsPnl || !hasHoldingIntent || candles.length < 2) return null;
+
+  const buyIndex = Math.max(0, candles.length - 1 - daysAgo);
+  const buyCandle = candles[buyIndex];
+  const latest = candles[candles.length - 1];
+  const buyPrice = Number(buyCandle.close);
+  const currentPrice = Number(latest.close);
+  const pnl = (currentPrice - buyPrice) * quantity;
+  const invested = buyPrice * quantity;
+  const currentValue = currentPrice * quantity;
+  const returnPct = invested ? (pnl / invested) * 100 : 0;
+
+  return {
+    type: 'holding_pnl',
+    quantity,
+    requestedDays: daysAgo,
+    actualDays: candles.length - 1 - buyIndex,
+    buyDate: buyCandle.day,
+    latestDate: latest.day,
+    buyPrice,
+    currentPrice,
+    invested,
+    currentValue,
+    pnl,
+    returnPct,
+  };
+}
+
+function buildMarketAnswer(prompt: string, analysis: any, ticker: string, currency: string, chartData: any) {
+  const clean = prompt.toLowerCase();
+  const candles = getChartCandles(chartData);
+  const latest = candles[candles.length - 1];
+  const wantsNowPrice = /\b(current|now|today|latest|live).*\b(price|close|value)\b|\b(price|close|value).*\b(current|now|today|latest|live)\b/i.test(prompt);
+  const wantsPrediction = /\b(should i buy|buy or sell|prediction|target|stop loss|forecast|verdict|recommend)\b/i.test(prompt);
+
+  if (wantsNowPrice && latest) {
+    return {
+      type: 'assistant_answer',
+      title: 'Latest loaded price',
+      answer: `${ticker} last loaded close is ${currency}${Number(latest.close).toLocaleString(undefined, { maximumFractionDigits: 2 })} from ${latest.day}.`,
+      rows: [
+        ['Open', latest.open],
+        ['High', latest.high],
+        ['Low', latest.low],
+        ['Close', latest.close],
+      ],
+    };
+  }
+
+  if (wantsPrediction && analysis && !analysis.error) {
+    return {
+      type: 'assistant_answer',
+      title: 'Bullseye read',
+      answer: `${ticker} is currently marked ${analysis.verdict} with ${analysis.confidence}% confidence. Entry is ${currency}${analysis.entry}, target is ${currency}${analysis.target}, and stop loss is ${currency}${analysis.stop_loss}.`,
+      rows: [
+        ['FISO score', analysis.fiso_score],
+        ['Estimated days', analysis.estimated_days],
+        ['Target date', analysis.target_date],
+        ['Best strategy', STRATEGY_NAMES[analysis.best_strategy_id] ?? `Strategy ${analysis.best_strategy_id}`],
+      ],
+    };
+  }
+
+  if (/\b(help|what can you do|examples?)\b/i.test(clean)) {
+    return {
+      type: 'assistant_answer',
+      title: 'AI search is ready',
+      answer: 'Ask for a dated price, current loaded price, holding profit/loss, buy/sell read, or a custom backtest strategy.',
+      rows: [
+        ['Example', 'Bought 1000 shares 60 days ago profit or loss'],
+        ['Example', 'Opening price on 12 Feb 2025'],
+        ['Example', 'Backtest RSI crosses above 30 and sell above 70'],
+      ],
+    };
+  }
+
+  return null;
+}
+
 function getLevenshteinDistance(s: string, t: string) {
   if (!s.length) return t.length;
   if (!t.length) return s.length;
@@ -316,12 +427,31 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         return;
       }
 
+      const holdingPnl = resolveHoldingPnl(aiPrompt, chartData);
+      if (holdingPnl) {
+        setAiResult(holdingPnl);
+        return;
+      }
+
+      const marketAnswer = buildMarketAnswer(aiPrompt, analysis, ticker, currency, chartData);
+      if (marketAnswer) {
+        setAiResult(marketAnswer);
+        return;
+      }
+
       const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, prompt: aiPrompt })
       });
-      setAiResult({ type: 'strategy_test', ...(await res.json()) });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiResult({
+          error: data?.detail || 'The strategy engine could not answer that yet. Try mentioning a ticker, price date, holding quantity, or buy/sell rule.',
+        });
+        return;
+      }
+      setAiResult({ type: 'strategy_test', ...data });
     } catch {
       setAiResult({ error: "Failed to connect to backend." });
     } finally {
@@ -518,6 +648,59 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                 <p className="text-red-400 text-sm font-['JetBrains_Mono']">
                   {aiResult.error || aiResult.custom_metrics?.error}
                 </p>
+              </div>
+            ) : aiResult.type === 'holding_pnl' ? (
+              <div className={`${aiResult.pnl >= 0 ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'} border rounded-2xl p-4`}>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-4">
+                  <div>
+                    <span className={`text-[10px] uppercase tracking-widest font-bold font-['Space_Grotesk'] ${aiResult.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {aiResult.pnl >= 0 ? 'Profit' : 'Loss'} estimate
+                    </span>
+                    <p className="text-sm text-zinc-400 font-['JetBrains_Mono'] mt-1">
+                      {aiResult.quantity.toLocaleString()} shares from {aiResult.buyDate} to {aiResult.latestDate}
+                    </p>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <div className={`text-2xl font-black font-['JetBrains_Mono'] ${aiResult.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {aiResult.pnl >= 0 ? '+' : ''}{currency}{Math.abs(aiResult.pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </div>
+                    <div className={`text-xs font-bold font-['JetBrains_Mono'] ${aiResult.returnPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {aiResult.returnPct >= 0 ? '+' : ''}{aiResult.returnPct.toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    ['Buy price', aiResult.buyPrice],
+                    ['Current close', aiResult.currentPrice],
+                    ['Invested', aiResult.invested],
+                    ['Current value', aiResult.currentValue],
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{label}</span>
+                      <span className="text-lg font-['JetBrains_Mono'] font-bold text-white">
+                        {currency}{Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : aiResult.type === 'assistant_answer' ? (
+              <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+                <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold font-['Space_Grotesk']">{aiResult.title}</span>
+                <p className="text-sm text-zinc-300 font-['JetBrains_Mono'] leading-relaxed mt-2 mb-4">{aiResult.answer}</p>
+                {aiResult.rows?.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {aiResult.rows.map(([label, value]: [string, any]) => (
+                      <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                        <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{label}</span>
+                        <span className="text-sm font-['JetBrains_Mono'] font-bold text-white break-words">
+                          {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : aiResult.type === 'price_lookup' ? (
               <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
@@ -793,7 +976,10 @@ export default function Home() {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!supabaseAvailable) return;
+    if (!supabaseAvailable) {
+      setAuthError('Sign-in is not configured for this deployment yet.');
+      return;
+    }
     setAuthLoading(true);
     try {
       const sb = await getSupabaseClient();
@@ -810,6 +996,10 @@ export default function Home() {
 
   const handleEmailAuth = async () => {
     if (!authEmail || !authPassword) { setAuthError('Please fill in all fields.'); return; }
+    if (!supabaseAvailable) {
+      setAuthError('Sign-in is not configured for this deployment yet.');
+      return;
+    }
     setAuthLoading(true);
     setAuthError('');
     setAuthSuccess('');
@@ -885,12 +1075,17 @@ export default function Home() {
     if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     const q = input.trim().toLowerCase();
     const mapped = STOCKS.map(s => {
-      const nameDist = getLevenshteinDistance(q, s.name.toLowerCase());
-      const symDist = getLevenshteinDistance(q, s.symbol.toLowerCase());
-      const exactMatch = s.name.toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q) ? 0 : 100;
-      return { ...s, score: Math.min(nameDist, symDist, exactMatch) };
+      const name = s.name.toLowerCase();
+      const symbol = s.symbol.toLowerCase();
+      const tickerValue = s.ticker.toLowerCase();
+      const exactMatch = name.includes(q) || symbol.includes(q) || tickerValue.includes(q) ? 0 : 100;
+      const tokenMatch = q.split(/\s+/).every(part => name.includes(part) || symbol.includes(part) || tickerValue.includes(part)) ? 1 : 100;
+      const nameDist = getLevenshteinDistance(q, name);
+      const symDist = getLevenshteinDistance(q, symbol);
+      return { ...s, score: Math.min(exactMatch, tokenMatch, nameDist, symDist) };
     });
-    setSuggestions(mapped.filter(s => s.score < 5).sort((a, b) => a.score - b.score).slice(0, 6));
+    const threshold = Math.max(5, Math.ceil(q.length * 0.45));
+    setSuggestions(mapped.filter(s => s.score <= threshold).sort((a, b) => a.score - b.score).slice(0, 8));
     setShowSuggestions(true);
   }, [input]);
 
@@ -949,8 +1144,8 @@ export default function Home() {
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
   const prefetchedRef = useRef<Set<string>>(new Set());
 
-  // Prefetch all visible cards for the active market tab, staggered to avoid
-  // hammering the backend. Results are cached so hover is instant.
+  // Hydrate visible cards from browser cache. Fresh analysis is fetched on
+  // hover/open instead of starting a prediction batch on every page reload.
   useEffect(() => {
     const visibleStocks = getMarketStocks();
     const cachedVisible = visibleStocks.reduce((acc, stock) => {
@@ -963,6 +1158,8 @@ export default function Home() {
       setPrefetchCache(prev => ({ ...cachedVisible, ...prev }));
       Object.keys(cachedVisible).forEach(t => prefetchedRef.current.add(t));
     }
+
+    if (Date.now() >= 0) return;
 
     const toFetch = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker));
     if (toFetch.length === 0) return;
@@ -1011,7 +1208,6 @@ export default function Home() {
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-100%); } }
         .animate-marquee { animation: marquee 35s linear infinite; }
-        @keyframes marketPulse { 0%, 100% { transform: translateY(0) scale(1); opacity: 0.72; } 50% { transform: translateY(-16px) scale(1.03); opacity: 1; } }
         @keyframes dataDrift { 0% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(14px, -10px, 0); } 100% { transform: translate3d(0, 0, 0); } }
         @keyframes scanLine { 0% { transform: translateX(-30%); opacity: 0; } 18%, 72% { opacity: 0.55; } 100% { transform: translateX(130%); opacity: 0; } }
         .bullseye-light {
@@ -1050,13 +1246,11 @@ export default function Home() {
         }
         .market-visual {
           background-image:
+            linear-gradient(120deg, rgba(6,182,212,0.13), transparent 28%, rgba(16,185,129,0.10) 62%, transparent),
             linear-gradient(rgba(8,145,178,0.08) 1px, transparent 1px),
             linear-gradient(90deg, rgba(8,145,178,0.08) 1px, transparent 1px);
           background-size: 42px 42px;
           mask-image: linear-gradient(to bottom, black 0%, transparent 76%);
-        }
-        .market-orbit {
-          animation: marketPulse 7s ease-in-out infinite;
         }
         .market-card-float {
           animation: dataDrift 8s ease-in-out infinite;
@@ -1080,21 +1274,6 @@ export default function Home() {
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
           <div className="absolute inset-0 market-visual opacity-90" />
           <div className="market-scan absolute top-0 h-full w-1/3 bg-gradient-to-r from-transparent via-cyan-300/20 to-transparent blur-xl" />
-          <div className="market-orbit absolute -top-24 left-[8%] h-80 w-80 rounded-full bg-cyan-200/45 blur-3xl" />
-          <div className="market-orbit absolute top-14 right-[6%] h-72 w-72 rounded-full bg-emerald-200/45 blur-3xl [animation-delay:1.5s]" />
-          <div className="market-card-float absolute top-32 right-[12%] hidden lg:block rounded-2xl border border-cyan-200 bg-white/70 px-5 py-4 shadow-xl backdrop-blur-xl">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Live Risk Pulse</div>
-            <div className="mt-2 flex items-end gap-2">
-              <span className="text-3xl font-black text-cyan-600 font-['Space_Grotesk']">72</span>
-              <span className="mb-1 text-xs font-bold text-emerald-600">+4.8%</span>
-            </div>
-          </div>
-          <div className="market-card-float absolute bottom-28 left-[6%] hidden xl:block rounded-2xl border border-emerald-200 bg-white/70 px-5 py-4 shadow-xl backdrop-blur-xl [animation-delay:2s]">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Signal Queue</div>
-            <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400" />
-            </div>
-          </div>
         </div>
 
         {/* TICKER TAPE */}
@@ -1184,6 +1363,10 @@ export default function Home() {
                       <div className="text-xs text-slate-500 truncate font-['JetBrains_Mono']">{user.email}</div>
                     </div>
                   </div>
+                  <div className="mb-4">
+                    <div className="text-[10px] uppercase tracking-widest text-cyan-700 font-black font-['Space_Grotesk']">Dashboard</div>
+                    <div className="text-xs text-slate-500 mt-1 font-['JetBrains_Mono']">Your signed-in Bullseye workspace</div>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
                       <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Market</span>
@@ -1192,6 +1375,14 @@ export default function Home() {
                     <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
                       <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Viewing</span>
                       <div className="text-sm font-bold truncate">{ticker || 'Overview'}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Saved scans</span>
+                      <div className="text-sm font-bold">{Object.keys(prefetchCache).length}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                      <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Cache</span>
+                      <div className="text-sm font-bold">{cachedAnalysis ? 'Ready' : 'Live'}</div>
                     </div>
                   </div>
                   <button
@@ -1361,7 +1552,7 @@ export default function Home() {
                   <span className="font-black text-black text-sm">B</span>
                 </div>
                 <h2 className="text-lg font-black text-white tracking-widest uppercase font-['Space_Grotesk']">
-                  <span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span>
+                  <span className="text-white">BULLS</span><span className="text-cyan-500">EYE</span>
                 </h2>
               </div>
               <button onClick={() => { setShowAuthModal(false); setAuthError(''); setAuthSuccess(''); }}
@@ -1371,7 +1562,7 @@ export default function Home() {
             {/* Google Sign In */}
             <button
               onClick={handleGoogleSignIn}
-              disabled={authLoading || !supabaseAvailable}
+              disabled={authLoading}
               className="w-full flex items-center justify-center gap-3 bg-white text-black font-bold py-3 rounded-xl mb-4 hover:bg-zinc-100 transition-all disabled:opacity-50 font-['Space_Grotesk']"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -1428,17 +1619,11 @@ export default function Home() {
             {/* Submit button */}
             <button
               onClick={handleEmailAuth}
-              disabled={authLoading || !supabaseAvailable}
+              disabled={authLoading}
               className="w-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-sm py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk']"
             >
               {authLoading ? 'Please wait...' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
             </button>
-
-            {!supabaseAvailable && (
-              <p className="text-[10px] text-amber-400/70 font-['JetBrains_Mono'] text-center mt-3">
-                Auth requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY env vars.
-              </p>
-            )}
 
             <p className="text-[9px] text-zinc-600 text-center mt-4 font-['JetBrains_Mono']">
               By signing in you agree that Bullseye is not a SEBI-registered advisor. Invest at your own risk.
