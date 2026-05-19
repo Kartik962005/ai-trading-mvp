@@ -12,8 +12,17 @@ import numpy as np
 import time
 from datetime import datetime, timedelta
 
+# ── In-memory analysis cache ──────────────────────────────────────────────────
 _analysis_cache: dict = {}
 ANALYSIS_TTL = 3600
+
+# ── Supabase for persistent cache ─────────────────────────────────────────────
+try:
+    from app.core.supabase_client import supabase as _sb
+    _SUPABASE_OK = True
+except Exception:
+    _sb = None
+    _SUPABASE_OK = False
 
 def fetch_news_sentiment(ticker: str):
     try:
@@ -192,44 +201,31 @@ def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     fiso_base = (evals[1]['score'] + evals[6]['score'] + evals[7]['score'] + evals[9]['score']) / 4
     evals[20] = {"score": int(fiso_base), "desc": f"Quant Matrix: Synthesizing Trend, Volume, VWAP, and RSI yields a multi-factor confidence of {int(fiso_base)}/100."}
 
-    STRATEGY_NAMES = {
-        1:  "Moving Avg Crossover",
-        2:  "EMA Pullback",
-        3:  "Supertrend",
-        4:  "Breakout Trading",
-        5:  "Trendline Retest",
-        6:  "Volume Anomaly",
-        7:  "Relative Strength",
-        8:  "Momentum Ignition",
-        9:  "VWAP Trend",
-        10: "Gap-Up Momentum",
-        11: "RSI Divergence",
-        12: "MACD Divergence",
-        13: "Mean Reversion",
-        14: "Bollinger Reversal",
-        15: "Volatility Expansion",
-        16: "ATR Breakout",
-        17: "Liquidity Sweep",
-        18: "Order Block",
-        19: "S/R Flip",
-        20: "Multi-Factor Quant",
-    }
-
-    sorted_evals = sorted(
-        [{"id": sid, "name": STRATEGY_NAMES.get(sid, f"Strategy {sid}"), "score": data["score"], "desc": data["desc"]}
-         for sid, data in evals.items()],
-        key=lambda x: x["score"], reverse=True
-    )
-
-    best_id = sorted_evals[0]["id"] if sorted_evals else 1
-    return sorted_evals, best_id
+    best_id = max(evals.items(), key=lambda x: x[1]['score'])[0]
+    return evals, best_id
 
 def run_analysis(df: pd.DataFrame, ticker: str):
+    # ── RAM cache check ────────────────────────────────────────────────────────
     now = time.time()
     if ticker in _analysis_cache and now - _analysis_cache[ticker]['ts'] < ANALYSIS_TTL:
         return _analysis_cache[ticker]['result']
 
-    df.columns = [str(c).lower() for c in df.columns]
+    # ── Supabase cache check ───────────────────────────────────────────────────
+    if _SUPABASE_OK and _sb:
+        try:
+            import json as _json
+            cached = _sb.table("analysis_cache").select("result,updated_at").eq("ticker", ticker).execute()
+            if cached.data:
+                row = cached.data[0]
+                updated = datetime.fromisoformat(row['updated_at'].replace('Z', '+00:00'))
+                age = (datetime.now(updated.tzinfo) - updated).total_seconds()
+                if age < ANALYSIS_TTL:
+                    result = _json.loads(row['result']) if isinstance(row['result'], str) else row['result']
+                    _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+                    print(f"[Cache] Analysis Supabase hit for {ticker}")
+                    return result
+        except Exception as e:
+            print(f"[Cache] Analysis Supabase read failed: {e}")
     df = df.dropna(subset=['close', 'high', 'low', 'volume'])
     df = df.reset_index(drop=True)
 
@@ -312,5 +308,20 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "estimated_days": estimated_days,
         "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y')
     }
+
+    # ── Save to RAM cache ──────────────────────────────────────────────────────
     _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+
+    # ── Save to Supabase cache ─────────────────────────────────────────────────
+    if _SUPABASE_OK and _sb:
+        try:
+            import json as _json
+            _sb.table("analysis_cache").upsert({
+                "ticker":     ticker,
+                "result":     _json.dumps(result),
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            }, on_conflict="ticker").execute()
+        except Exception as e:
+            print(f"[Cache] Analysis Supabase save failed: {e}")
+
     return result
