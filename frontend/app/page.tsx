@@ -600,7 +600,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* Verdict card */}
-        <div className={`lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-6 flex flex-col justify-between ${accentBg} ${accentGlow}`}>
+        <div className={`lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-6 flex flex-col justify-between ${accentBg} ${accentGlow} ${isBull ? 'verdict-glow-bull' : (!isBull && !isHold) ? 'verdict-glow-bear' : ''}`}>
           <div>
             <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Algorithm Verdict</span>
             <div className={`text-5xl font-black uppercase tracking-tighter font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysisView.displayVerdict}</div>
@@ -622,8 +622,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               <span className="text-5xl font-['JetBrains_Mono'] font-bold text-white">{analysisView.confidenceLevel}</span>
               <span className="text-zinc-600 text-xl mb-1">/100</span>
             </div>
-            <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden mb-4">
-              <div className="h-full rounded-full bg-gradient-to-r from-red-500 via-zinc-400 to-green-400 transition-all duration-1000"
+            <div className="w-full bg-zinc-800 rounded-full h-2.5 overflow-hidden mb-4">
+              <div className="h-full rounded-full bar-shimmer transition-all duration-1000"
                 style={{ width: `${analysisView.confidenceLevel}%` }} />
             </div>
             <div className="grid grid-cols-2 gap-2 text-center">
@@ -652,26 +652,26 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         <div className="lg:col-span-6 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Predictive Price Vectors</span>
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+            <div className="metric-card-hover bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4 hover:border-cyan-400/40 hover:bg-cyan-500/8 transition-all">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry Price</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysisView.entry?.toLocaleString()}</span>
               <span className="text-[9px] text-zinc-500 block mt-1">Current position</span>
             </div>
-            <div className="bg-green-500/10 border border-green-400/30 rounded-2xl p-4">
+            <div className="metric-card-hover bg-green-500/10 border border-green-400/30 rounded-2xl p-4 hover:border-green-400/50 hover:bg-green-500/15 transition-all">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Target Price</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-green-400">{currency}{analysisView.target?.toLocaleString()}</span>
               <span className="text-[9px] text-green-500/70 block mt-1">
                 {analysisView.direction === 'bearish' ? `${targetMovePct}% downside target` : `${targetMovePct}% upside target`}
               </span>
             </div>
-            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4">
+            <div className="metric-card-hover bg-red-500/10 border border-red-500/30 rounded-2xl p-4 hover:border-red-400/50 hover:bg-red-500/15 transition-all">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Stop Loss</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-red-400">{currency}{analysisView.stop_loss?.toLocaleString()}</span>
               <span className="text-[9px] text-red-500/70 block mt-1">
                 {analysisView.direction === 'bearish' ? `${stopRiskPct}% upside risk` : `${stopRiskPct}% downside risk`}
               </span>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <div className="metric-card-hover bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-white/20 transition-all">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Risk:Reward</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">1 : {rr}</span>
               <span className="text-[9px] text-zinc-500 block mt-1">per unit risk</span>
@@ -1091,10 +1091,10 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               return (
                 <div
                   key={s.id}
-                  className={`relative rounded-2xl p-4 transition-all duration-200 ${
+                  className={`strategy-row relative rounded-2xl p-4 transition-all duration-200 ${
                     isBestFit
                       ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
-                      : 'bg-black/30 border border-white/5 hover:border-white/15 hover:bg-white/3'
+                      : 'bg-black/30 border border-white/5 hover:border-white/20'
                   }`}
                 >
                   <div className="flex items-start gap-4">
@@ -1126,7 +1126,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                       <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
                         {s.score}
                       </span>
-                      <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                      <div className="w-16 strategy-bar bg-white/10">
                         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
                       </div>
                       <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
@@ -1267,6 +1267,9 @@ const IndiaDetailedAnalysisPanel = ({
     { label: 'ROE', value: formatRatioValue(summary.return_on_equity, 'percent') },
     { label: 'Profit Margin', value: formatRatioValue(summary.profit_margins, 'percent') },
   ];
+  const [showFullAbout, setShowFullAbout] = useState(false);
+  const aboutDescription = company.description || `${stock.name} detailed profile will expand as we ingest more NSE/BSE filings.`;
+  const isLongAbout = aboutDescription.length > 240;
 
   if (isLoading) {
     return (
@@ -1298,7 +1301,7 @@ const IndiaDetailedAnalysisPanel = ({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {highlights.map((item) => (
-              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div key={item.label} className="metric-card-hover highlight-card rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-cyan-500/25 cursor-default">
                 <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{item.label}</div>
                 <div className="mt-2 text-lg font-bold text-white font-['JetBrains_Mono'] break-words">{item.value}</div>
               </div>
@@ -1316,8 +1319,25 @@ const IndiaDetailedAnalysisPanel = ({
             </div>
           </div>
           <div className="space-y-3 text-sm">
-            <div className="text-zinc-200 leading-relaxed">
-              {company.description || `${stock.name} detailed profile will expand as we ingest more NSE/BSE filings.`}
+            <div className="relative">
+              <div className={isLongAbout && !showFullAbout ? 'about-truncated' : ''}>
+                <p className="text-zinc-200 leading-relaxed text-[13px]">{aboutDescription}</p>
+              </div>
+              {isLongAbout && (
+                <button
+                  type="button"
+                  onClick={() => setShowFullAbout(prev => !prev)}
+                  className="mt-2 flex items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 font-bold uppercase tracking-widest transition-colors"
+                >
+                  {showFullAbout ? 'Show less' : 'Read more'}
+                  <svg
+                    className={`w-3.5 h-3.5 transition-transform duration-300 ${showFullAbout ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
               {[
@@ -1326,7 +1346,7 @@ const IndiaDetailedAnalysisPanel = ({
                 ['Website', company.website],
                 ['Employees', company.employees ? formatIndianNumber(company.employees, 0) : null],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div key={label} className="metric-card-hover rounded-2xl border border-white/10 bg-white/5 p-3 hover:border-cyan-500/25">
                   <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</div>
                   <div className="mt-2 text-sm text-white font-['JetBrains_Mono'] break-words">{value || '-'}</div>
                 </div>
@@ -1364,59 +1384,26 @@ const IndiaDetailedAnalysisPanel = ({
         currency={currency}
       />
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        <div className="xl:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
-            <div>
-              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Key Ratios</h3>
-              <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
-                Highlights available from the free source for this stock.
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {ratios.length > 0 ? ratios.map((ratio: any) => (
-              <div key={ratio.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{ratio.label}</div>
-                <div className="mt-2 text-lg font-bold text-white font-['JetBrains_Mono']">{formatRatioValue(ratio.value, ratio.kind)}</div>
-              </div>
-            )) : (
-              <div className="col-span-full rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-6 text-xs text-zinc-500 font-['JetBrains_Mono']">
-                Ratio fields are not available yet for this symbol.
-              </div>
-            )}
+      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+        <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+          <div>
+            <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Key Ratios</h3>
+            <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
+              Highlights available from the free source for this stock.
+            </p>
           </div>
         </div>
-
-        <div className="xl:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
-            <div>
-              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Next Free Upgrades</h3>
-              <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
-                Planned India-only sections without paid APIs.
-              </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+          {ratios.length > 0 ? ratios.map((ratio: any) => (
+            <div key={ratio.label} className="metric-card-hover highlight-card rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-cyan-500/25">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{ratio.label}</div>
+              <div className="mt-2 text-lg font-bold text-white font-['JetBrains_Mono']">{formatRatioValue(ratio.value, ratio.kind)}</div>
             </div>
-          </div>
-          <div className="space-y-3 text-sm text-zinc-300">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-[10px] text-cyan-400 uppercase tracking-widest font-black font-['Space_Grotesk']">Peer comparison</div>
-              <p className="mt-2 leading-relaxed">
-                This will be generated from your own India stock database once sector and industry snapshots are indexed.
-              </p>
+          )) : (
+            <div className="col-span-full rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-6 text-xs text-zinc-500 font-['JetBrains_Mono']">
+              Ratio fields are not available yet for this symbol.
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-[10px] text-cyan-400 uppercase tracking-widest font-black font-['Space_Grotesk']">Shareholding pattern</div>
-              <p className="mt-2 leading-relaxed">
-                This is the next public-data target from NSE/BSE corporate filings so you can keep the dashboard fully free.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-[10px] text-cyan-400 uppercase tracking-widest font-black font-['Space_Grotesk']">Source note</div>
-              <p className="mt-2 leading-relaxed">
-                Current detailed sections are served from the free backend pipeline so you can launch without charging users for fundamentals.
-              </p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -1719,6 +1706,13 @@ export default function Home() {
         layout: { background: { color: 'transparent' }, textColor: '#475569' },
         grid: { vertLines: { color: 'rgba(15,23,42,0.08)' }, horzLines: { color: 'rgba(15,23,42,0.08)' } },
         crosshair: { mode: 1 },
+        timeScale: {
+          timeVisible: chartRange === '1d' || chartRange === '1w',
+          secondsVisible: false,
+          borderColor: 'rgba(15,23,42,0.12)',
+          fixLeftEdge: false,
+          fixRightEdge: false,
+        },
       });
       
       const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -1939,6 +1933,73 @@ export default function Home() {
           background: rgba(255, 255, 255, 0.72) !important;
           border-color: rgba(148, 163, 184, 0.30) !important;
         }
+        /* Active chart range button: preserve white text in light mode */
+        .chart-range-btn-active { color: #ffffff !important; }
+        /* About description truncation with fade */
+        .about-truncated {
+          max-height: 88px;
+          overflow: hidden;
+          -webkit-mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+          mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+        }
+        /* Metric card hover lift */
+        .metric-card-hover { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+        .metric-card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(6,182,212,0.13); }
+        /* Animated confidence bar */
+        @keyframes barShimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .bar-shimmer {
+          background: linear-gradient(90deg, #ef4444 0%, #71717a 40%, #4ade80 80%);
+          background-size: 200% 100%;
+        }
+        /* Verdict card glow pulse */
+        @keyframes glowPulse {
+          0%, 100% { box-shadow: 0 0 18px rgba(74,222,128,0.10); }
+          50% { box-shadow: 0 0 32px rgba(74,222,128,0.24); }
+        }
+        @keyframes glowPulseRed {
+          0%, 100% { box-shadow: 0 0 18px rgba(239,68,68,0.10); }
+          50% { box-shadow: 0 0 32px rgba(239,68,68,0.24); }
+        }
+        .verdict-glow-bull { animation: glowPulse 2.8s ease-in-out infinite; }
+        .verdict-glow-bear { animation: glowPulseRed 2.8s ease-in-out infinite; }
+        /* Chart controls pill */
+        .chart-controls-pill { box-shadow: 0 2px 8px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.85); }
+        /* Gradient top-border for highlight cards */
+        .highlight-card { position: relative; overflow: hidden; }
+        .highlight-card::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 2px;
+          background: linear-gradient(90deg, rgba(6,182,212,0.6), rgba(16,185,129,0.4));
+          opacity: 0;
+          transition: opacity 0.2s ease;
+        }
+        .highlight-card:hover::before { opacity: 1; }
+        /* Strategy score bar slightly thicker */
+        .strategy-bar { height: 5px; border-radius: 999px; overflow: hidden; }
+        /* Market tab active glow line */
+        .market-tab-active-india::after {
+          content: '';
+          position: absolute;
+          bottom: 0; left: 10%; right: 10%;
+          height: 2px;
+          background: linear-gradient(90deg, transparent, rgba(6,182,212,0.8), transparent);
+          border-radius: 2px;
+        }
+        .market-tab-active-us::after {
+          content: '';
+          position: absolute;
+          bottom: 0; left: 10%; right: 10%;
+          height: 2px;
+          background: linear-gradient(90deg, transparent, rgba(217,70,239,0.8), transparent);
+          border-radius: 2px;
+        }
+        /* Hover glow on strategy rows */
+        .strategy-row:hover { background: rgba(6,182,212,0.04) !important; }
       `}} />
 
       <div className="bullseye-light min-h-screen text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
@@ -2113,11 +2174,12 @@ export default function Home() {
               <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
                 {(['INDIA', 'US'] as const).map(market => (
                   <button key={market} onClick={() => setActiveMarket(market)}
-                    className={`p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border backdrop-blur-xl transition-all flex flex-col items-start
+                    className={`relative p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border backdrop-blur-xl transition-all duration-300 flex flex-col items-start overflow-hidden
                       ${activeMarket === market
-                        ? market === 'INDIA' ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.2)]'
-                        : 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_30px_rgba(217,70,239,0.2)]'
-                        : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'}`}>
+                        ? market === 'INDIA'
+                          ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_40px_rgba(6,182,212,0.25)] ring-1 ring-cyan-400/20 market-tab-active-india'
+                          : 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_40px_rgba(217,70,239,0.25)] ring-1 ring-fuchsia-400/20 market-tab-active-us'
+                        : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]'}`}>
                     <span className={`text-2xl sm:text-4xl mb-2 sm:mb-4 ${activeMarket === market ? 'opacity-100' : 'opacity-40'}`}>
                       {market === 'INDIA' ? '🇮🇳' : '🇺🇸'}
                     </span>
@@ -2162,15 +2224,16 @@ export default function Home() {
             <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 w-full flex flex-col gap-6">
 
               {/* Header */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-5 gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-5 gap-3 relative">
+                <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
                 <div>
                   <button onClick={goHome}
-                    className="text-zinc-400 font-bold uppercase text-[10px] hover:text-white transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
+                    className="text-zinc-400 font-bold uppercase text-[10px] hover:text-cyan-400 transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 hover:bg-cyan-500/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10 hover:border-cyan-400/30">
                     ← Overview
                   </button>
-                  <h1 className="font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-tighter font-['Space_Grotesk']">{ticker}</h1>
+                  <h1 className="font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-tighter font-['Space_Grotesk'] drop-shadow-[0_2px_20px_rgba(6,182,212,0.2)]">{ticker}</h1>
                   {selectedStock?.name && (
-                    <div className="mt-2 text-sm text-zinc-500 font-['JetBrains_Mono']">{selectedStock.name}</div>
+                    <div className="mt-2 text-sm text-zinc-400 font-['JetBrains_Mono'] tracking-wide">{selectedStock.name}</div>
                   )}
                 </div>
                 <div className="flex flex-col sm:items-end gap-3">
@@ -2213,10 +2276,13 @@ export default function Home() {
               </div>
 
               {/* Chart */}
-              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden">
+              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5),0_0_0_1px_rgba(6,182,212,0.04)] overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-white/10 pb-3">
-                  <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk']">Chart Geometry</span>
-                  <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm">
+                  <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
+                    Chart Geometry
+                  </span>
+                  <div className="chart-controls-pill flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 p-1">
                     {([
                       ['1d', '1D'],
                       ['1w', '1W'],
@@ -2227,10 +2293,10 @@ export default function Home() {
                         key={range}
                         type="button"
                         onClick={() => setChartRange(range)}
-                        className={`h-8 min-w-10 rounded-full px-3 text-[10px] font-black font-['JetBrains_Mono'] transition-all ${
+                        className={`h-8 min-w-10 rounded-full px-3 text-[10px] font-black font-['JetBrains_Mono'] transition-all duration-200 ${
                           chartRange === range
-                            ? 'bg-slate-950 text-white shadow-sm'
-                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                            ? 'bg-slate-950 shadow-md chart-range-btn-active ring-1 ring-slate-800/50'
+                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
                         }`}
                       >
                         {label}
