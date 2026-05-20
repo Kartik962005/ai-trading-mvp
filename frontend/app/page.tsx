@@ -1758,6 +1758,8 @@ export default function Home() {
           timeVisible: chartRange === '1d' || chartRange === '1w',
           secondsVisible: false,
           borderColor: 'rgba(15,23,42,0.12)',
+          fixLeftEdge: chartRange !== 'max',
+          fixRightEdge: true,
         },
       });
 
@@ -2203,7 +2205,7 @@ export default function Home() {
               aria-expanded={showProfileMenu}
             >
               {user?.user_metadata?.avatar_url ? (
-                <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                <img src={user.user_metadata.avatar_url} alt="avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
               ) : user ? (
                 (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
               ) : (
@@ -2221,7 +2223,7 @@ export default function Home() {
                     <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-4">
                       <div className="w-12 h-12 rounded-full bg-cyan-100 text-cyan-700 font-black flex items-center justify-center overflow-hidden shrink-0">
                         {user.user_metadata?.avatar_url ? (
-                          <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                          <img src={user.user_metadata.avatar_url} alt="avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         ) : (
                           (user.user_metadata?.full_name || user.email || 'U').slice(0, 1)
                         )}
