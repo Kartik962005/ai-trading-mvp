@@ -1189,15 +1189,37 @@ const FundamentalsTable = ({
   table: any;
   currency: string;
 }) => {
+  const [tableScale, setTableScale] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 640 ? 0.65 : 1.0
+  );
   const columns = table?.columns ?? [];
   const rows = table?.rows ?? [];
+  const cellPad = `${Math.round(tableScale * 12)}px ${Math.round(tableScale * 16)}px`;
 
   return (
     <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
       <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
-        <div>
-          <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">{title}</h3>
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-xl font-black text-white font-['Space_Grotesk']">{title}</h3>
           <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">{subtitle}</p>
+        </div>
+        {/* Zoom controls */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setTableScale(z => Math.max(0.45, parseFloat((z - 0.1).toFixed(1))))}
+            className="w-7 h-7 rounded-lg border border-white/15 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/15 flex items-center justify-center text-base font-bold transition-all select-none"
+            title="Zoom out table"
+          >−</button>
+          <span className="text-[9px] text-zinc-500 font-['JetBrains_Mono'] w-8 text-center tabular-nums">
+            {Math.round(tableScale * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setTableScale(z => Math.min(1.4, parseFloat((z + 0.1).toFixed(1))))}
+            className="w-7 h-7 rounded-lg border border-white/15 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/15 flex items-center justify-center text-base font-bold transition-all select-none"
+            title="Zoom in table"
+          >+</button>
         </div>
       </div>
 
@@ -1207,12 +1229,22 @@ const FundamentalsTable = ({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-white/10">
-          <table className="w-full min-w-[900px] text-left">
+          <table
+            className="w-full text-left border-collapse"
+            style={{ fontSize: `${tableScale * 0.8125}rem`, minWidth: `${Math.round(tableScale * 900)}px` }}
+          >
             <thead className="bg-white/5">
               <tr>
-                <th className="px-4 py-3 text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Line Item</th>
+                <th
+                  className="text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk'] whitespace-nowrap"
+                  style={{ padding: cellPad }}
+                >Line Item</th>
                 {columns.map((column: string) => (
-                  <th key={column} className="px-4 py-3 text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">
+                  <th
+                    key={column}
+                    className="text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk'] whitespace-nowrap"
+                    style={{ padding: cellPad }}
+                  >
                     {column}
                   </th>
                 ))}
@@ -1221,9 +1253,16 @@ const FundamentalsTable = ({
             <tbody>
               {rows.map((row: any) => (
                 <tr key={row.label} className="border-t border-white/5">
-                  <td className="px-4 py-3 text-sm text-zinc-200 font-semibold whitespace-nowrap">{humanizeLabel(row.label)}</td>
+                  <td
+                    className="text-zinc-200 font-semibold whitespace-nowrap"
+                    style={{ padding: cellPad }}
+                  >{humanizeLabel(row.label)}</td>
                   {row.values.map((value: any, index: number) => (
-                    <td key={`${row.label}-${index}`} className="px-4 py-3 text-sm text-white font-['JetBrains_Mono'] whitespace-nowrap">
+                    <td
+                      key={`${row.label}-${index}`}
+                      className="text-white font-['JetBrains_Mono'] whitespace-nowrap"
+                      style={{ padding: cellPad }}
+                    >
                       {value === null || value === undefined
                         ? '-'
                         : Math.abs(Number(value)) >= 100000
@@ -1299,11 +1338,11 @@ const IndiaDetailedAnalysisPanel = ({
               India only
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
             {highlights.map((item) => (
-              <div key={item.label} className="metric-card-hover highlight-card rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-cyan-500/25 cursor-default">
-                <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{item.label}</div>
-                <div className="mt-2 text-lg font-bold text-white font-['JetBrains_Mono'] break-words">{item.value}</div>
+              <div key={item.label} className="metric-card-hover highlight-card rounded-xl sm:rounded-2xl border border-white/10 bg-white/5 p-2.5 sm:p-4 hover:border-cyan-500/25 cursor-default">
+                <div className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk'] leading-tight">{item.label}</div>
+                <div className="mt-1.5 sm:mt-2 text-sm sm:text-lg font-bold text-white font-['JetBrains_Mono'] break-words leading-snug">{item.value}</div>
               </div>
             ))}
           </div>
@@ -1700,9 +1739,12 @@ export default function Home() {
     import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
       if (cancelled || !chartRef.current) return;
       const container = chartRef.current;
+      const rect = container.getBoundingClientRect();
+      const initW = rect.width || container.clientWidth || 800;
+      const initH = rect.height || container.clientHeight || 320;
       const chart = createChart(container, {
-        width: container.clientWidth || 800,
-        height: container.clientHeight || 320,
+        width: initW,
+        height: initH,
         layout: { background: { color: 'transparent' }, textColor: '#475569' },
         grid: { vertLines: { color: 'rgba(15,23,42,0.08)' }, horzLines: { color: 'rgba(15,23,42,0.08)' } },
         crosshair: { mode: 1 },
@@ -1710,11 +1752,11 @@ export default function Home() {
           timeVisible: chartRange === '1d' || chartRange === '1w',
           secondsVisible: false,
           borderColor: 'rgba(15,23,42,0.12)',
-          fixLeftEdge: false,
+          fixLeftEdge: true,
           fixRightEdge: false,
         },
       });
-      
+
       const candleSeries = chart.addSeries(CandlestickSeries, {
         upColor: '#22c55e', downColor: '#ef4444',
         borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
@@ -1730,15 +1772,25 @@ export default function Home() {
         }));
       candleSeries.setData(formattedData);
       chart.timeScale().fitContent();
-      const resizeObserver = new ResizeObserver(() => {
-        chart.applyOptions({
-          width: container.clientWidth || 800,
-          height: container.clientHeight || 320,
-        });
+      // Re-fit after layout settles on mobile
+      const rafId = requestAnimationFrame(() => {
+        if (cancelled || !chartRef.current) return;
+        const r = container.getBoundingClientRect();
+        if (r.width && r.width !== initW) {
+          chart.applyOptions({ width: r.width });
+        }
+        chart.timeScale().fitContent();
+      });
+      const resizeObserver = new ResizeObserver(entries => {
+        const entry = entries[0];
+        const w = entry?.contentRect.width || container.clientWidth || 800;
+        const h = entry?.contentRect.height || container.clientHeight || 320;
+        chart.applyOptions({ width: w, height: h });
         chart.timeScale().fitContent();
       });
       resizeObserver.observe(container);
       cleanup = () => {
+        cancelAnimationFrame(rafId);
         resizeObserver.disconnect();
         chart.remove();
       };
@@ -2277,35 +2329,37 @@ export default function Home() {
 
               {/* Chart */}
               <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5),0_0_0_1px_rgba(6,182,212,0.04)] overflow-hidden">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-white/10 pb-3">
-                  <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2">
+                <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3 flex-wrap">
+                  <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2 shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
                     Chart Geometry
                   </span>
-                  <div className="chart-controls-pill flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 p-1">
-                    {([
-                      ['1d', '1D'],
-                      ['1w', '1W'],
-                      ['1mo', '1M'],
-                      ['1y', '1Y'],
-                    ] as Array<[ChartRange, string]>).map(([range, label]) => (
-                      <button
-                        key={range}
-                        type="button"
-                        onClick={() => setChartRange(range)}
-                        className={`h-8 min-w-10 rounded-full px-3 text-[10px] font-black font-['JetBrains_Mono'] transition-all duration-200 ${
-                          chartRange === range
-                            ? 'bg-slate-950 shadow-md chart-range-btn-active ring-1 ring-slate-800/50'
-                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+                    <div className="chart-controls-pill flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 p-1">
+                      {([
+                        ['1d', '1D'],
+                        ['1w', '1W'],
+                        ['1mo', '1M'],
+                        ['1y', '1Y'],
+                      ] as Array<[ChartRange, string]>).map(([range, label]) => (
+                        <button
+                          key={range}
+                          type="button"
+                          onClick={() => setChartRange(range)}
+                          className={`h-8 min-w-10 rounded-full px-3 text-[10px] font-black font-['JetBrains_Mono'] transition-all duration-200 ${
+                            chartRange === range
+                              ? 'bg-slate-950 shadow-md chart-range-btn-active ring-1 ring-slate-800/50'
+                              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {analysis && !analysis.error && (
+                      <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] shrink-0 ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
+                    )}
                   </div>
-                  {analysis && !analysis.error && (
-                    <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
-                  )}
                 </div>
                 {!chartData ? (
                   <div className="h-[260px] sm:h-[320px] flex flex-col items-center justify-center font-['JetBrains_Mono'] text-zinc-500 gap-4 text-xs sm:text-sm uppercase tracking-widest">
