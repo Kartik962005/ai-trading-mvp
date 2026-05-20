@@ -11,7 +11,7 @@ const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json(
 const CACHE_TTL = 1000 * 60 * 60 * 6;
 type MarketScope = 'INDIA' | 'US';
 type DashboardView = 'overview' | 'details';
-type ChartRange = '1d' | '1w' | '1mo' | '1y';
+type ChartRange = '1d' | '1w' | '1mo' | '1y' | 'max';
 
 const STRATEGY_NAMES: Record<number, string> = {
   1: 'Moving Average Crossover',
@@ -1457,7 +1457,7 @@ export default function Home() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeMarket, setActiveMarket] = useState<MarketScope>('INDIA');
   const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
-  const [chartRange, setChartRange] = useState<ChartRange>('1y');
+  const [chartRange, setChartRange] = useState<ChartRange>('max');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -1475,6 +1475,8 @@ export default function Home() {
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
   const [cachedFundamentals, setCachedFundamentals] = useState<any>(undefined);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeName, setWelcomeName] = useState('');
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const supabaseRef = useRef<any>(null);
   const selectedStock = ticker ? STOCKS.find(s => s.ticker === ticker) ?? null : null;
@@ -1511,11 +1513,21 @@ export default function Home() {
         setAuthReady(true);
       });
 
-      const authListener = sb.auth.onAuthStateChange((_event: string, session: any) => {
+      const authListener = sb.auth.onAuthStateChange((event: string, session: any) => {
         if (!mounted) return;
-        setUser(session?.user ?? null);
+        const newUser = session?.user ?? null;
+        setUser(newUser);
         setAuthReady(true);
-        if (session?.user) {
+        // 'SIGNED_IN' fires only on actual sign-in, not on page reload (which is 'INITIAL_SESSION')
+        if (event === 'SIGNED_IN' && newUser) {
+          const name =
+            newUser.user_metadata?.full_name ||
+            newUser.user_metadata?.name ||
+            newUser.email?.split('@')[0] ||
+            'there';
+          setWelcomeName(name);
+          setShowWelcome(true);
+          setTimeout(() => setShowWelcome(false), 4200);
           setShowAuthModal(false);
           setShowProfileMenu(false);
           setAuthEmail('');
@@ -1590,22 +1602,16 @@ export default function Home() {
         const { data, error } = await sb.auth.signUp({ email: authEmail, password: authPassword });
         if (error) throw error;
         if (data.user) {
-          setUser(data.user);
-          setShowAuthModal(false);
-          setShowProfileMenu(false);
-          setAuthEmail('');
-          setAuthPassword('');
+          // onAuthStateChange 'SIGNED_IN' will handle welcome animation + modal close
+          setAuthSuccess('Account created! Check your email to verify.');
           goHome();
+        } else {
+          setAuthSuccess('Account created! Check your email to verify.');
         }
-        setAuthSuccess('Account created! Check your email to verify.');
       } else {
         const { data, error } = await sb.auth.signInWithPassword({ email: authEmail, password: authPassword });
         if (error) throw error;
-        setUser(data.user ?? null);
-        setShowAuthModal(false);
-        setShowProfileMenu(false);
-        setAuthEmail('');
-        setAuthPassword('');
+        // onAuthStateChange 'SIGNED_IN' handles welcome animation + modal/menu close
         goHome();
       }
     } catch (err: any) {
@@ -1752,8 +1758,6 @@ export default function Home() {
           timeVisible: chartRange === '1d' || chartRange === '1w',
           secondsVisible: false,
           borderColor: 'rgba(15,23,42,0.12)',
-          fixLeftEdge: true,
-          fixRightEdge: false,
         },
       });
 
@@ -1761,10 +1765,11 @@ export default function Home() {
         upColor: '#22c55e', downColor: '#ef4444',
         borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
       });
+      const isIntraday = chartRange === '1d' || chartRange === '1w';
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
         .map((d: any) => ({
-          time: chartRange === '1d' || chartRange === '1w'
+          time: isIntraday
             ? Math.floor(new Date(d.date).getTime() / 1000)
             : d.date?.toString().slice(0, 10),
           open: parseFloat(d.open), high: parseFloat(d.high),
@@ -2052,9 +2057,78 @@ export default function Home() {
         }
         /* Hover glow on strategy rows */
         .strategy-row:hover { background: rgba(6,182,212,0.04) !important; }
+        /* Apple-style welcome animation */
+        @keyframes welcomeFadeIn {
+          0%   { opacity: 0; transform: scale(1.06); }
+          18%  { opacity: 1; transform: scale(1); }
+          72%  { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(0.96); }
+        }
+        @keyframes welcomeWordIn {
+          0%   { opacity: 0; transform: translateY(24px); filter: blur(8px); }
+          100% { opacity: 1; transform: translateY(0);    filter: blur(0);   }
+        }
+        @keyframes welcomeWordOut {
+          0%   { opacity: 1; transform: translateY(0);     filter: blur(0);   }
+          100% { opacity: 0; transform: translateY(-20px); filter: blur(6px); }
+        }
+        .welcome-overlay {
+          animation: welcomeFadeIn 4.2s cubic-bezier(0.22,0.61,0.36,1) forwards;
+        }
+        .welcome-word {
+          display: inline-block;
+          animation: welcomeWordIn 0.7s cubic-bezier(0.22,0.61,0.36,1) forwards;
+          opacity: 0;
+        }
       `}} />
 
       <div className="bullseye-light min-h-screen text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
+
+        {/* APPLE-STYLE WELCOME OVERLAY */}
+        {showWelcome && (
+          <div
+            className="welcome-overlay fixed inset-0 z-[9999] flex flex-col items-center justify-center pointer-events-none"
+            style={{
+              background: 'radial-gradient(ellipse at 50% 42%, rgba(8,145,178,0.18) 0%, rgba(0,0,0,0.92) 65%, rgba(0,0,0,0.97) 100%)',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            <div className="flex flex-col items-center gap-3 select-none">
+              <span
+                className="welcome-word text-[13px] sm:text-[15px] tracking-[0.32em] uppercase font-light text-cyan-300/80 font-['Inter']"
+                style={{ animationDelay: '0.15s' }}
+              >
+                Bullseye
+              </span>
+              <div className="flex items-baseline gap-3 sm:gap-4 flex-wrap justify-center">
+                <span
+                  className="welcome-word text-[42px] sm:text-[64px] md:text-[76px] font-black tracking-tight text-white leading-none font-['Space_Grotesk']"
+                  style={{ animationDelay: '0.4s' }}
+                >
+                  Welcome,
+                </span>
+                <span
+                  className="welcome-word text-[42px] sm:text-[64px] md:text-[76px] font-black tracking-tight leading-none font-['Space_Grotesk']"
+                  style={{
+                    animationDelay: '0.72s',
+                    background: 'linear-gradient(135deg, #67e8f9 0%, #22d3ee 40%, #34d399 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  {welcomeName}
+                </span>
+              </div>
+              <span
+                className="welcome-word text-[13px] sm:text-[15px] text-slate-400/70 font-light tracking-wide mt-1 font-['Inter']"
+                style={{ animationDelay: '1.05s' }}
+              >
+                Your market intelligence, ready.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* BACKGROUND */}
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
@@ -2337,10 +2411,11 @@ export default function Home() {
                   <div className="flex items-center gap-2 sm:gap-3 ml-auto">
                     <div className="chart-controls-pill flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 p-1">
                       {([
-                        ['1d', '1D'],
-                        ['1w', '1W'],
+                        ['1d',  '1D'],
+                        ['1w',  '1W'],
                         ['1mo', '1M'],
-                        ['1y', '1Y'],
+                        ['1y',  '1Y'],
+                        ['max', 'ALL'],
                       ] as Array<[ChartRange, string]>).map(([range, label]) => (
                         <button
                           key={range}
@@ -2348,7 +2423,9 @@ export default function Home() {
                           onClick={() => setChartRange(range)}
                           className={`h-8 min-w-10 rounded-full px-3 text-[10px] font-black font-['JetBrains_Mono'] transition-all duration-200 ${
                             chartRange === range
-                              ? 'bg-slate-950 shadow-md chart-range-btn-active ring-1 ring-slate-800/50'
+                              ? range === 'max'
+                                ? 'bg-cyan-600 shadow-md chart-range-btn-active ring-1 ring-cyan-500/50'
+                                : 'bg-slate-950 shadow-md chart-range-btn-active ring-1 ring-slate-800/50'
                               : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
                           }`}
                         >

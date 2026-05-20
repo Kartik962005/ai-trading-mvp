@@ -293,11 +293,13 @@ def get_fundamentals_data(ticker: str):
 def get_chart_data(ticker: str, range_key: str = "1y"):
     range_key = (range_key or "1y").lower()
     options = {
-        "1d": ("1d", "5m"),
-        "1w": ("5d", "30m"),
+        "1d":  ("1d",  "5m"),
+        "1w":  ("5d",  "30m"),
         "1mo": ("1mo", "1d"),
-        "1m": ("1mo", "1d"),
-        "1y": ("1y", "1d"),
+        "1m":  ("1mo", "1d"),
+        "1y":  ("1y",  "1d"),
+        "max": ("max", "1d"),   # all data since listing
+        "all": ("max", "1d"),   # alias
     }
     period, interval = options.get(range_key, options["1y"])
 
