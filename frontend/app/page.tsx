@@ -6,6 +6,8 @@ import { STOCKS } from './stocks';
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ai-trading-backend-jhcl.onrender.com';
 const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json());
 const CACHE_TTL = 1000 * 60 * 60 * 6;
+type MarketScope = 'INDIA' | 'US';
+type DashboardView = 'overview' | 'details';
 
 const STRATEGY_NAMES: Record<number, string> = {
   1: 'Moving Average Crossover',
@@ -286,6 +288,53 @@ function getLevenshteinDistance(s: string, t: string) {
   const arr: number[][] = [];
   for (let i = 0; i <= t.length; i++) { arr[i] = [i]; for (let j = 1; j <= s.length; j++) { arr[i][j] = i === 0 ? j : Math.min(arr[i - 1][j] + 1, arr[i][j - 1] + 1, arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1)); } }
   return arr[t.length][s.length];
+}
+
+function resolveMarket(exchange: string): MarketScope {
+  return exchange === 'NASDAQ' || exchange === 'NYSE' ? 'US' : 'INDIA';
+}
+
+function isIndianStock(stock?: typeof STOCKS[number] | null) {
+  return !!stock && resolveMarket(stock.exchange) === 'INDIA';
+}
+
+function formatIndianNumber(value: any, digits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  return new Intl.NumberFormat('en-IN', {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: numeric % 1 === 0 ? 0 : Math.min(digits, 2),
+  }).format(numeric);
+}
+
+function formatCurrencyNumber(value: any, currencySymbol: string, digits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  return `${currencySymbol}${formatIndianNumber(numeric, digits)}`;
+}
+
+function formatCompactRupees(value: any) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  const absolute = Math.abs(numeric);
+  if (absolute >= 10000000) return `${(numeric / 10000000).toFixed(2)} Cr`;
+  if (absolute >= 100000) return `${(numeric / 100000).toFixed(2)} L`;
+  return formatIndianNumber(numeric, 2);
+}
+
+function formatRatioValue(value: any, kind?: string) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  if (kind === 'percent') return `${numeric.toFixed(2)}%`;
+  return formatIndianNumber(numeric, 2);
+}
+
+function humanizeLabel(label: string) {
+  return label
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // ─── TICKER TAPE ─────────────────────────────────────────────────────────────
@@ -1078,13 +1127,260 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
     </div>
   );
 };
+
+const FundamentalsTable = ({
+  title,
+  subtitle,
+  table,
+  currency,
+}: {
+  title: string;
+  subtitle: string;
+  table: any;
+  currency: string;
+}) => {
+  const columns = table?.columns ?? [];
+  const rows = table?.rows ?? [];
+
+  return (
+    <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+      <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+        <div>
+          <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">{title}</h3>
+          <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">{subtitle}</p>
+        </div>
+      </div>
+
+      {rows.length === 0 || columns.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-6 text-xs text-zinc-500 font-['JetBrains_Mono']">
+          This free data source does not expose this statement for the selected stock yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-white/10">
+          <table className="w-full min-w-[900px] text-left">
+            <thead className="bg-white/5">
+              <tr>
+                <th className="px-4 py-3 text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Line Item</th>
+                {columns.map((column: string) => (
+                  <th key={column} className="px-4 py-3 text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row: any) => (
+                <tr key={row.label} className="border-t border-white/5">
+                  <td className="px-4 py-3 text-sm text-zinc-200 font-semibold whitespace-nowrap">{humanizeLabel(row.label)}</td>
+                  {row.values.map((value: any, index: number) => (
+                    <td key={`${row.label}-${index}`} className="px-4 py-3 text-sm text-white font-['JetBrains_Mono'] whitespace-nowrap">
+                      {value === null || value === undefined
+                        ? '-'
+                        : Math.abs(Number(value)) >= 100000
+                          ? formatCompactRupees(value)
+                          : formatCurrencyNumber(value, currency, 2)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const IndiaDetailedAnalysisPanel = ({
+  ticker,
+  stock,
+  currency,
+  fundamentals,
+  isLoading,
+}: {
+  ticker: string;
+  stock: typeof STOCKS[number];
+  currency: string;
+  fundamentals: any;
+  isLoading: boolean;
+}) => {
+  const summary = fundamentals?.summary ?? {};
+  const company = fundamentals?.company ?? {};
+  const ratios = (fundamentals?.ratios ?? []).filter((ratio: any) => ratio?.value !== null && ratio?.value !== undefined);
+  const highlights = [
+    { label: 'Market Cap', value: summary.market_cap ? `${currency}${formatCompactRupees(summary.market_cap)}` : '-' },
+    { label: 'Current Price', value: formatCurrencyNumber(summary.current_price, currency, 2) },
+    { label: '52W High / Low', value: summary.high_52_week && summary.low_52_week ? `${formatCurrencyNumber(summary.high_52_week, currency, 2)} / ${formatCurrencyNumber(summary.low_52_week, currency, 2)}` : '-' },
+    { label: 'Trailing P/E', value: formatRatioValue(summary.trailing_pe) },
+    { label: 'Book Value', value: formatCurrencyNumber(summary.book_value, currency, 2) },
+    { label: 'Dividend Yield', value: formatRatioValue(summary.dividend_yield, 'percent') },
+    { label: 'ROE', value: formatRatioValue(summary.return_on_equity, 'percent') },
+    { label: 'Profit Margin', value: formatRatioValue(summary.profit_margins, 'percent') },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
+          <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
+            Loading free fundamentals for {ticker}...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        <div className="xl:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+          <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+            <div>
+              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Indian Stock Analytics</h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
+                Free fundamentals pipeline for {stock.symbol} using cached market data.
+              </p>
+            </div>
+            <span className="text-[10px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono']">
+              India only
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {highlights.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{item.label}</div>
+                <div className="mt-2 text-lg font-bold text-white font-['JetBrains_Mono'] break-words">{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="xl:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+          <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+            <div>
+              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">About</h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
+                Company profile and business context
+              </p>
+            </div>
+          </div>
+          <div className="space-y-3 text-sm">
+            <div className="text-zinc-200 leading-relaxed">
+              {company.description || `${stock.name} detailed profile will expand as we ingest more NSE/BSE filings.`}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              {[
+                ['Sector', company.sector],
+                ['Industry', company.industry],
+                ['Website', company.website],
+                ['Employees', company.employees ? formatIndianNumber(company.employees, 0) : null],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</div>
+                  <div className="mt-2 text-sm text-white font-['JetBrains_Mono'] break-words">{value || '-'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <FundamentalsTable
+        title="Quarterly Results"
+        subtitle="Free statement data mapped from the latest available quarterly income rows."
+        table={fundamentals?.statements?.quarterly_results}
+        currency={currency}
+      />
+
+      <FundamentalsTable
+        title="Profit & Loss"
+        subtitle="Annual income statement history from the free backend dataset."
+        table={fundamentals?.statements?.profit_and_loss}
+        currency={currency}
+      />
+
+      <FundamentalsTable
+        title="Balance Sheet"
+        subtitle="Annual balance sheet rows normalized into a dashboard-ready table."
+        table={fundamentals?.statements?.balance_sheet}
+        currency={currency}
+      />
+
+      <FundamentalsTable
+        title="Cash Flow"
+        subtitle="Annual cash flow rows pulled into the India-only detailed view."
+        table={fundamentals?.statements?.cash_flow}
+        currency={currency}
+      />
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        <div className="xl:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+          <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+            <div>
+              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Key Ratios</h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
+                Highlights available from the free source for this stock.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {ratios.length > 0 ? ratios.map((ratio: any) => (
+              <div key={ratio.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{ratio.label}</div>
+                <div className="mt-2 text-lg font-bold text-white font-['JetBrains_Mono']">{formatRatioValue(ratio.value, ratio.kind)}</div>
+              </div>
+            )) : (
+              <div className="col-span-full rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-6 text-xs text-zinc-500 font-['JetBrains_Mono']">
+                Ratio fields are not available yet for this symbol.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="xl:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+          <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+            <div>
+              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Next Free Upgrades</h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
+                Planned India-only sections without paid APIs.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-3 text-sm text-zinc-300">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-[10px] text-cyan-400 uppercase tracking-widest font-black font-['Space_Grotesk']">Peer comparison</div>
+              <p className="mt-2 leading-relaxed">
+                This will be generated from your own India stock database once sector and industry snapshots are indexed.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-[10px] text-cyan-400 uppercase tracking-widest font-black font-['Space_Grotesk']">Shareholding pattern</div>
+              <p className="mt-2 leading-relaxed">
+                This is the next public-data target from NSE/BSE corporate filings so you can keep the dashboard fully free.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-[10px] text-cyan-400 uppercase tracking-widest font-black font-['Space_Grotesk']">Source note</div>
+              <p className="mt-2 leading-relaxed">
+                Current detailed sections are served from the free backend pipeline so you can launch without charging users for fundamentals.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function Home() {
   const [ticker, setTicker] = useState<string | null>(null);
   const [currency, setCurrency] = useState('₹');
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<typeof STOCKS>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [activeMarket, setActiveMarket] = useState<'INDIA' | 'US' | 'CRYPTO'>('INDIA');
+  const [activeMarket, setActiveMarket] = useState<MarketScope>('INDIA');
+  const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
   const chartRef = useRef<HTMLDivElement>(null);
 
   // ── Auth state ───────────────────────────────────────────────────────────
@@ -1100,8 +1396,11 @@ export default function Home() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
+  const [cachedFundamentals, setCachedFundamentals] = useState<any>(undefined);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const supabaseRef = useRef<any>(null);
+  const selectedStock = ticker ? STOCKS.find(s => s.ticker === ticker) ?? null : null;
+  const canOpenDetailedAnalysis = isIndianStock(selectedStock);
 
   // Check if Supabase is available
   const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1246,54 +1545,61 @@ export default function Home() {
     setShowProfileMenu(false);
   };
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+  const applyUrlState = (search: string) => {
+    const params = new URLSearchParams(search);
     const urlTicker = params.get('ticker');
-    if (!urlTicker || ticker) return;
-    const stock = STOCKS.find(s => s.ticker === urlTicker);
-    if (stock) {
-      window.history.replaceState({ view: 'home' }, '', '/');
-      window.history.pushState({ view: 'stock', ticker: stock.ticker }, '', `/?ticker=${encodeURIComponent(stock.ticker)}`);
-      setCachedChart(getCache(`chart:${stock.ticker}`));
-      setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
-      setTicker(stock.ticker);
-      setCurrency(stock.currency);
-      setActiveMarket(stock.exchange === 'CRYPTO' ? 'CRYPTO' : stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? 'US' : 'INDIA');
+    const requestedView: DashboardView = params.get('view') === 'details' ? 'details' : 'overview';
+
+    if (!urlTicker) {
+      setTicker(null);
+      setDashboardView('overview');
+      setCachedChart(undefined);
+      setCachedAnalysis(undefined);
+      setCachedFundamentals(undefined);
+      setInput('');
+      setShowSuggestions(false);
+      return;
     }
-  }, [ticker]);
+
+    const stock = STOCKS.find(s => s.ticker === urlTicker);
+    if (!stock) return;
+
+    const market = resolveMarket(stock.exchange);
+    setCachedChart(getCache(`chart:${stock.ticker}`));
+    setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
+    setCachedFundamentals(getCache(`fundamentals:${stock.ticker}`));
+    setTicker(stock.ticker);
+    setCurrency(stock.currency);
+    setActiveMarket(market);
+    setDashboardView(market === 'INDIA' ? requestedView : 'overview');
+  };
+
+  useEffect(() => {
+    applyUrlState(window.location.search);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const handlePopState = () => {
-      const params = new URLSearchParams(window.location.search);
-      const urlTicker = params.get('ticker');
-      if (!urlTicker) {
-        setTicker(null);
-        setInput('');
-        setShowSuggestions(false);
-        setShowProfileMenu(false);
-        return;
-      }
-      const stock = STOCKS.find(s => s.ticker === urlTicker);
-      if (!stock) return;
-      setCachedChart(getCache(`chart:${stock.ticker}`));
-      setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
-      setTicker(stock.ticker);
-      setCurrency(stock.currency);
-      setActiveMarket(stock.exchange === 'CRYPTO' ? 'CRYPTO' : stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? 'US' : 'INDIA');
+      applyUrlState(window.location.search);
+      setShowProfileMenu(false);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!ticker) {
       setCachedChart(undefined);
       setCachedAnalysis(undefined);
+      setCachedFundamentals(undefined);
       return;
     }
     setCachedChart(getCache(`chart:${ticker}`));
     setCachedAnalysis(getCache(`analysis:${ticker}`));
+    setCachedFundamentals(getCache(`fundamentals:${ticker}`));
   }, [ticker]);
 
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 10000 });
@@ -1307,6 +1613,15 @@ export default function Home() {
     revalidateIfStale: !cachedAnalysis,
     revalidateOnMount: !cachedAnalysis,
   });
+  const { data: fundamentals, isLoading: fundamentalsLoading } = useSWR(
+    ticker && dashboardView === 'details' && canOpenDetailedAnalysis ? `/api/v1/fundamentals/${ticker}` : null,
+    fetcher,
+    {
+      fallbackData: cachedFundamentals,
+      revalidateIfStale: !cachedFundamentals,
+      revalidateOnMount: !cachedFundamentals,
+    }
+  );
 
   useEffect(() => {
     if (ticker && chartData) setCache(`chart:${ticker}`, chartData);
@@ -1315,6 +1630,10 @@ export default function Home() {
   useEffect(() => {
     if (ticker && analysis) setCache(`analysis:${ticker}`, analysis);
   }, [analysis, ticker]);
+
+  useEffect(() => {
+    if (ticker && fundamentals) setCache(`fundamentals:${ticker}`, fundamentals);
+  }, [fundamentals, ticker]);
 
   useEffect(() => {
     if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
@@ -1382,18 +1701,42 @@ export default function Home() {
     };
   }, [chartData, ticker]);
 
-  const selectStock = (stock: typeof STOCKS[0]) => {
+  const openStockView = (stock: typeof STOCKS[0], nextView: DashboardView = 'overview') => {
+    const market = resolveMarket(stock.exchange);
+    const resolvedView = market === 'INDIA' ? nextView : 'overview';
     setCachedChart(getCache(`chart:${stock.ticker}`));
     setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
+    setCachedFundamentals(getCache(`fundamentals:${stock.ticker}`));
     setTicker(stock.ticker);
     setCurrency(stock.currency);
+    setActiveMarket(market);
+    setDashboardView(resolvedView);
     setInput('');
     setShowSuggestions(false);
-    window.history.pushState({ view: 'stock', ticker: stock.ticker }, '', `/?ticker=${encodeURIComponent(stock.ticker)}`);
+    const nextUrl = resolvedView === 'details'
+      ? `/?ticker=${encodeURIComponent(stock.ticker)}&view=details`
+      : `/?ticker=${encodeURIComponent(stock.ticker)}`;
+    window.history.pushState({ view: 'stock', ticker: stock.ticker, dashboardView: resolvedView }, '', nextUrl);
+  };
+
+  const selectStock = (stock: typeof STOCKS[0]) => {
+    openStockView(stock, 'overview');
+  };
+
+  const openDetailedAnalysis = () => {
+    if (!selectedStock || !canOpenDetailedAnalysis) return;
+    openStockView(selectedStock, 'details');
+  };
+
+  const openOverview = () => {
+    if (!selectedStock) return;
+    openStockView(selectedStock, 'overview');
   };
 
   const goHome = () => {
     setTicker(null);
+    setDashboardView('overview');
+    setCachedFundamentals(undefined);
     setShowProfileMenu(false);
     window.history.pushState({ view: 'home' }, '', '/');
   };
@@ -1401,7 +1744,6 @@ export default function Home() {
   const getMarketStocks = () => {
     if (activeMarket === 'INDIA') return STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE').slice(0, 24);
     if (activeMarket === 'US') return STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE').slice(0, 24);
-    if (activeMarket === 'CRYPTO') return STOCKS.filter(s => s.exchange === 'CRYPTO').slice(0, 24);
     return [];
   };
 
@@ -1459,8 +1801,6 @@ export default function Home() {
       <TickerItem title="SENSEX" symbol="^BSESN" currency="" />
       <TickerItem title="NASDAQ" symbol="^IXIC" currency="" />
       <TickerItem title="S&P 500" symbol="^GSPC" currency="" />
-      <TickerItem title="BITCOIN" symbol="BTC-USD" currency="$" />
-      <TickerItem title="ETHEREUM" symbol="ETH-USD" currency="$" />
     </>
   );
 
@@ -1701,27 +2041,26 @@ export default function Home() {
             <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
 
               {/* Market tabs */}
-              <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
-                {(['INDIA', 'US', 'CRYPTO'] as const).map(market => (
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
+                {(['INDIA', 'US'] as const).map(market => (
                   <button key={market} onClick={() => setActiveMarket(market)}
                     className={`p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border backdrop-blur-xl transition-all flex flex-col items-start
                       ${activeMarket === market
                         ? market === 'INDIA' ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.2)]'
-                        : market === 'US' ? 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_30px_rgba(217,70,239,0.2)]'
-                        : 'bg-zinc-800/50 border-white/50 shadow-[0_0_30px_rgba(255,255,255,0.1)]'
+                        : 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_30px_rgba(217,70,239,0.2)]'
                         : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30'}`}>
                     <span className={`text-2xl sm:text-4xl mb-2 sm:mb-4 ${activeMarket === market ? 'opacity-100' : 'opacity-40'}`}>
-                      {market === 'INDIA' ? '🇮🇳' : market === 'US' ? '🇺🇸' : '₿'}
+                      {market === 'INDIA' ? '🇮🇳' : '🇺🇸'}
                     </span>
                     <span className={`text-base sm:text-2xl font-black uppercase tracking-tight font-['Space_Grotesk']
                       ${activeMarket === market ? 'text-white' : 'text-zinc-400'}`}>
-                      {market === 'INDIA' ? 'India' : market === 'US' ? 'US' : 'Crypto'}
+                      {market === 'INDIA' ? 'India' : 'US'}
                     </span>
                     <span className={`text-[9px] sm:text-[10px] font-['JetBrains_Mono'] mt-1 sm:mt-2 uppercase tracking-widest hidden sm:block
                       ${activeMarket === market
-                        ? market === 'INDIA' ? 'text-cyan-400' : market === 'US' ? 'text-fuchsia-400' : 'text-white'
+                        ? market === 'INDIA' ? 'text-cyan-400' : 'text-fuchsia-400'
                         : 'text-zinc-600'}`}>
-                      {market === 'INDIA' ? 'NSE / BSE' : market === 'US' ? 'NASDAQ / NYSE' : 'Digital Assets'}
+                      {market === 'INDIA' ? 'NSE / BSE' : 'NASDAQ / NYSE'}
                     </span>
                   </button>
                 ))}
@@ -1759,7 +2098,37 @@ export default function Home() {
                     ← Overview
                   </button>
                   <h1 className="font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-tighter font-['Space_Grotesk']">{ticker}</h1>
+                  {selectedStock?.name && (
+                    <div className="mt-2 text-sm text-zinc-500 font-['JetBrains_Mono']">{selectedStock.name}</div>
+                  )}
                 </div>
+                <div className="flex flex-col sm:items-end gap-3">
+                  {canOpenDetailedAnalysis && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={openOverview}
+                        className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
+                          dashboardView === 'overview'
+                            ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
+                            : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        Overview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openDetailedAnalysis}
+                        className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
+                          dashboardView === 'details'
+                            ? 'bg-fuchsia-500/20 border-fuchsia-400/40 text-fuchsia-200'
+                            : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        Detailed Analysis
+                      </button>
+                    </div>
+                  )}
                 {quote?.price && (
                   <div className="text-left sm:text-right">
                     <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Live Price</div>
@@ -1769,6 +2138,7 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
 
               {/* Chart */}
@@ -1792,20 +2162,27 @@ export default function Home() {
               </div>
 
               {/* FISO Analysis + all sections in order */}
-              {analysis && !analysis.error
-                ? <FisoDetailPanel analysis={analysis} currency={currency} ticker={ticker} chartData={chartData} />
-                : !analysis && (
-                  <div className="flex items-center justify-center py-16">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-10 h-10 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
-                      <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Running FISO Algorithm...</span>
-                    </div>
+              {dashboardView === 'details' && selectedStock && canOpenDetailedAnalysis ? (
+                <IndiaDetailedAnalysisPanel
+                  ticker={ticker}
+                  stock={selectedStock}
+                  currency={currency}
+                  fundamentals={fundamentals}
+                  isLoading={fundamentalsLoading && !fundamentals}
+                />
+              ) : analysis && !analysis.error ? (
+                <FisoDetailPanel analysis={analysis} currency={currency} ticker={ticker} chartData={chartData} />
+              ) : !analysis && (
+                <div className="flex items-center justify-center py-16">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-10 h-10 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
+                    <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Running FISO Algorithm...</span>
                   </div>
-                )
-              }
+                </div>
+              )}
 
               {/* ── DISCLAIMER ── shown after every analysis */}
-              {analysis && !analysis.error && (
+              {((dashboardView === 'overview' && analysis && !analysis.error) || dashboardView === 'details') && (
                 <div className="disclaimer-panel rounded-2xl p-4 flex gap-3">
                   <span className="text-amber-400 text-lg shrink-0 mt-0.5">⚠️</span>
                   <p className="text-[11px] font-['JetBrains_Mono'] leading-relaxed font-semibold">

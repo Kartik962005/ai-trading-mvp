@@ -33,7 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.services.data_service import get_latest_quote, get_historical_data
+from app.services.data_service import get_latest_quote, get_historical_data, get_fundamentals_data
 from app.strategies.engine import run_analysis, evaluate_strategies
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
@@ -110,6 +110,17 @@ async def analyze_batch(request: Request, tickers: str):
         else:
             payload[ticker] = result
     return payload
+
+
+@app.get("/api/v1/fundamentals/{ticker}")
+@limiter.limit("5/minute")
+async def fundamentals(request: Request, ticker: str):
+    try:
+        return get_fundamentals_data(ticker)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/strategies/list")

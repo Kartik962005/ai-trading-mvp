@@ -19,8 +19,192 @@ except Exception as e:
 # ── In-memory caches (fast, lost on restart) ──────────────────────────────────
 _hist_cache: dict = {}
 _quote_cache: dict = {}
+_fundamentals_cache: dict = {}
 HIST_TTL  = 3600   # 1 hour
 QUOTE_TTL = 15     # 15 seconds
+FUNDAMENTALS_TTL = 3600 * 6
+
+
+def _clean_scalar(value):
+    if value is None:
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.strftime("%Y-%m-%d")
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if isinstance(value, float):
+        return round(value, 4)
+    if isinstance(value, int):
+        return value
+    return value
+
+
+def _first_non_null(*values):
+    for value in values:
+        cleaned = _clean_scalar(value)
+        if cleaned is not None:
+            return cleaned
+    return None
+
+
+def _statement_to_table(df: pd.DataFrame | None, max_columns: int = 6, max_rows: int = 14):
+    if df is None or df.empty:
+        return {"columns": [], "rows": []}
+
+    table = df.copy()
+
+    if isinstance(table.columns, pd.MultiIndex):
+        table.columns = table.columns.get_level_values(0)
+    if isinstance(table.index, pd.MultiIndex):
+        table.index = table.index.get_level_values(0)
+
+    selected_columns = list(table.columns[:max_columns])
+    columns = []
+    for col in selected_columns:
+        if isinstance(col, pd.Timestamp):
+            columns.append(col.strftime("%b %Y"))
+        else:
+            columns.append(str(col))
+
+    rows = []
+    for label, row in table.head(max_rows).iterrows():
+        values = [_clean_scalar(row[col]) for col in selected_columns]
+        if not any(value is not None for value in values):
+            continue
+        rows.append({
+            "label": str(label),
+            "values": values,
+        })
+
+    return {"columns": columns, "rows": rows}
+
+
+def get_fundamentals_data(ticker: str):
+    now = time.time()
+    if ticker in _fundamentals_cache and now - _fundamentals_cache[ticker]["ts"] < FUNDAMENTALS_TTL:
+        return _fundamentals_cache[ticker]["data"]
+
+    stock = yf.Ticker(ticker)
+    info = {}
+    fast_info = {}
+
+    try:
+        info = stock.info or {}
+    except Exception as e:
+        print(f"[Fundamentals] info lookup failed for {ticker}: {e}")
+
+    try:
+        fast_info = stock.fast_info or {}
+    except Exception as e:
+        print(f"[Fundamentals] fast_info lookup failed for {ticker}: {e}")
+
+    history = pd.DataFrame()
+    try:
+        history = stock.history(period="1y", interval="1d", auto_adjust=False)
+    except Exception as e:
+        print(f"[Fundamentals] history lookup failed for {ticker}: {e}")
+
+    current_price = _first_non_null(
+        fast_info.get("lastPrice"),
+        fast_info.get("last_price"),
+        info.get("currentPrice"),
+        info.get("regularMarketPrice"),
+        history["Close"].iloc[-1] if not history.empty else None,
+    )
+    previous_close = _first_non_null(
+        fast_info.get("previousClose"),
+        fast_info.get("previous_close"),
+        info.get("previousClose"),
+    )
+    week_high = _first_non_null(
+        info.get("fiftyTwoWeekHigh"),
+        fast_info.get("yearHigh"),
+        fast_info.get("year_high"),
+        history["High"].max() if not history.empty else None,
+    )
+    week_low = _first_non_null(
+        info.get("fiftyTwoWeekLow"),
+        fast_info.get("yearLow"),
+        fast_info.get("year_low"),
+        history["Low"].min() if not history.empty else None,
+    )
+
+    quarterly_income = getattr(stock, "quarterly_income_stmt", pd.DataFrame())
+    annual_income = getattr(stock, "income_stmt", pd.DataFrame())
+    annual_balance = getattr(stock, "balance_sheet", pd.DataFrame())
+    annual_cash_flow = getattr(stock, "cashflow", pd.DataFrame())
+
+    if quarterly_income is None or quarterly_income.empty:
+        quarterly_income = getattr(stock, "quarterly_financials", pd.DataFrame())
+    if annual_income is None or annual_income.empty:
+        annual_income = getattr(stock, "financials", pd.DataFrame())
+
+    result = {
+        "ticker": ticker,
+        "company": {
+            "name": _first_non_null(info.get("longName"), info.get("shortName"), ticker),
+            "sector": _clean_scalar(info.get("sector")),
+            "industry": _clean_scalar(info.get("industry")),
+            "website": _clean_scalar(info.get("website")),
+            "description": _clean_scalar(info.get("longBusinessSummary")),
+            "city": _clean_scalar(info.get("city")),
+            "state": _clean_scalar(info.get("state")),
+            "country": _clean_scalar(info.get("country")),
+            "employees": _clean_scalar(info.get("fullTimeEmployees")),
+        },
+        "summary": {
+            "current_price": current_price,
+            "previous_close": previous_close,
+            "market_cap": _first_non_null(fast_info.get("marketCap"), fast_info.get("market_cap"), info.get("marketCap")),
+            "high_52_week": week_high,
+            "low_52_week": week_low,
+            "trailing_pe": _clean_scalar(info.get("trailingPE")),
+            "forward_pe": _clean_scalar(info.get("forwardPE")),
+            "book_value": _clean_scalar(info.get("bookValue")),
+            "price_to_book": _clean_scalar(info.get("priceToBook")),
+            "dividend_yield": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None,
+            "return_on_equity": _clean_scalar((info.get("returnOnEquity") or 0) * 100) if info.get("returnOnEquity") is not None else None,
+            "return_on_assets": _clean_scalar((info.get("returnOnAssets") or 0) * 100) if info.get("returnOnAssets") is not None else None,
+            "profit_margins": _clean_scalar((info.get("profitMargins") or 0) * 100) if info.get("profitMargins") is not None else None,
+            "operating_margins": _clean_scalar((info.get("operatingMargins") or 0) * 100) if info.get("operatingMargins") is not None else None,
+            "revenue_growth": _clean_scalar((info.get("revenueGrowth") or 0) * 100) if info.get("revenueGrowth") is not None else None,
+            "earnings_growth": _clean_scalar((info.get("earningsGrowth") or 0) * 100) if info.get("earningsGrowth") is not None else None,
+            "earnings_quarterly_growth": _clean_scalar((info.get("earningsQuarterlyGrowth") or 0) * 100) if info.get("earningsQuarterlyGrowth") is not None else None,
+            "beta": _clean_scalar(info.get("beta")),
+            "enterprise_value": _clean_scalar(info.get("enterpriseValue")),
+            "total_cash": _clean_scalar(info.get("totalCash")),
+            "total_debt": _clean_scalar(info.get("totalDebt")),
+            "recommendation": _clean_scalar(info.get("recommendationKey")),
+            "quote_type": _clean_scalar(info.get("quoteType")),
+            "currency": _clean_scalar(info.get("currency")),
+            "exchange": _clean_scalar(info.get("exchange")),
+        },
+        "ratios": [
+            {"label": "Trailing P/E", "value": _clean_scalar(info.get("trailingPE")), "kind": "number"},
+            {"label": "Forward P/E", "value": _clean_scalar(info.get("forwardPE")), "kind": "number"},
+            {"label": "Price / Book", "value": _clean_scalar(info.get("priceToBook")), "kind": "number"},
+            {"label": "Dividend Yield", "value": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None, "kind": "percent"},
+            {"label": "ROE", "value": _clean_scalar((info.get("returnOnEquity") or 0) * 100) if info.get("returnOnEquity") is not None else None, "kind": "percent"},
+            {"label": "ROA", "value": _clean_scalar((info.get("returnOnAssets") or 0) * 100) if info.get("returnOnAssets") is not None else None, "kind": "percent"},
+            {"label": "Profit Margin", "value": _clean_scalar((info.get("profitMargins") or 0) * 100) if info.get("profitMargins") is not None else None, "kind": "percent"},
+            {"label": "Operating Margin", "value": _clean_scalar((info.get("operatingMargins") or 0) * 100) if info.get("operatingMargins") is not None else None, "kind": "percent"},
+        ],
+        "statements": {
+            "quarterly_results": _statement_to_table(quarterly_income, max_columns=8, max_rows=12),
+            "profit_and_loss": _statement_to_table(annual_income, max_columns=8, max_rows=14),
+            "balance_sheet": _statement_to_table(annual_balance, max_columns=8, max_rows=14),
+            "cash_flow": _statement_to_table(annual_cash_flow, max_columns=8, max_rows=14),
+        },
+        "source": "yfinance",
+    }
+
+    _fundamentals_cache[ticker] = {"data": result, "ts": time.time()}
+    return result
 
 
 def get_latest_quote(ticker: str):

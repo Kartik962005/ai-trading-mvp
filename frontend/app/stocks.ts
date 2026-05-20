@@ -1,7 +1,7 @@
 // frontend/app/stocks.ts
 // NSE BATCH 1 (125 Stocks)
 
-export const STOCKS = [
+const RAW_STOCKS = [
   // Financials & Banks
   { name: 'HDFC Bank', symbol: 'HDFCBANK', exchange: 'NSE', ticker: 'HDFCBANK.NS', currency: '₹' },
   { name: 'ICICI Bank', symbol: 'ICICIBANK', exchange: 'NSE', ticker: 'ICICIBANK.NS', currency: '₹' },
@@ -872,3 +872,5 @@ export const STOCKS = [
   { name: 'Internet Computer', symbol: 'ICP', exchange: 'CRYPTO', ticker: 'ICP-USD', currency: '$' },
   { name: 'VeChain', symbol: 'VET', exchange: 'CRYPTO', ticker: 'VET-USD', currency: '$' }
 ];
+
+export const STOCKS = RAW_STOCKS.filter((stock) => stock.exchange !== 'CRYPTO');
