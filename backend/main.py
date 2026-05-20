@@ -33,7 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.services.data_service import get_latest_quote, get_historical_data, get_fundamentals_data
+from app.services.data_service import get_latest_quote, get_historical_data, get_fundamentals_data, get_chart_data
 from app.strategies.engine import run_analysis, evaluate_strategies
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
@@ -72,9 +72,9 @@ async def batch_quotes(request: Request, tickers: str):
 
 @app.get("/api/v1/chart/{ticker}")
 @limiter.limit("5/minute")
-async def chart(request: Request, ticker: str):
+async def chart(request: Request, ticker: str, range: str = "1y"):
     try:
-        df = get_historical_data(ticker)
+        df = get_chart_data(ticker, range)
         return df.to_dict(orient="records")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

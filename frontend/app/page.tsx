@@ -3,11 +3,15 @@ import { useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://ai-trading-backend-jhcl.onrender.com';
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL
+  || (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 'http://127.0.0.1:8000'
+    : 'https://ai-trading-backend-jhcl.onrender.com');
 const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json());
 const CACHE_TTL = 1000 * 60 * 60 * 6;
 type MarketScope = 'INDIA' | 'US';
 type DashboardView = 'overview' | 'details';
+type ChartRange = '1d' | '1w' | '1mo' | '1y';
 
 const STRATEGY_NAMES: Record<number, string> = {
   1: 'Moving Average Crossover',
@@ -109,13 +113,16 @@ const MONTH_INDEX: Record<string, string> = {
   nov: '11', november: '11',
   dec: '12', december: '12',
 };
+const MONTH_WORDS = Object.keys(MONTH_INDEX);
 
 function parseRequestedDate(prompt: string) {
   const clean = prompt.toLowerCase();
-  const namedDate = clean.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(\d{4}))?\b/);
+  const namedDate = clean.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})(?:\s+(\d{4}))?\b/);
   if (namedDate) {
     const year = namedDate[3] ?? String(new Date().getFullYear());
-    const month = MONTH_INDEX[namedDate[2]];
+    const monthToken = namedDate[2];
+    const month = MONTH_INDEX[monthToken] ?? MONTH_INDEX[MONTH_WORDS.find(word => getLevenshteinDistance(monthToken, word) <= 1) ?? ''];
+    if (!month) return null;
     const day = namedDate[1].padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
@@ -133,8 +140,8 @@ function parseRequestedDate(prompt: string) {
   return `${year}-${month}-${day}`;
 }
 
-function isPriceLookupPrompt(prompt: string) {
-  return /\b(price|open|opening|close|closing|ohlc|candle|high|low)\b/i.test(prompt) && !!parseRequestedDate(prompt);
+function hasPriceLookupIntent(prompt: string) {
+  return /\b(price|open|opening|close|closing|ohlc|candle|high|low)\b/i.test(prompt);
 }
 
 function getCache<T>(key: string): T | undefined {
@@ -322,6 +329,13 @@ function formatCompactRupees(value: any) {
   return formatIndianNumber(numeric, 2);
 }
 
+function formatMarketCap(value: any, unit?: string, currencySymbol = '₹') {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  if (unit === 'crore') return `${currencySymbol}${formatIndianNumber(numeric, 2)} Cr`;
+  return `${currencySymbol}${formatCompactRupees(numeric)}`;
+}
+
 function formatRatioValue(value: any, kind?: string) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return '-';
@@ -359,13 +373,15 @@ const MarketAssetCard = ({
   stock,
   onSelect,
   prefetchedAnalysis,
+  expanded,
+  onToggle,
 }: {
   stock: typeof STOCKS[0];
   onSelect: (s: typeof STOCKS[0]) => void;
   prefetchedAnalysis?: any;
+  expanded: boolean;
+  onToggle: (ticker: string) => void;
 }) => {
-  const [expanded, setExpanded] = useState(false);
-
   // Only hit the API if we have no prefetched data yet
   const { data: fetchedAnalysis } = useSWR(
     expanded && !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
@@ -387,22 +403,29 @@ const MarketAssetCard = ({
   const dotColor = isReady
     ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
     : 'bg-zinc-700 animate-pulse';
+  const signalGradient = isReady
+    ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
+    : 'from-slate-300 to-slate-100';
 
   return (
     <div
-      className={`relative p-3 sm:p-4 border bg-black/40 backdrop-blur-md rounded-2xl transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none
-        ${expanded ? 'border-cyan-500/50 bg-cyan-900/20' : 'border-white/10 hover:border-cyan-500/50 hover:bg-cyan-900/20'}`}
+      className={`relative min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
+        ${expanded ? 'border-cyan-300 ring-2 ring-cyan-200/70 bg-white' : 'border-slate-200/80 hover:border-cyan-200'}`}
     >
-      <div className="flex justify-between items-start gap-2 mb-2">
-        <span className={`min-w-0 flex-1 truncate text-[10px] sm:text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
+      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-100/55 blur-2xl opacity-0 transition-opacity group-hover:opacity-100" />
+      <div className="relative flex justify-between items-start gap-2 mb-5">
+        <div className="min-w-0">
+          <span className={`block truncate text-[11px] font-black font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-600' : 'text-slate-500 group-hover:text-cyan-600'}`}>{stock.symbol}</span>
+          <span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500 font-['JetBrains_Mono']">{stock.exchange}</span>
+        </div>
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Live verdict dot — green/red/grey based on prefetch status */}
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Loading...'} />
-          <span className="text-[8px] sm:text-[9px] bg-white/5 px-1.5 sm:px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setExpanded(prev => !prev); }}
-            className="w-8 h-8 rounded-lg border border-white/10 bg-white/5 text-cyan-500 hover:bg-cyan-500/15 hover:border-cyan-400/40 transition-all flex items-center justify-center shrink-0"
+            onClick={(e) => { e.stopPropagation(); onToggle(stock.ticker); }}
+            className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-cyan-600 hover:bg-cyan-50 hover:border-cyan-300 transition-all flex items-center justify-center shrink-0 shadow-sm"
             aria-label={`${expanded ? 'Hide' : 'Show'} ${stock.symbol} preview`}
             title={`${expanded ? 'Hide' : 'Show'} preview`}
           >
@@ -410,10 +433,10 @@ const MarketAssetCard = ({
           </button>
         </div>
       </div>
-      <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
+      <div className="relative font-black text-base text-slate-950 font-['Space_Grotesk'] leading-snug line-clamp-2 min-h-11">{stock.name}</div>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="flex-1 h-0.5 bg-white/5 rounded-full overflow-hidden">
+      <div className="relative mt-5 flex items-center justify-between gap-3">
+        <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-1000 ${isReady ? '' : 'animate-pulse'}`}
             style={{
@@ -423,34 +446,34 @@ const MarketAssetCard = ({
           />
         </div>
         <span className={`shrink-0 text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk'] ${
-          isReady ? verdictColor : 'text-zinc-400'
+          isReady ? verdictColor : 'text-slate-400'
         }`}>
           {verdictBadge}
         </span>
       </div>
 
-      <div className={`transition-all duration-300 ease-in-out ${expanded ? 'max-h-52 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+      <div className={`relative transition-all duration-300 ease-in-out ${expanded ? 'max-h-56 opacity-100 mt-4 border-t border-slate-200 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
         {isReady ? (
           <div className="space-y-2.5">
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Verdict</span>
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Verdict</span>
               <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysisView.displayVerdict}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">FISO Confidence Level</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysisView.confidenceLevel}/100</span>
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">FISO Confidence</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-slate-950 font-bold">{analysisView.confidenceLevel}/100</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Target</span>
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Target</span>
               <span className="text-sm font-['JetBrains_Mono'] text-green-400 font-bold">{stock.currency}{analysisView.target}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Stop Loss</span>
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Stop Loss</span>
               <span className="text-sm font-['JetBrains_Mono'] text-red-400 font-bold">{stock.currency}{analysisView.stop_loss}</span>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onSelect(stock); }}
-              className="w-full mt-1 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-500/20 transition-all"
+              className="w-full mt-1 py-2 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-700 text-[10px] font-black uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-100 transition-all"
             >
               Full Analysis →
             </button>
@@ -507,8 +530,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
     setIsAiRunning(true);
     setAiResult(null);
     try {
-      if (isPriceLookupPrompt(aiPrompt)) {
+      if (hasPriceLookupIntent(aiPrompt)) {
         const requestedDate = parseRequestedDate(aiPrompt);
+        if (!requestedDate) {
+          setAiResult({
+            error: 'I could not read that date. Try a clearer format like "price on 12 Feb 2025" or "open on 2025-02-12".',
+          });
+          return;
+        }
         const candle = Array.isArray(chartData)
           ? chartData.find((d: any) => d.date?.toString().slice(0, 10) === requestedDate)
           : null;
@@ -652,8 +681,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       </div>
 
       {/* ── Row 2: Trade Timeline ── */}
-      <div className="flex justify-start">
-        <div className="w-full max-w-4xl bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Trade Timeline</span>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between py-2.5 border-b border-white/5">
@@ -696,7 +725,28 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             </div>
           </div>
         </div>
-
+        <div className="lg:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Position Snapshot</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">Setup</span>
+              <span className={`text-sm font-black uppercase font-['Space_Grotesk'] ${accentColor}`}>{analysisView.displayVerdict}</span>
+            </div>
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">Risk:Reward</span>
+              <span className="text-sm font-black text-white font-['JetBrains_Mono']">1 : {rr}</span>
+            </div>
+            <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Confidence</span>
+                <span className="text-xs font-black text-white font-['JetBrains_Mono']">{analysisView.confidenceLevel}/100</span>
+              </div>
+              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-cyan-400" style={{ width: `${analysisView.confidenceLevel}%` }} />
+              </div>
+            </div>
+          </div>
+      </div>
       </div>
 
       {/* ── Section 3: AI Market Search ── */}
@@ -1208,7 +1258,7 @@ const IndiaDetailedAnalysisPanel = ({
   const company = fundamentals?.company ?? {};
   const ratios = (fundamentals?.ratios ?? []).filter((ratio: any) => ratio?.value !== null && ratio?.value !== undefined);
   const highlights = [
-    { label: 'Market Cap', value: summary.market_cap ? `${currency}${formatCompactRupees(summary.market_cap)}` : '-' },
+    { label: 'Market Cap', value: formatMarketCap(summary.market_cap, summary.market_cap_unit, currency) },
     { label: 'Current Price', value: formatCurrencyNumber(summary.current_price, currency, 2) },
     { label: '52W High / Low', value: summary.high_52_week && summary.low_52_week ? `${formatCurrencyNumber(summary.high_52_week, currency, 2)} / ${formatCurrencyNumber(summary.low_52_week, currency, 2)}` : '-' },
     { label: 'Trailing P/E', value: formatRatioValue(summary.trailing_pe) },
@@ -1381,6 +1431,8 @@ export default function Home() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeMarket, setActiveMarket] = useState<MarketScope>('INDIA');
   const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
+  const [chartRange, setChartRange] = useState<ChartRange>('1y');
+  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
   // ── Auth state ───────────────────────────────────────────────────────────
@@ -1565,7 +1617,7 @@ export default function Home() {
     if (!stock) return;
 
     const market = resolveMarket(stock.exchange);
-    setCachedChart(getCache(`chart:${stock.ticker}`));
+    setCachedChart(getCache(`chart:${stock.ticker}:${chartRange}`));
     setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
     setCachedFundamentals(getCache(`fundamentals:${stock.ticker}`));
     setTicker(stock.ticker);
@@ -1597,13 +1649,13 @@ export default function Home() {
       setCachedFundamentals(undefined);
       return;
     }
-    setCachedChart(getCache(`chart:${ticker}`));
+    setCachedChart(getCache(`chart:${ticker}:${chartRange}`));
     setCachedAnalysis(getCache(`analysis:${ticker}`));
     setCachedFundamentals(getCache(`fundamentals:${ticker}`));
-  }, [ticker]);
+  }, [ticker, chartRange]);
 
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 10000 });
-  const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}` : null, fetcher, {
+  const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}?range=${chartRange}` : null, fetcher, {
     fallbackData: cachedChart,
     revalidateIfStale: !cachedChart,
     revalidateOnMount: !cachedChart,
@@ -1624,8 +1676,8 @@ export default function Home() {
   );
 
   useEffect(() => {
-    if (ticker && chartData) setCache(`chart:${ticker}`, chartData);
-  }, [chartData, ticker]);
+    if (ticker && chartData) setCache(`chart:${ticker}:${chartRange}`, chartData);
+  }, [chartData, chartRange, ticker]);
 
   useEffect(() => {
     if (ticker && analysis) setCache(`analysis:${ticker}`, analysis);
@@ -1676,7 +1728,9 @@ export default function Home() {
       const formattedData = chartData
         .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
         .map((d: any) => ({
-          time: d.date?.toString().slice(0, 10),
+          time: chartRange === '1d' || chartRange === '1w'
+            ? Math.floor(new Date(d.date).getTime() / 1000)
+            : d.date?.toString().slice(0, 10),
           open: parseFloat(d.open), high: parseFloat(d.high),
           low: parseFloat(d.low), close: parseFloat(d.close),
         }));
@@ -1699,12 +1753,12 @@ export default function Home() {
       cancelled = true;
       cleanup();
     };
-  }, [chartData, ticker]);
+  }, [chartData, chartRange, ticker]);
 
   const openStockView = (stock: typeof STOCKS[0], nextView: DashboardView = 'overview') => {
     const market = resolveMarket(stock.exchange);
     const resolvedView = market === 'INDIA' ? nextView : 'overview';
-    setCachedChart(getCache(`chart:${stock.ticker}`));
+    setCachedChart(getCache(`chart:${stock.ticker}:${chartRange}`));
     setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
     setCachedFundamentals(getCache(`fundamentals:${stock.ticker}`));
     setTicker(stock.ticker);
@@ -1754,6 +1808,7 @@ export default function Home() {
   // Hydrate visible cards from browser cache, then batch-fetch fresh analysis
   // so every visible card can show its verdict without opening the preview.
   useEffect(() => {
+    setExpandedTicker(null);
     const visibleStocks = getMarketStocks();
     const cachedVisible = visibleStocks.reduce((acc, stock) => {
       const cached = getCache(`analysis:${stock.ticker}`);
@@ -1869,6 +1924,20 @@ export default function Home() {
         }
         .disclaimer-panel, .disclaimer-panel * {
           color: #78350f !important;
+        }
+        .force-light-text {
+          color: #ffffff !important;
+        }
+        .stock-view-toggle-active {
+          color: #083344 !important;
+          background: rgba(207, 250, 254, 0.96) !important;
+          border-color: rgba(6, 182, 212, 0.45) !important;
+          box-shadow: 0 12px 28px rgba(6, 182, 212, 0.16);
+        }
+        .stock-view-toggle-idle {
+          color: #475569 !important;
+          background: rgba(255, 255, 255, 0.72) !important;
+          border-color: rgba(148, 163, 184, 0.30) !important;
         }
       `}} />
 
@@ -2000,7 +2069,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="w-full rounded-xl bg-slate-900 text-white py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
+                      className="force-light-text w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
                     >
                       Sign Out
                     </button>
@@ -2022,7 +2091,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => { setShowProfileMenu(false); setShowAuthModal(true); }}
-                      className="w-full rounded-xl bg-slate-900 text-white py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
+                      className="force-light-text w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
                     >
                       Sign In
                     </button>
@@ -2072,13 +2141,15 @@ export default function Home() {
                   <h2 className="text-xs sm:text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Live Scan</h2>
                   <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full text-zinc-300 font-['JetBrains_Mono']">{activeMarket}</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                <div className="grid items-start grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
                   {getMarketStocks().map(s => (
                     <MarketAssetCard
                       key={s.ticker}
                       stock={s}
                       onSelect={selectStock}
                       prefetchedAnalysis={prefetchCache[s.ticker]}
+                      expanded={expandedTicker === s.ticker}
+                      onToggle={(nextTicker) => setExpandedTicker(current => current === nextTicker ? null : nextTicker)}
                     />
                   ))}
                 </div>
@@ -2110,8 +2181,8 @@ export default function Home() {
                         onClick={openOverview}
                         className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
                           dashboardView === 'overview'
-                            ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
-                            : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
+                            ? 'stock-view-toggle-active'
+                            : 'stock-view-toggle-idle hover:bg-white'
                         }`}
                       >
                         Overview
@@ -2121,8 +2192,8 @@ export default function Home() {
                         onClick={openDetailedAnalysis}
                         className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
                           dashboardView === 'details'
-                            ? 'bg-fuchsia-500/20 border-fuchsia-400/40 text-fuchsia-200'
-                            : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
+                            ? 'stock-view-toggle-active'
+                            : 'stock-view-toggle-idle hover:bg-white'
                         }`}
                       >
                         Detailed Analysis
@@ -2143,8 +2214,29 @@ export default function Home() {
 
               {/* Chart */}
               <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden">
-                <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 border-b border-white/10 pb-3">
                   <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk']">Chart Geometry</span>
+                  <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm">
+                    {([
+                      ['1d', '1D'],
+                      ['1w', '1W'],
+                      ['1mo', '1M'],
+                      ['1y', '1Y'],
+                    ] as Array<[ChartRange, string]>).map(([range, label]) => (
+                      <button
+                        key={range}
+                        type="button"
+                        onClick={() => setChartRange(range)}
+                        className={`h-8 min-w-10 rounded-full px-3 text-[10px] font-black font-['JetBrains_Mono'] transition-all ${
+                          chartRange === range
+                            ? 'bg-slate-950 text-white shadow-sm'
+                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   {analysis && !analysis.error && (
                     <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
                   )}
@@ -2279,7 +2371,7 @@ export default function Home() {
             <button
               onClick={handleEmailAuth}
               disabled={authLoading}
-              className="w-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-sm py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk']"
+              className="force-light-text w-full bg-slate-950 border border-slate-800 font-bold uppercase tracking-widest text-sm py-3 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-40 font-['Space_Grotesk']"
             >
               {authLoading ? 'Please wait...' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
             </button>

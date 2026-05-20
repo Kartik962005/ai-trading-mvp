@@ -20,9 +20,11 @@ except Exception as e:
 _hist_cache: dict = {}
 _quote_cache: dict = {}
 _fundamentals_cache: dict = {}
+_nse_quote_cache: dict = {}
 HIST_TTL  = 3600   # 1 hour
 QUOTE_TTL = 15     # 15 seconds
 FUNDAMENTALS_TTL = 3600 * 6
+NSE_QUOTE_TTL = 3600
 
 
 def _clean_scalar(value):
@@ -50,6 +52,74 @@ def _first_non_null(*values):
         if cleaned is not None:
             return cleaned
     return None
+
+
+def _nse_symbol_from_ticker(ticker: str):
+    return ticker.upper().replace(".NS", "").replace(".BO", "")
+
+
+def get_nse_quote_data(ticker: str):
+    symbol = _nse_symbol_from_ticker(ticker)
+    now = time.time()
+    if symbol in _nse_quote_cache and now - _nse_quote_cache[symbol]["ts"] < NSE_QUOTE_TTL:
+        return _nse_quote_cache[symbol]["data"]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": f"https://www.nseindia.com/get-quotes/equity?symbol={symbol}",
+    }
+
+    session = requests.Session()
+    try:
+        session.get("https://www.nseindia.com", headers=headers, timeout=6)
+        quote = session.get(
+            "https://www.nseindia.com/api/quote-equity",
+            params={"symbol": symbol},
+            headers=headers,
+            timeout=8,
+        ).json()
+        trade_info = session.get(
+            "https://www.nseindia.com/api/quote-equity",
+            params={"symbol": symbol, "section": "trade_info"},
+            headers=headers,
+            timeout=8,
+        ).json()
+    except Exception as e:
+        print(f"[NSE] quote lookup failed for {symbol}: {e}")
+        return {}
+
+    price_info = quote.get("priceInfo", {})
+    metadata = quote.get("metadata", {})
+    security_info = quote.get("securityInfo", {})
+    industry_info = quote.get("industryInfo", {})
+    trade = trade_info.get("marketDeptOrderBook", {}).get("tradeInfo", {})
+
+    week_range = price_info.get("weekHighLow", {})
+    intraday = price_info.get("intraDayHighLow", {})
+    result = {
+        "symbol": symbol,
+        "company_name": _first_non_null(metadata.get("companyName"), quote.get("info", {}).get("companyName")),
+        "industry": _first_non_null(industry_info.get("industry"), metadata.get("industry")),
+        "sector": _first_non_null(industry_info.get("sector"), metadata.get("pdSectorInd")),
+        "current_price": _first_non_null(price_info.get("lastPrice")),
+        "previous_close": _first_non_null(price_info.get("previousClose")),
+        "day_high": _first_non_null(intraday.get("max")),
+        "day_low": _first_non_null(intraday.get("min")),
+        "high_52_week": _first_non_null(week_range.get("max")),
+        "low_52_week": _first_non_null(week_range.get("min")),
+        "market_cap": _first_non_null(trade.get("totalMarketCap")),
+        "free_float_market_cap": _first_non_null(trade.get("ffmc")),
+        "trailing_pe": _first_non_null(metadata.get("pdSymbolPe")),
+        "sector_pe": _first_non_null(metadata.get("pdSectorPe")),
+        "face_value": _first_non_null(security_info.get("faceValue")),
+        "isin": _first_non_null(metadata.get("isin")),
+        "listing_date": _first_non_null(metadata.get("listingDate")),
+        "source": "NSE",
+    }
+    _nse_quote_cache[symbol] = {"data": result, "ts": time.time()}
+    return result
 
 
 def _statement_to_table(df: pd.DataFrame | None, max_columns: int = 6, max_rows: int = 14):
@@ -92,6 +162,7 @@ def get_fundamentals_data(ticker: str):
     stock = yf.Ticker(ticker)
     info = {}
     fast_info = {}
+    nse_quote = get_nse_quote_data(ticker) if ticker.upper().endswith(".NS") else {}
 
     try:
         info = stock.info or {}
@@ -110,6 +181,7 @@ def get_fundamentals_data(ticker: str):
         print(f"[Fundamentals] history lookup failed for {ticker}: {e}")
 
     current_price = _first_non_null(
+        nse_quote.get("current_price"),
         fast_info.get("lastPrice"),
         fast_info.get("last_price"),
         info.get("currentPrice"),
@@ -117,17 +189,20 @@ def get_fundamentals_data(ticker: str):
         history["Close"].iloc[-1] if not history.empty else None,
     )
     previous_close = _first_non_null(
+        nse_quote.get("previous_close"),
         fast_info.get("previousClose"),
         fast_info.get("previous_close"),
         info.get("previousClose"),
     )
     week_high = _first_non_null(
+        nse_quote.get("high_52_week"),
         info.get("fiftyTwoWeekHigh"),
         fast_info.get("yearHigh"),
         fast_info.get("year_high"),
         history["High"].max() if not history.empty else None,
     )
     week_low = _first_non_null(
+        nse_quote.get("low_52_week"),
         info.get("fiftyTwoWeekLow"),
         fast_info.get("yearLow"),
         fast_info.get("year_low"),
@@ -147,9 +222,9 @@ def get_fundamentals_data(ticker: str):
     result = {
         "ticker": ticker,
         "company": {
-            "name": _first_non_null(info.get("longName"), info.get("shortName"), ticker),
-            "sector": _clean_scalar(info.get("sector")),
-            "industry": _clean_scalar(info.get("industry")),
+            "name": _first_non_null(nse_quote.get("company_name"), info.get("longName"), info.get("shortName"), ticker),
+            "sector": _first_non_null(nse_quote.get("sector"), info.get("sector")),
+            "industry": _first_non_null(nse_quote.get("industry"), info.get("industry")),
             "website": _clean_scalar(info.get("website")),
             "description": _clean_scalar(info.get("longBusinessSummary")),
             "city": _clean_scalar(info.get("city")),
@@ -160,10 +235,14 @@ def get_fundamentals_data(ticker: str):
         "summary": {
             "current_price": current_price,
             "previous_close": previous_close,
-            "market_cap": _first_non_null(fast_info.get("marketCap"), fast_info.get("market_cap"), info.get("marketCap")),
+            "market_cap": _first_non_null(nse_quote.get("market_cap"), fast_info.get("marketCap"), fast_info.get("market_cap"), info.get("marketCap")),
+            "market_cap_unit": "crore" if nse_quote.get("market_cap") is not None else "raw",
             "high_52_week": week_high,
             "low_52_week": week_low,
-            "trailing_pe": _clean_scalar(info.get("trailingPE")),
+            "day_high": _clean_scalar(nse_quote.get("day_high")),
+            "day_low": _clean_scalar(nse_quote.get("day_low")),
+            "trailing_pe": _first_non_null(nse_quote.get("trailing_pe"), info.get("trailingPE")),
+            "sector_pe": _clean_scalar(nse_quote.get("sector_pe")),
             "forward_pe": _clean_scalar(info.get("forwardPE")),
             "book_value": _clean_scalar(info.get("bookValue")),
             "price_to_book": _clean_scalar(info.get("priceToBook")),
@@ -180,12 +259,16 @@ def get_fundamentals_data(ticker: str):
             "total_cash": _clean_scalar(info.get("totalCash")),
             "total_debt": _clean_scalar(info.get("totalDebt")),
             "recommendation": _clean_scalar(info.get("recommendationKey")),
+            "face_value": _clean_scalar(nse_quote.get("face_value")),
+            "isin": _clean_scalar(nse_quote.get("isin")),
+            "listing_date": _clean_scalar(nse_quote.get("listing_date")),
             "quote_type": _clean_scalar(info.get("quoteType")),
             "currency": _clean_scalar(info.get("currency")),
             "exchange": _clean_scalar(info.get("exchange")),
         },
         "ratios": [
-            {"label": "Trailing P/E", "value": _clean_scalar(info.get("trailingPE")), "kind": "number"},
+            {"label": "Trailing P/E", "value": _first_non_null(nse_quote.get("trailing_pe"), info.get("trailingPE")), "kind": "number"},
+            {"label": "Sector P/E", "value": _clean_scalar(nse_quote.get("sector_pe")), "kind": "number"},
             {"label": "Forward P/E", "value": _clean_scalar(info.get("forwardPE")), "kind": "number"},
             {"label": "Price / Book", "value": _clean_scalar(info.get("priceToBook")), "kind": "number"},
             {"label": "Dividend Yield", "value": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None, "kind": "percent"},
@@ -200,11 +283,43 @@ def get_fundamentals_data(ticker: str):
             "balance_sheet": _statement_to_table(annual_balance, max_columns=8, max_rows=14),
             "cash_flow": _statement_to_table(annual_cash_flow, max_columns=8, max_rows=14),
         },
-        "source": "yfinance",
+        "source": "NSE + yfinance fallback" if nse_quote else "yfinance",
     }
 
     _fundamentals_cache[ticker] = {"data": result, "ts": time.time()}
     return result
+
+
+def get_chart_data(ticker: str, range_key: str = "1y"):
+    range_key = (range_key or "1y").lower()
+    options = {
+        "1d": ("1d", "5m"),
+        "1w": ("5d", "30m"),
+        "1mo": ("1mo", "1d"),
+        "1m": ("1mo", "1d"),
+        "1y": ("1y", "1d"),
+    }
+    period, interval = options.get(range_key, options["1y"])
+
+    if range_key in {"1y", "1m", "1mo"}:
+        df = get_historical_data(ticker, days=365)
+        if range_key in {"1m", "1mo"}:
+            df = df.tail(31).copy()
+    else:
+        raw = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+        if raw is None or len(raw) == 0:
+            raise ValueError(f"No chart data found for ticker '{ticker}'.")
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = raw.columns.get_level_values(0)
+        raw.reset_index(inplace=True)
+        raw.columns = [str(c).lower() for c in raw.columns]
+        date_col = "datetime" if "datetime" in raw.columns else "date"
+        df = raw[[date_col, "open", "high", "low", "close", "volume"]].copy()
+        df = df.rename(columns={date_col: "date"}).dropna()
+
+    if df.empty:
+        raise ValueError(f"No valid chart data for ticker '{ticker}'.")
+    return df
 
 
 def get_latest_quote(ticker: str):
