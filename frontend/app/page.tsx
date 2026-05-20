@@ -1574,14 +1574,17 @@ export default function Home() {
       return;
     }
     setAuthLoading(true);
+    setAuthError('');
     try {
       const sb = await getSupabaseClient();
+      // Always redirect back to the exact origin so it works on Vercel, localhost, etc.
+      const redirectTo = window.location.origin + '/';
       await sb.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: `${window.location.origin}${window.location.pathname}` }
+        options: { redirectTo },
       });
     } catch (err: any) {
-      setAuthError(err.message);
+      setAuthError(err.message || 'Google sign-in failed. Try again.');
     } finally {
       setAuthLoading(false);
     }
@@ -2084,53 +2087,100 @@ export default function Home() {
         }
       `}} />
 
-      <div className="bullseye-light min-h-screen text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
+      {/* APPLE-STYLE WELCOME OVERLAY — outside bullseye-light so its CSS doesn't override text colors */}
+      {showWelcome && (
+        <div
+          className="welcome-overlay fixed inset-0 z-[9999] pointer-events-none flex items-center justify-center"
+          style={{
+            /* Blur the site behind + dark vignette at corners, visible in middle */
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            background: 'radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.60) 55%, rgba(0,0,0,0.90) 100%)',
+          }}
+        >
+          {/* Frosted dark card that holds the text — readable on any background */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '14px',
+            userSelect: 'none',
+            padding: 'clamp(32px,5vw,56px) clamp(40px,8vw,80px)',
+            background: 'rgba(3,7,18,0.82)',
+            borderRadius: '32px',
+            border: '1px solid rgba(6,182,212,0.14)',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.04), 0 40px 100px rgba(0,0,0,0.55), 0 0 80px rgba(6,182,212,0.07)',
+            textAlign: 'center',
+            maxWidth: '92vw',
+          }}>
+            <span
+              className="welcome-word"
+              style={{
+                animationDelay: '0.12s',
+                fontSize: '12px',
+                letterSpacing: '0.38em',
+                textTransform: 'uppercase',
+                fontWeight: 400,
+                color: '#22d3ee',
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              Bullseye
+            </span>
 
-        {/* APPLE-STYLE WELCOME OVERLAY */}
-        {showWelcome && (
-          <div
-            className="welcome-overlay fixed inset-0 z-[9999] flex flex-col items-center justify-center pointer-events-none"
-            style={{
-              background: 'radial-gradient(ellipse at 50% 42%, rgba(8,145,178,0.18) 0%, rgba(0,0,0,0.92) 65%, rgba(0,0,0,0.97) 100%)',
-              backdropFilter: 'blur(2px)',
-            }}
-          >
-            <div className="flex flex-col items-center gap-3 select-none">
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }}>
               <span
-                className="welcome-word text-[13px] sm:text-[15px] tracking-[0.32em] uppercase font-light text-cyan-300/80 font-['Inter']"
-                style={{ animationDelay: '0.15s' }}
+                className="welcome-word"
+                style={{
+                  animationDelay: '0.35s',
+                  fontSize: 'clamp(34px, 7vw, 70px)',
+                  fontWeight: 900,
+                  letterSpacing: '-0.02em',
+                  color: '#f8fafc',
+                  lineHeight: 1,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                }}
               >
-                Bullseye
+                Welcome,
               </span>
-              <div className="flex items-baseline gap-3 sm:gap-4 flex-wrap justify-center">
-                <span
-                  className="welcome-word text-[42px] sm:text-[64px] md:text-[76px] font-black tracking-tight text-white leading-none font-['Space_Grotesk']"
-                  style={{ animationDelay: '0.4s' }}
-                >
-                  Welcome,
-                </span>
-                <span
-                  className="welcome-word text-[42px] sm:text-[64px] md:text-[76px] font-black tracking-tight leading-none font-['Space_Grotesk']"
-                  style={{
-                    animationDelay: '0.72s',
-                    background: 'linear-gradient(135deg, #67e8f9 0%, #22d3ee 40%, #34d399 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                  }}
-                >
-                  {welcomeName}
-                </span>
-              </div>
               <span
-                className="welcome-word text-[13px] sm:text-[15px] text-slate-400/70 font-light tracking-wide mt-1 font-['Inter']"
-                style={{ animationDelay: '1.05s' }}
+                className="welcome-word"
+                style={{
+                  animationDelay: '0.65s',
+                  fontSize: 'clamp(34px, 7vw, 70px)',
+                  fontWeight: 900,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  background: 'linear-gradient(135deg, #67e8f9 0%, #22d3ee 45%, #34d399 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
               >
-                Your market intelligence, ready.
+                {welcomeName}
               </span>
             </div>
+
+            <span
+              className="welcome-word"
+              style={{
+                animationDelay: '1.0s',
+                fontSize: '14px',
+                color: '#94a3b8',
+                fontWeight: 400,
+                letterSpacing: '0.04em',
+                marginTop: '2px',
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              Your market intelligence, ready.
+            </span>
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="bullseye-light min-h-screen text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
 
         {/* BACKGROUND */}
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
