@@ -49,6 +49,50 @@ function normalizeStrategyEvals(strategyEvals: any) {
     .sort((a, b) => b.score - a.score);
 }
 
+function toFiniteNumber(value: any, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function getAnalysisPresentation(analysis: any) {
+  if (!analysis || analysis.error) return null;
+
+  const entry = toFiniteNumber(analysis.entry, toFiniteNumber(analysis.current_price, 0));
+  const target = toFiniteNumber(analysis.target, entry);
+  const stopLoss = toFiniteNumber(analysis.stop_loss, entry);
+  const originalVerdict = String(analysis.verdict ?? '').trim();
+
+  const bullishSetup = target > entry && stopLoss < entry;
+  const bearishSetup = target < entry && stopLoss > entry;
+
+  let displayVerdict = originalVerdict || 'Hold';
+
+  if (bearishSetup) {
+    displayVerdict = originalVerdict.includes('Strong') ? 'Strong Sell' : 'Sell';
+  } else if (bullishSetup) {
+    displayVerdict = /sell/i.test(originalVerdict)
+      ? originalVerdict.includes('Strong') ? 'Strong Buy' : 'Buy'
+      : originalVerdict || 'Buy';
+  }
+
+  const direction = bearishSetup ? 'bearish' : bullishSetup ? 'bullish' : 'neutral';
+  const isBullish = direction === 'bullish' || /buy/i.test(displayVerdict);
+  const isBearish = direction === 'bearish' || /sell/i.test(displayVerdict);
+
+  return {
+    ...analysis,
+    entry,
+    target,
+    stop_loss: stopLoss,
+    displayVerdict,
+    direction,
+    isBullish,
+    isBearish,
+    isHold: !isBullish && !isBearish,
+    confidenceLevel: toFiniteNumber(analysis.fiso_score, 0),
+  };
+}
+
 const MONTH_INDEX: Record<string, string> = {
   jan: '01', january: '01',
   feb: '02', february: '02',
@@ -190,6 +234,7 @@ function buildMarketAnswer(prompt: string, analysis: any, ticker: string, curren
   const latest = candles[candles.length - 1];
   const wantsNowPrice = /\b(current|now|today|latest|live).*\b(price|close|value)\b|\b(price|close|value).*\b(current|now|today|latest|live)\b/i.test(prompt);
   const wantsPrediction = /\b(should i buy|buy or sell|prediction|target|stop loss|forecast|verdict|recommend)\b/i.test(prompt);
+  const analysisView = getAnalysisPresentation(analysis);
 
   if (wantsNowPrice && latest) {
     return {
@@ -205,16 +250,16 @@ function buildMarketAnswer(prompt: string, analysis: any, ticker: string, curren
     };
   }
 
-  if (wantsPrediction && analysis && !analysis.error) {
+  if (wantsPrediction && analysisView) {
     return {
       type: 'assistant_answer',
       title: 'Bullseye read',
-      answer: `${ticker} is currently marked ${analysis.verdict} with ${analysis.confidence}% confidence. Entry is ${currency}${analysis.entry}, target is ${currency}${analysis.target}, and stop loss is ${currency}${analysis.stop_loss}.`,
+      answer: `${ticker} is currently marked ${analysisView.displayVerdict}. Entry is ${currency}${analysisView.entry}, target is ${currency}${analysisView.target}, stop loss is ${currency}${analysisView.stop_loss}, and the FISO confidence level is ${analysisView.confidenceLevel}/100.`,
       rows: [
-        ['FISO score', analysis.fiso_score],
-        ['Estimated days', analysis.estimated_days],
-        ['Target date', analysis.target_date],
-        ['Best strategy', STRATEGY_NAMES[analysis.best_strategy_id] ?? `Strategy ${analysis.best_strategy_id}`],
+        ['FISO confidence level', analysisView.confidenceLevel],
+        ['Estimated days', analysisView.estimated_days],
+        ['Target date', analysisView.target_date],
+        ['Best strategy', STRATEGY_NAMES[analysisView.best_strategy_id] ?? `Strategy ${analysisView.best_strategy_id}`],
       ],
     };
   }
@@ -280,12 +325,14 @@ const MarketAssetCard = ({
 
   // Prefer prefetched; fall back to on-demand fetch
   const analysis = prefetchedAnalysis ?? fetchedAnalysis;
-  const isReady = !!analysis && !analysis.error;
-  const isPrefetching = !analysis; // still loading in background
+  const analysisView = getAnalysisPresentation(analysis);
+  const isReady = !!analysisView;
+  const isPrefetching = !analysisView; // still loading in background
 
-  const isBull = analysis?.verdict?.includes('Buy');
-  const isHold = analysis?.verdict === 'Hold';
+  const isBull = analysisView?.isBullish;
+  const isHold = analysisView?.isHold;
   const verdictColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
+  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : 'Loading';
 
   // Mini verdict dot shown even before hover when prefetch is done
   const dotColor = isReady
@@ -301,7 +348,7 @@ const MarketAssetCard = ({
         <span className={`min-w-0 flex-1 truncate text-[10px] sm:text-[11px] font-bold font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-400' : 'text-zinc-500 group-hover:text-cyan-400'}`}>{stock.symbol}</span>
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Live verdict dot — green/red/grey based on prefetch status */}
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysis.verdict : 'Loading...'} />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Loading...'} />
           <span className="text-[8px] sm:text-[9px] bg-white/5 px-1.5 sm:px-2 py-0.5 rounded text-zinc-400 font-['JetBrains_Mono']">{stock.exchange}</span>
           <button
             type="button"
@@ -316,46 +363,41 @@ const MarketAssetCard = ({
       </div>
       <div className="font-bold text-sm text-zinc-200 group-hover:text-white font-['Space_Grotesk'] truncate">{stock.name}</div>
 
-      {/* FISO score mini-bar shown even before hover if prefetch is done */}
-      {isReady && !expanded && (
-        <div className="mt-2 flex items-center gap-2">
-          <div className="flex-1 h-0.5 bg-white/5 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-1000"
-              style={{
-                width: `${analysis.fiso_score}%`,
-                backgroundColor: isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171',
-              }}
-            />
-          </div>
-          <span className={`text-[9px] font-bold font-['JetBrains_Mono'] ${verdictColor}`}>
-            {analysis.verdict?.replace('Strong ', '')}
-          </span>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="flex-1 h-0.5 bg-white/5 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-1000 ${isReady ? '' : 'animate-pulse'}`}
+            style={{
+              width: `${isReady ? analysisView.confidenceLevel : 28}%`,
+              backgroundColor: isReady ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171') : '#94a3b8',
+            }}
+          />
         </div>
-      )}
+        <span className={`shrink-0 text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk'] ${
+          isReady ? verdictColor : 'text-zinc-400'
+        }`}>
+          {verdictBadge}
+        </span>
+      </div>
 
       <div className={`transition-all duration-300 ease-in-out ${expanded ? 'max-h-52 opacity-100 mt-4 border-t border-white/10 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
         {isReady ? (
           <div className="space-y-2.5">
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Verdict</span>
-              <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysis.verdict}</span>
+              <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysisView.displayVerdict}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">FISO Score</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysis.fiso_score}/100</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Confidence</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysis.confidence}%</span>
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">FISO Confidence Level</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-white font-bold">{analysisView.confidenceLevel}/100</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Target</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-green-400 font-bold">{stock.currency}{analysis.target}</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-green-400 font-bold">{stock.currency}{analysisView.target}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Stop Loss</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-red-400 font-bold">{stock.currency}{analysis.stop_loss}</span>
+              <span className="text-sm font-['JetBrains_Mono'] text-red-400 font-bold">{stock.currency}{analysisView.stop_loss}</span>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onSelect(stock); }}
@@ -379,17 +421,32 @@ const MarketAssetCard = ({
 
 // ─── DETAILED FISO PANEL ──────────────────────────────────────────────────────
 const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: any; currency: string; ticker: string; chartData: any }) => {
-  if (!analysis || analysis.error) return null;
+  const analysisView = getAnalysisPresentation(analysis);
+  if (!analysisView) return null;
 
-  const isBull = analysis.verdict?.includes('Buy');
-  const isHold = analysis.verdict === 'Hold';
+  const isBull = analysisView.isBullish;
+  const isHold = analysisView.isHold;
   const accentColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
   const accentBg = isBull ? 'bg-green-500/10 border-green-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-red-500/10 border-red-500/30';
   const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(74,222,128,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(239,68,68,0.15)]';
-  const priceDiff = analysis.target - analysis.entry;
-  const pricePct = ((priceDiff / analysis.entry) * 100).toFixed(2);
-  const slPct = (((analysis.stop_loss - analysis.entry) / analysis.entry) * 100).toFixed(2);
-  const rr = Math.abs(priceDiff / (analysis.stop_loss - analysis.entry)).toFixed(2);
+  const targetMovePctValue = analysisView.entry
+    ? (analysisView.direction === 'bearish'
+      ? ((analysisView.entry - analysisView.target) / analysisView.entry) * 100
+      : ((analysisView.target - analysisView.entry) / analysisView.entry) * 100)
+    : 0;
+  const stopRiskPctValue = analysisView.entry
+    ? (analysisView.direction === 'bearish'
+      ? ((analysisView.stop_loss - analysisView.entry) / analysisView.entry) * 100
+      : ((analysisView.entry - analysisView.stop_loss) / analysisView.entry) * 100)
+    : 0;
+  const targetMovePct = targetMovePctValue.toFixed(2);
+  const stopRiskPct = stopRiskPctValue.toFixed(2);
+  const rr = (stopRiskPctValue > 0 ? targetMovePctValue / stopRiskPctValue : 0).toFixed(2);
+  const setupLabel = analysisView.direction === 'bearish'
+    ? 'Sell-side target'
+    : analysisView.direction === 'bullish'
+      ? 'Buy-side target'
+      : 'Balanced setup';
 
   // AI search state (lifted into FisoDetailPanel so it lives next to the section)
   const [aiPrompt, setAiPrompt] = useState('');
@@ -456,6 +513,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
   };
 
   const topStrategies = normalizeStrategyEvals(analysis?.strategy_evals).slice(0, 10);
+  const [showAllStrategies, setShowAllStrategies] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
@@ -467,39 +525,44 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         <div className={`lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-6 flex flex-col justify-between ${accentBg} ${accentGlow}`}>
           <div>
             <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Algorithm Verdict</span>
-            <div className={`text-5xl font-black uppercase tracking-tighter font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysis.verdict}</div>
+            <div className={`text-5xl font-black uppercase tracking-tighter font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysisView.displayVerdict}</div>
           </div>
           <div>
-            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Confidence</span>
-            <div className="flex items-end gap-2">
-              <span className="text-3xl font-['JetBrains_Mono'] font-bold text-white">{analysis.confidence}</span>
-              <span className="text-zinc-400 text-lg mb-0.5">%</span>
-            </div>
-            <div className="w-full bg-zinc-800 rounded-full h-1 mt-2 overflow-hidden">
-              <div className={`h-full rounded-full ${isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-500'}`} style={{ width: `${analysis.confidence}%` }} />
-            </div>
+            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Trade Setup</span>
+            <div className="text-2xl font-['Space_Grotesk'] font-black text-white">{setupLabel}</div>
+            <p className="text-[10px] text-zinc-400 mt-2 font-['JetBrains_Mono']">
+              Target and stop loss are aligned with the displayed verdict.
+            </p>
           </div>
         </div>
 
         {/* FISO Score */}
         <div className="lg:col-span-3 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 flex flex-col justify-between">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">FISO Math Score</span>
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">FISO Confidence Level</span>
           <div>
             <div className="flex items-end gap-1 mb-3">
-              <span className="text-5xl font-['JetBrains_Mono'] font-bold text-white">{analysis.fiso_score}</span>
+              <span className="text-5xl font-['JetBrains_Mono'] font-bold text-white">{analysisView.confidenceLevel}</span>
               <span className="text-zinc-600 text-xl mb-1">/100</span>
             </div>
             <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden mb-4">
               <div className="h-full rounded-full bg-gradient-to-r from-red-500 via-zinc-400 to-green-400 transition-all duration-1000"
-                style={{ width: `${analysis.fiso_score}%` }} />
+                style={{ width: `${analysisView.confidenceLevel}%` }} />
             </div>
-            <div className="grid grid-cols-4 gap-1 text-center">
-              {[['0-20', 'Sell'], ['20-40', 'Weak'], ['40-75', 'Hold'], ['75-100', 'Buy']].map(([range, label]) => (
-                <div key={label} className={`rounded-lg py-1 text-[8px] font-bold uppercase tracking-widest font-['JetBrains_Mono']
-                  ${analysis.fiso_score >= 75 && label === 'Buy' ? 'bg-green-500/30 text-green-400' :
-                    analysis.fiso_score >= 40 && analysis.fiso_score < 75 && label === 'Hold' ? 'bg-zinc-500/30 text-zinc-300' :
-                    analysis.fiso_score < 40 && (label === 'Sell' || label === 'Weak') ? 'bg-red-500/30 text-red-400' :
-                    'bg-white/5 text-zinc-600'}`}>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              {([
+                ['Sell', analysisView.direction === 'bearish'],
+                ['Buy', analysisView.direction === 'bullish'],
+              ] as Array<[string, boolean]>).map(([label, active]) => (
+                <div
+                  key={label}
+                  className={`rounded-lg py-1.5 text-[9px] font-bold uppercase tracking-widest font-['JetBrains_Mono'] ${
+                    active
+                      ? label === 'Buy'
+                        ? 'bg-green-500/25 text-green-400'
+                        : 'bg-red-500/25 text-red-400'
+                      : 'bg-white/5 text-zinc-500'
+                  }`}
+                >
                   {label}
                 </div>
               ))}
@@ -513,18 +576,22 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry Price</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysis.entry?.toLocaleString()}</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysisView.entry?.toLocaleString()}</span>
               <span className="text-[9px] text-zinc-500 block mt-1">Current position</span>
             </div>
             <div className="bg-green-500/10 border border-green-400/30 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Target Price</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-green-400">{currency}{analysis.target?.toLocaleString()}</span>
-              <span className="text-[9px] text-green-500/70 block mt-1">{priceDiff > 0 ? '+' : ''}{pricePct}% upside</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-green-400">{currency}{analysisView.target?.toLocaleString()}</span>
+              <span className="text-[9px] text-green-500/70 block mt-1">
+                {analysisView.direction === 'bearish' ? `${targetMovePct}% downside target` : `${targetMovePct}% upside target`}
+              </span>
             </div>
             <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Stop Loss</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-red-400">{currency}{analysis.stop_loss?.toLocaleString()}</span>
-              <span className="text-[9px] text-red-500/70 block mt-1">{slPct}% downside</span>
+              <span className="text-xl font-['JetBrains_Mono'] font-bold text-red-400">{currency}{analysisView.stop_loss?.toLocaleString()}</span>
+              <span className="text-[9px] text-red-500/70 block mt-1">
+                {analysisView.direction === 'bearish' ? `${stopRiskPct}% upside risk` : `${stopRiskPct}% downside risk`}
+              </span>
             </div>
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Risk:Reward</span>
@@ -536,11 +603,11 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       </div>
 
       {/* ── Row 2: Trade Timeline ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Trade Timeline</span>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
+      <div className="flex justify-start">
+        <div className="w-full max-w-4xl bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Trade Timeline</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between py-2.5 border-b border-white/5">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
                   <span className="text-green-400 text-xs font-bold">T</span>
@@ -552,7 +619,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               </div>
               <span className="font-['JetBrains_Mono'] text-green-400 font-bold text-sm">{analysis.estimated_days}d</span>
             </div>
-            <div className="flex items-center justify-between py-3 border-b border-white/5">
+            <div className="flex items-center justify-between py-2.5 border-b border-white/5">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
                   <span className="text-zinc-400 text-xs font-bold">⚡</span>
@@ -562,11 +629,11 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                   <span className="text-[10px] text-zinc-500">From current price</span>
                 </div>
               </div>
-              <span className={`font-['JetBrains_Mono'] font-bold text-sm ${priceDiff >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {priceDiff >= 0 ? '+' : ''}{pricePct}%
+              <span className={`font-['JetBrains_Mono'] font-bold text-sm ${analysisView.direction === 'bearish' ? 'text-red-400' : 'text-green-400'}`}>
+                {analysisView.direction === 'bearish' ? '-' : '+'}{targetMovePct}%
               </span>
             </div>
-            <div className="flex items-center justify-between py-3">
+            <div className="flex items-center justify-between py-2.5">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
                   <span className="text-zinc-400 text-xs font-bold">📊</span>
@@ -576,44 +643,36 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                   <span className="text-[10px] text-zinc-500">If stop loss triggered</span>
                 </div>
               </div>
-              <span className="font-['JetBrains_Mono'] font-bold text-sm text-red-400">{slPct}%</span>
+              <span className="font-['JetBrains_Mono'] font-bold text-sm text-red-400">{stopRiskPct}%</span>
             </div>
           </div>
         </div>
 
-        {/* Spacer column — NLP feed moved to bottom */}
-        <div className="lg:col-span-7 bg-black/20 backdrop-blur-2xl border border-white/5 rounded-3xl p-6 flex flex-col justify-center items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-400/20 to-fuchsia-600/20 border border-white/10 flex items-center justify-center">
-            <span className="text-xl">🧠</span>
-          </div>
-          <span className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk'] text-center">
-            Strategy Intelligence & NLP Feed below
-          </span>
-          <span className="text-[10px] text-zinc-600 font-['JetBrains_Mono'] text-center">
-            Ask prices by date · Test ideas · Read the news feed
-          </span>
-        </div>
       </div>
 
       {/* ── Section 3: AI Market Search ── */}
-      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-        <h3 className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase mb-4 border-b border-white/10 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse inline-block"></span>
+      <div className="relative overflow-hidden bg-gradient-to-br from-cyan-500/12 via-black/45 to-fuchsia-500/10 backdrop-blur-2xl border border-cyan-400/25 rounded-3xl p-4 sm:p-6 shadow-[0_14px_40px_rgba(6,182,212,0.16)] ring-1 ring-cyan-400/10">
+        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.16),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(217,70,239,0.10),transparent_30%)]" />
+        <h3 className="relative text-[10px] font-bold text-cyan-200 tracking-[0.2em] uppercase mb-2 border-b border-cyan-300/15 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-cyan-300 animate-pulse inline-block"></span>
           AI Market Search
         </h3>
+        <p className="relative text-[11px] text-cyan-100/75 font-['JetBrains_Mono'] mb-4">
+          Ask Bullseye for dated prices, trade ideas, profit and loss checks, or custom backtests.
+        </p>
 
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex flex-col sm:flex-row gap-3">
           <input
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask a price question or test a strategy, e.g. opening price on 12th Feb"
-            className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 placeholder-zinc-600 transition-all"
+            className="flex-1 bg-white/8 border border-cyan-300/25 rounded-xl px-4 py-3.5 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20 placeholder-cyan-100/40 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
           />
           <button
             onClick={handleAiSearch}
             disabled={isAiRunning || !aiPrompt.trim()}
-            className="bg-cyan-500/20 border border-cyan-400/50 text-cyan-400 font-bold uppercase tracking-widest text-xs px-6 py-3 rounded-xl hover:bg-cyan-500/30 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0"
+            className="bg-cyan-400/18 border border-cyan-300/55 text-cyan-200 font-bold uppercase tracking-widest text-xs px-6 py-3.5 rounded-xl hover:bg-cyan-400/28 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0 shadow-[0_12px_28px_rgba(34,211,238,0.12)]"
           >
             {isAiRunning ? 'Thinking...' : 'Ask AI'}
           </button>
@@ -901,9 +960,22 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               </span>
             </div>
           </div>
-          <span className="text-[9px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono'] self-start sm:self-auto">
-            {topStrategies.length} Active Signals
-          </span>
+          <div className="flex items-center gap-3 self-start sm:self-auto">
+            <span className="text-[9px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono']">
+              {topStrategies.length} Active Signals
+            </span>
+            {topStrategies.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAllStrategies(prev => !prev)}
+                className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-cyan-500 hover:bg-cyan-500/10 hover:border-cyan-400/40 transition-all flex items-center justify-center"
+                aria-label={showAllStrategies ? 'Collapse strategies list' : 'Expand strategies list'}
+                aria-expanded={showAllStrategies}
+              >
+                <span className={`text-sm transition-transform ${showAllStrategies ? 'rotate-180' : ''}`}>⌄</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {topStrategies.length === 0 ? (
@@ -911,7 +983,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Computing signal matrix...</span>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className={`overflow-hidden transition-all duration-300 ${showAllStrategies ? 'max-h-[2200px] opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className="flex flex-col gap-3">
             {topStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
               // Using #4ade80 for strong buy (green) and #f87171 for weak/sell (red)
@@ -963,6 +1036,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                 </div>
               );
             })}
+            </div>
           </div>
         )}
       </div>
@@ -972,7 +1046,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse inline-block"></span>
-            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Global NLP Feed</span>
+            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Stock News</span>
           </div>
           <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
             ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
@@ -996,7 +1070,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-zinc-600 inline-block"></span>
           <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
-            Sentiment derived via NLP · Refreshed on each analysis
+            News sentiment derived via NLP - refreshed on each analysis
           </span>
         </div>
       </div>
@@ -1004,8 +1078,6 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
     </div>
   );
 };
-
-// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Home() {
   const [ticker, setTicker] = useState<string | null>(null);
   const [currency, setCurrency] = useState('₹');
@@ -1019,6 +1091,7 @@ export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -1028,6 +1101,7 @@ export default function Home() {
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const supabaseRef = useRef<any>(null);
 
   // Check if Supabase is available
   const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1035,22 +1109,56 @@ export default function Home() {
   const supabaseAvailable = !!(supabaseUrl && supabaseKey);
 
   useEffect(() => {
-    if (!supabaseAvailable) return;
-    // Dynamically import Supabase client
+    let mounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    if (!supabaseAvailable) {
+      setAuthReady(true);
+      return () => {};
+    }
+
+    setAuthReady(false);
+
     import('@supabase/supabase-js').then(({ createClient }) => {
-      const sb = createClient(supabaseUrl!, supabaseKey!);
-      sb.auth.getSession().then(({ data }) => {
-        setUser(data.session?.user ?? null);
+      if (!mounted) return;
+
+      if (!supabaseRef.current) {
+        supabaseRef.current = createClient(supabaseUrl!, supabaseKey!);
+      }
+
+      const sb = supabaseRef.current;
+
+      sb.auth.getSession().then((result: any) => {
+        if (!mounted) return;
+        setUser(result?.data?.session?.user ?? null);
+        setAuthReady(true);
       });
-      sb.auth.onAuthStateChange((_event, session) => {
+
+      const authListener = sb.auth.onAuthStateChange((_event: string, session: any) => {
+        if (!mounted) return;
         setUser(session?.user ?? null);
+        setAuthReady(true);
         if (session?.user) {
           setShowAuthModal(false);
           setShowProfileMenu(false);
+          setAuthEmail('');
+          setAuthPassword('');
+          setAuthError('');
+          setAuthSuccess('');
         }
       });
-    }).catch(() => {});
-  }, [supabaseAvailable]);
+
+      subscription = authListener.data.subscription;
+    }).catch(() => {
+      if (!mounted) return;
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
+  }, [supabaseAvailable, supabaseKey, supabaseUrl]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -1065,8 +1173,10 @@ export default function Home() {
   }, [showProfileMenu]);
 
   const getSupabaseClient = async () => {
+    if (supabaseRef.current) return supabaseRef.current;
     const { createClient } = await import('@supabase/supabase-js');
-    return createClient(supabaseUrl!, supabaseKey!);
+    supabaseRef.current = createClient(supabaseUrl!, supabaseKey!);
+    return supabaseRef.current;
   };
 
   const handleGoogleSignIn = async () => {
@@ -1079,7 +1189,7 @@ export default function Home() {
       const sb = await getSupabaseClient();
       await sb.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin }
+        options: { redirectTo: `${window.location.origin}${window.location.pathname}` }
       });
     } catch (err: any) {
       setAuthError(err.message);
@@ -1106,6 +1216,8 @@ export default function Home() {
           setUser(data.user);
           setShowAuthModal(false);
           setShowProfileMenu(false);
+          setAuthEmail('');
+          setAuthPassword('');
           goHome();
         }
         setAuthSuccess('Account created! Check your email to verify.');
@@ -1115,6 +1227,8 @@ export default function Home() {
         setUser(data.user ?? null);
         setShowAuthModal(false);
         setShowProfileMenu(false);
+        setAuthEmail('');
+        setAuthPassword('');
         goHome();
       }
     } catch (err: any) {
@@ -1223,10 +1337,14 @@ export default function Home() {
   useEffect(() => {
     if (!ticker || !chartData || !chartRef.current || !Array.isArray(chartData) || chartData.length === 0) return;
     chartRef.current.innerHTML = '';
+    let cleanup = () => {};
+    let cancelled = false;
     import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
-      const chart = createChart(chartRef.current!, {
-        width: chartRef.current!.clientWidth || 800,
-        height: 320,
+      if (cancelled || !chartRef.current) return;
+      const container = chartRef.current;
+      const chart = createChart(container, {
+        width: container.clientWidth || 800,
+        height: container.clientHeight || 320,
         layout: { background: { color: 'transparent' }, textColor: '#475569' },
         grid: { vertLines: { color: 'rgba(15,23,42,0.08)' }, horzLines: { color: 'rgba(15,23,42,0.08)' } },
         crosshair: { mode: 1 },
@@ -1245,7 +1363,23 @@ export default function Home() {
         }));
       candleSeries.setData(formattedData);
       chart.timeScale().fitContent();
+      const resizeObserver = new ResizeObserver(() => {
+        chart.applyOptions({
+          width: container.clientWidth || 800,
+          height: container.clientHeight || 320,
+        });
+        chart.timeScale().fitContent();
+      });
+      resizeObserver.observe(container);
+      cleanup = () => {
+        resizeObserver.disconnect();
+        chart.remove();
+      };
     });
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
   }, [chartData, ticker]);
 
   const selectStock = (stock: typeof STOCKS[0]) => {
@@ -1275,8 +1409,8 @@ export default function Home() {
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
   const prefetchedRef = useRef<Set<string>>(new Set());
 
-  // Hydrate visible cards from browser cache. Fresh analysis is fetched on
-  // hover/open instead of starting a prediction batch on every page reload.
+  // Hydrate visible cards from browser cache, then batch-fetch fresh analysis
+  // so every visible card can show its verdict without opening the preview.
   useEffect(() => {
     const visibleStocks = getMarketStocks();
     const cachedVisible = visibleStocks.reduce((acc, stock) => {
@@ -1289,8 +1423,6 @@ export default function Home() {
       setPrefetchCache(prev => ({ ...cachedVisible, ...prev }));
       Object.keys(cachedVisible).forEach(t => prefetchedRef.current.add(t));
     }
-
-    if (Date.now() >= 0) return;
 
     const toFetch = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker));
     if (toFetch.length === 0) return;
@@ -1316,8 +1448,9 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMarket]);
 
-  const isBull = analysis?.verdict?.includes('Buy');
-  const isHold = analysis?.verdict === 'Hold';
+  const dashboardAnalysisView = getAnalysisPresentation(analysis);
+  const isBull = dashboardAnalysisView?.isBullish;
+  const isHold = dashboardAnalysisView?.isHold;
   const accentColor = isBull ? 'text-green-400 drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]' : isHold ? 'text-zinc-300' : 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]';
 
   const TickerContent = () => (
@@ -1461,7 +1594,7 @@ export default function Home() {
           <div ref={accountMenuRef} className="relative shrink-0 self-end md:self-auto">
             <button
               type="button"
-              onPointerDown={(e) => { e.stopPropagation(); setShowProfileMenu(prev => !prev); }}
+              onClick={() => setShowProfileMenu(prev => !prev)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -1486,8 +1619,8 @@ export default function Home() {
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 top-full mt-3 z-50 w-[min(calc(100vw-2rem),20rem)] max-h-[calc(100vh-9rem)] overflow-y-auto rounded-2xl border border-white/10 bg-white/95 text-slate-900 shadow-2xl p-4 sm:p-5">
-                {user ? (
+              <div className="absolute right-0 top-full mt-3 z-50 w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-9rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-[0_28px_65px_rgba(15,23,42,0.28)] p-4 sm:p-5">
+                {authReady && user ? (
                   <>
                     <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-4">
                       <div className="w-12 h-12 rounded-full bg-cyan-100 text-cyan-700 font-black flex items-center justify-center overflow-hidden shrink-0">
@@ -1532,6 +1665,14 @@ export default function Home() {
                       Sign Out
                     </button>
                   </>
+                ) : !authReady && supabaseAvailable ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-6">
+                    <div className="w-6 h-6 border-2 border-slate-200 border-t-cyan-500 rounded-full animate-spin" />
+                    <div className="text-center">
+                      <div className="text-[10px] uppercase tracking-widest text-cyan-700 font-black font-['Space_Grotesk']">Loading Account</div>
+                      <div className="text-xs text-slate-500 mt-1 font-['JetBrains_Mono']">Checking your sign-in session...</div>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <div className="mb-4">
@@ -1631,11 +1772,11 @@ export default function Home() {
               </div>
 
               {/* Chart */}
-              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
+              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden">
                 <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-3">
                   <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk']">Chart Geometry</span>
                   {analysis && !analysis.error && (
-                    <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] ${accentColor}`}>{analysis.verdict}</span>
+                    <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
                   )}
                 </div>
                 {!chartData ? (
@@ -1644,7 +1785,9 @@ export default function Home() {
                     Loading Data Stream...
                   </div>
                 ) : (
-                  <div ref={chartRef} className="w-full h-[260px] sm:h-[320px]" />
+                  <div className="w-full overflow-hidden rounded-2xl border border-white/5 bg-white/3">
+                    <div ref={chartRef} className="w-full h-[260px] sm:h-[320px] overflow-hidden" />
+                  </div>
                 )}
               </div>
 

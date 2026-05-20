@@ -39,6 +39,11 @@ from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
 
 
+def analyze_ticker_sync(ticker: str):
+    df = get_historical_data(ticker)
+    return run_analysis(df, ticker)
+
+
 @app.get("/health")
 async def health():
     return {"status": "Backend is running"}
@@ -79,11 +84,32 @@ async def chart(request: Request, ticker: str):
 @limiter.limit("3/minute")
 async def analyze(request: Request, ticker: str):
     try:
-        df = get_historical_data(ticker)
-        result = run_analysis(df, ticker)
-        return result
+        return analyze_ticker_sync(ticker)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/v1/analyze/batch")
+@limiter.limit("10/minute")
+async def analyze_batch(request: Request, tickers: str):
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="No tickers provided")
+    if len(ticker_list) > 24:
+        raise HTTPException(status_code=400, detail="Max 24 tickers per batch")
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=min(len(ticker_list), 6)) as executor:
+        tasks = [loop.run_in_executor(executor, analyze_ticker_sync, ticker) for ticker in ticker_list]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    payload = {}
+    for ticker, result in zip(ticker_list, results):
+        if isinstance(result, Exception):
+            payload[ticker] = {"error": str(result)}
+        else:
+            payload[ticker] = result
+    return payload
 
 
 @app.get("/api/v1/strategies/list")

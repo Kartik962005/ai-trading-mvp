@@ -267,11 +267,16 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     raw_fiso = trend_score + momentum_score + macd_score + (sentiment['score'] * 20.0)
     fiso = min(100.0, max(0.0, raw_fiso))
 
-    if fiso >= 75: verdict = "Strong Buy"
-    elif fiso >= 55: verdict = "Buy"
-    elif fiso >= 40: verdict = "Hold"
-    elif fiso >= 20: verdict = "Sell"
-    else: verdict = "Strong Sell"
+    if fiso >= 75:
+        verdict = "Strong Buy"
+    elif fiso >= 55:
+        verdict = "Buy"
+    elif fiso > 50:
+        verdict = "Hold"
+    elif fiso >= 20:
+        verdict = "Sell"
+    else:
+        verdict = "Strong Sell"
 
     atr_val = float(latest['ATR_14'])
     entry = float(latest['close'])
