@@ -162,14 +162,27 @@ function getIsoWeekday(day: string) {
   return value === 0 ? 7 : value;
 }
 
+function findWeekdayToken(text: string) {
+  return Object.keys(WEEKDAY_INDEX).find(day => new RegExp(`\\b${day}\\b`).test(text)) ?? null;
+}
+
+function getTradeClause(cleanPrompt: string, action: 'buy' | 'sell') {
+  const actionPattern = action === 'buy' ? '(?:buy|bought|enter|entry)' : '(?:sell|sold|exit)';
+  const stopPattern = action === 'buy' ? '(?=\\b(?:sell|sold|exit)\\b|$)' : '$';
+  const match = cleanPrompt.match(new RegExp(`\\b${actionPattern}\\b([\\s\\S]*?)${stopPattern}`));
+  return match?.[1]?.trim() ?? '';
+}
+
 function parseWeekdayTradePrompt(prompt: string) {
-  const clean = prompt.toLowerCase();
-  const buyDay = Object.keys(WEEKDAY_INDEX).find(day => new RegExp(`\\b(?:buy|bought|enter|entry).*\\b${day}\\b|\\b${day}\\b.*\\b(?:buy|bought|enter|entry)\\b`).test(clean));
-  const sellDay = Object.keys(WEEKDAY_INDEX).find(day => new RegExp(`\\b(?:sell|sold|exit).*\\b${day}\\b|\\b${day}\\b.*\\b(?:sell|sold|exit)\\b`).test(clean));
+  const clean = prompt.toLowerCase().replace(/[,.]/g, ' ');
+  const buyClause = getTradeClause(clean, 'buy');
+  const sellClause = getTradeClause(clean, 'sell');
+  const buyDay = findWeekdayToken(buyClause);
+  const sellDay = findWeekdayToken(sellClause);
   if (!buyDay || !sellDay) return null;
 
-  const buyField = /\b(?:buy|bought|enter|entry)[\s\S]{0,40}\b(opening|open)\b|\b(opening|open)\b[\s\S]{0,40}\b(?:buy|bought|enter|entry)\b/.test(clean) ? 'open' : 'close';
-  const sellField = /\b(?:sell|sold|exit)[\s\S]{0,40}\b(closing|close)\b|\b(closing|close)\b[\s\S]{0,40}\b(?:sell|sold|exit)\b/.test(clean) ? 'close' : 'open';
+  const buyField = /\b(opening|open)\b/.test(buyClause) ? 'open' : 'close';
+  const sellField = /\b(closing|close)\b/.test(sellClause) ? 'close' : 'open';
 
   return {
     buyDayName: buyDay,
@@ -179,6 +192,23 @@ function parseWeekdayTradePrompt(prompt: string) {
     buyField: buyField as 'open' | 'close',
     sellField: sellField as 'open' | 'close',
   };
+}
+
+function parseBacktestWindow(prompt: string) {
+  const clean = prompt.toLowerCase();
+  const forwardMatch = clean.match(/\b(?:coming|next|future|upcoming|ahead)(?:\s+\w+){0,2}\s+(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\b/) ??
+    clean.match(/\b(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\s*(?:from now|ahead|forward)\b/);
+  if (forwardMatch) {
+    return { mode: 'forecast' as const, days: Math.max(1, Number(forwardMatch[1])) };
+  }
+
+  const historicalMatch = clean.match(/\b(?:last|past|previous|recent)\s+(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\b/) ??
+    clean.match(/\b(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\s*(?:ago|history|historical)\b/);
+  if (historicalMatch) {
+    return { mode: 'historical' as const, days: Math.max(1, Number(historicalMatch[1])) };
+  }
+
+  return { mode: 'all' as const, days: null };
 }
 
 function summarizeTrades(trades: any[]) {
@@ -202,12 +232,18 @@ function summarizeTrades(trades: any[]) {
   };
 }
 
-function runWeekdayBacktest(prompt: string, chartData: any, ticker: string) {
-  const rule = parseWeekdayTradePrompt(prompt);
-  const candles = getChartCandles(chartData);
-  if (!rule || candles.length < 5) return null;
+function filterCandlesByCalendarDays(candles: any[], days: number | null) {
+  if (!days || candles.length === 0) return candles;
+  const latest = new Date(`${candles[candles.length - 1].day}T00:00:00`);
+  const cutoff = new Date(latest);
+  cutoff.setDate(cutoff.getDate() - days);
+  return candles.filter(candle => new Date(`${candle.day}T00:00:00`) >= cutoff);
+}
 
+function buildWeekdayTrades(candles: any[], rule: ReturnType<typeof parseWeekdayTradePrompt>) {
+  if (!rule) return [];
   const trades: any[] = [];
+
   for (let i = 0; i < candles.length - 1; i++) {
     const buyCandle = candles[i];
     if (getIsoWeekday(buyCandle.day) !== rule.buyDayIndex) continue;
@@ -235,9 +271,85 @@ function runWeekdayBacktest(prompt: string, chartData: any, ticker: string) {
     });
   }
 
-  const summary = summarizeTrades(trades);
+  return trades;
+}
+
+function buildProjectedWeekdayTrades(rule: ReturnType<typeof parseWeekdayTradePrompt>, candles: any[], days: number, historicalSummary: ReturnType<typeof summarizeTrades>) {
+  if (!rule || candles.length === 0) return [];
+  const latest = candles[candles.length - 1];
+  const latestClose = Number(latest.close);
+  const projectedTrades: any[] = [];
+  const cursor = new Date(`${latest.day}T00:00:00`);
+  const end = new Date(cursor);
+  end.setDate(end.getDate() + days);
+
+  cursor.setDate(cursor.getDate() + 1);
+  while (cursor <= end) {
+    const iso = cursor.toISOString().slice(0, 10);
+    if (getIsoWeekday(iso) === rule.buyDayIndex) {
+      const sellCursor = new Date(cursor);
+      while (sellCursor <= end && getIsoWeekday(sellCursor.toISOString().slice(0, 10)) !== rule.sellDayIndex) {
+        sellCursor.setDate(sellCursor.getDate() + 1);
+      }
+      if (sellCursor <= end) {
+        const buyDate = cursor.toISOString().slice(0, 10);
+        const sellDate = sellCursor.toISOString().slice(0, 10);
+        const buyPrice = latestClose;
+        const expectedReturn = historicalSummary.avg_return_per_trade_pct;
+        const sellPrice = buyPrice * (1 + expectedReturn / 100);
+        projectedTrades.push({
+          buy_day: new Date(`${buyDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }),
+          buy_date: buyDate,
+          buy_price: Number(buyPrice.toFixed(2)),
+          sell_day: new Date(`${sellDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }),
+          sell_date: sellDate,
+          sell_price: Number(sellPrice.toFixed(2)),
+          holding_days: Math.max(1, Math.round((new Date(`${sellDate}T00:00:00`).getTime() - new Date(`${buyDate}T00:00:00`).getTime()) / 86400000)),
+          pnl_per_share: Number((sellPrice - buyPrice).toFixed(2)),
+          pnl_100shares: Number(((sellPrice - buyPrice) * 100).toFixed(2)),
+          return_pct: Number(expectedReturn.toFixed(2)),
+          result: 'PROJECTED',
+        });
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return projectedTrades;
+}
+
+function runWeekdayBacktest(prompt: string, chartData: any, ticker: string) {
+  const rule = parseWeekdayTradePrompt(prompt);
+  const candles = getChartCandles(chartData);
+  if (!rule || candles.length < 5) return null;
+
+  const window = parseBacktestWindow(prompt);
+  const historicalCandles = filterCandlesByCalendarDays(candles, window.mode === 'historical' ? window.days : null);
+  const historicalTrades = buildWeekdayTrades(historicalCandles, rule);
+  const allTrades = buildWeekdayTrades(candles, rule);
+  const historicalSummary = summarizeTrades(allTrades);
+  const trades = window.mode === 'forecast'
+    ? buildProjectedWeekdayTrades(rule, candles, window.days ?? 30, historicalSummary)
+    : historicalTrades;
+  const summary = window.mode === 'forecast'
+    ? {
+        ...summarizeTrades(trades),
+        win_rate: historicalSummary.win_rate,
+        wins: Math.round(trades.length * historicalSummary.win_rate / 100),
+        losses: Math.max(0, trades.length - Math.round(trades.length * historicalSummary.win_rate / 100)),
+        avg_return_per_trade_pct: historicalSummary.avg_return_per_trade_pct,
+        total_return_pct: Number((historicalSummary.avg_return_per_trade_pct * trades.length).toFixed(2)),
+        best_trade_pct: historicalSummary.best_trade_pct,
+        worst_trade_pct: historicalSummary.worst_trade_pct,
+      }
+    : summarizeTrades(trades);
   const buyLabel = `${rule.buyDayName} ${rule.buyField}`;
   const sellLabel = `${rule.sellDayName} ${rule.sellField}`;
+  const scope = window.mode === 'forecast'
+    ? `next ${window.days} calendar days, projected from historical ${buyLabel} to ${sellLabel} behavior`
+    : window.mode === 'historical'
+      ? `last ${window.days} calendar days`
+      : 'loaded price history';
 
   return {
     type: 'strategy_test',
@@ -246,13 +358,14 @@ function runWeekdayBacktest(prompt: string, chartData: any, ticker: string) {
       prompt,
       buy_expr: `Buy ${ticker} on ${buyLabel}`,
       sell_expr: `Sell on the next ${sellLabel}`,
-      mode: 'weekday_price_pair',
+      mode: window.mode === 'forecast' ? 'weekday_projection' : 'weekday_price_pair',
       analysis_text: trades.length
-        ? `Tested ${buyLabel} to next ${sellLabel} over loaded price history. It produced ${summary.total_trades} closed trades with ${summary.win_rate}% win rate and ${summary.total_return_pct}% cumulative simple return.`
-        : `No matching ${buyLabel} to ${sellLabel} trades were found in the loaded price history.`,
+        ? `${window.mode === 'forecast' ? 'Projected' : 'Tested'} ${buyLabel} to next ${sellLabel} over ${scope}. It produced ${summary.total_trades} ${window.mode === 'forecast' ? 'projected setups' : 'closed trades'} with ${summary.win_rate}% historical win rate and ${summary.total_return_pct}% ${window.mode === 'forecast' ? 'expected simple return' : 'cumulative simple return'}.`
+        : `No matching ${buyLabel} to ${sellLabel} setups were found over ${scope}.`,
       current_signal: 'HOLD',
       summary,
       trades: trades.slice(-30),
+      scope,
       total_trades: summary.total_trades,
       win_rate: summary.win_rate,
       avg_return_per_trade_pct: summary.avg_return_per_trade_pct,
@@ -707,6 +820,35 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
   const [aiResult, setAiResult] = useState<any>(null);
   const [isAiRunning, setIsAiRunning] = useState(false);
 
+  const askAiChat = async (prompt: string) => {
+    const candles = getChartCandles(chartData);
+    const latest = candles[candles.length - 1];
+    const response = await fetch('/api/market-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        ticker,
+        context: {
+          latestDate: latest?.day,
+          latestClose: latest?.close,
+          verdict: analysisView.displayVerdict,
+          confidence: analysisView.confidenceLevel,
+          target: analysisView.target,
+          stopLoss: analysisView.stop_loss,
+        },
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error || 'AI chat failed');
+    return {
+      type: 'assistant_answer',
+      title: data.title || 'Bullseye AI answer',
+      answer: data.answer,
+      rows: data.rows ?? [],
+    };
+  };
+
   const handleAiSearch = async () => {
     if (!aiPrompt || !ticker) return;
     setIsAiRunning(true);
@@ -768,6 +910,12 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         return;
       }
 
+      if (!hasBacktestIntent(prompt)) {
+        const chatAnswer = await askAiChat(prompt);
+        setAiResult(chatAnswer);
+        return;
+      }
+
       const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -775,8 +923,16 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       });
       const data = await res.json();
       if (!res.ok) {
-        setAiResult({
-          error: data?.detail || 'The strategy engine could not answer that yet. Try mentioning a ticker, price date, holding quantity, or buy/sell rule.',
+        const chatAnswer = await askAiChat(prompt).catch(() => null);
+        setAiResult(chatAnswer ?? {
+          type: 'assistant_answer',
+          title: 'Strategy needs a clearer rule',
+          answer: data?.detail || 'The strategy engine could not answer that yet. Mention a clear buy condition and sell condition, for example "buy when RSI is below 30 and sell when RSI is above 70".',
+          rows: [
+            ['Try', 'buy Friday close sell Monday open'],
+            ['Try', 'RSI below 30 sell above 70'],
+            ['Try', 'price above 50 SMA sell below 20 EMA'],
+          ],
         });
         return;
       }
@@ -804,6 +960,15 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       handleAiSearch();
     }
   };
+
+  const aiExamples = [
+    'Buy Friday close, sell Monday open',
+    'Buy Friday close, sell Monday open in last 30 days',
+    'Buy Friday close, sell Monday open in next 30 days',
+    'Current price and trend',
+    'Support and resistance',
+    'Should I buy or sell?',
+  ];
 
   const topStrategies = normalizeStrategyEvals(analysis?.strategy_evals).slice(0, 10);
   const [showAllStrategies, setShowAllStrategies] = useState(false);
@@ -965,13 +1130,13 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       </div>
 
       {/* ── Section 3: AI Market Search ── */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-cyan-500/12 via-black/45 to-fuchsia-500/10 backdrop-blur-2xl border border-cyan-400/25 rounded-3xl p-4 sm:p-6 shadow-[0_14px_40px_rgba(6,182,212,0.16)] ring-1 ring-cyan-400/10">
-        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.16),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(217,70,239,0.10),transparent_30%)]" />
-        <h3 className="relative text-[10px] font-bold text-cyan-200 tracking-[0.2em] uppercase mb-2 border-b border-cyan-300/15 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
+      <div className="relative overflow-hidden rounded-3xl border border-cyan-300/35 bg-slate-950/95 p-4 text-slate-100 shadow-[0_18px_50px_rgba(8,145,178,0.22)] ring-1 ring-cyan-400/15 sm:p-6">
+        <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(135deg,rgba(8,145,178,0.22),transparent_34%,rgba(15,23,42,0.36)),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_34%)]" />
+        <h3 className="relative text-[10px] font-bold text-cyan-300 tracking-[0.2em] uppercase mb-2 border-b border-cyan-300/20 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-300 animate-pulse inline-block"></span>
           AI Market Search
         </h3>
-        <p className="relative text-[11px] text-cyan-100/75 font-['JetBrains_Mono'] mb-4">
+        <p className="relative text-[11px] text-slate-300 font-['JetBrains_Mono'] mb-4">
           Ask prices, trend questions, risk checks, profit/loss, or any buy/sell strategy in plain English.
         </p>
 
@@ -981,22 +1146,35 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask anything: buy Friday close, sell Monday open; price on 12 Feb; should I buy?"
-            className="flex-1 bg-white/8 border border-cyan-300/25 rounded-xl px-4 py-3.5 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20 placeholder-cyan-100/40 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+            className="flex-1 rounded-xl border border-cyan-200 bg-white px-4 py-3.5 text-sm text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] outline-none transition-all placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-300/30 font-['JetBrains_Mono']"
           />
           <button
             onClick={handleAiSearch}
             disabled={isAiRunning || !aiPrompt.trim()}
-            className="bg-cyan-400/18 border border-cyan-300/55 text-cyan-200 font-bold uppercase tracking-widest text-xs px-6 py-3.5 rounded-xl hover:bg-cyan-400/28 transition-all disabled:opacity-40 font-['Space_Grotesk'] shrink-0 shadow-[0_12px_28px_rgba(34,211,238,0.12)]"
+            className="rounded-xl border border-cyan-300 bg-cyan-400 px-6 py-3.5 text-xs font-black uppercase tracking-widest text-slate-950 shadow-[0_12px_28px_rgba(34,211,238,0.18)] transition-all hover:bg-cyan-300 disabled:opacity-40 font-['Space_Grotesk'] shrink-0"
           >
             {isAiRunning ? 'Thinking...' : 'Ask AI'}
           </button>
+        </div>
+
+        <div className="relative mt-3 flex flex-wrap gap-2">
+          {aiExamples.map(example => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => setAiPrompt(example)}
+              className="rounded-full border border-cyan-300/25 bg-slate-900/80 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-cyan-100 transition hover:border-cyan-300/70 hover:bg-cyan-300/15 hover:text-white font-['Space_Grotesk']"
+            >
+              {example}
+            </button>
+          ))}
         </div>
 
         {/* AI loading */}
         {isAiRunning && (
           <div className="mt-4 flex items-center gap-3 py-4">
             <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
-            <span className="text-xs text-zinc-500 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
+            <span className="text-xs text-slate-300 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
               Reading market data for {ticker}...
             </span>
           </div>
@@ -1150,10 +1328,10 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                       icon: '💰'
                     },
                   ].map(({ label, value, suffix, color, icon }) => (
-                    <div key={label} className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col gap-2">
+                    <div key={label} className="rounded-2xl border border-cyan-300/15 bg-slate-900/75 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex flex-col gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-base">{icon}</span>
-                        <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-['Space_Grotesk']">{label}</span>
+                        <span className="text-[9px] text-slate-300 uppercase tracking-widest font-bold font-['Space_Grotesk']">{label}</span>
                       </div>
                       <span className={`text-xl font-['JetBrains_Mono'] font-bold ${color}`}>
                         {value !== undefined && value !== null ? `${value}${suffix}` : '—'}
@@ -1161,7 +1339,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+                <div className="mt-4 rounded-2xl border border-cyan-300/25 bg-slate-900/75 p-4">
                   <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
                     <div className="min-w-0">
                       <span className="text-[10px] text-cyan-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Strategy analysis</span>
@@ -1176,22 +1354,22 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                         ['Best', `${aiResult.custom_metrics?.summary?.best_trade_pct ?? aiResult.custom_metrics?.best_trade_pct ?? 0}%`],
                         ['Worst', `${aiResult.custom_metrics?.summary?.worst_trade_pct ?? aiResult.custom_metrics?.worst_trade_pct ?? 0}%`],
                       ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl bg-black/25 border border-white/5 p-3">
-                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block">{label}</span>
-                          <span className="text-sm text-white font-bold font-['JetBrains_Mono']">{value}</span>
+                        <div key={label} className="rounded-xl bg-white/90 border border-cyan-100 p-3 text-slate-950">
+                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold block">{label}</span>
+                          <span className="text-sm text-slate-950 font-bold font-['JetBrains_Mono']">{value}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-black/25 border border-white/5 p-3">
-                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry rule</span>
-                      <span className="text-xs text-zinc-300 font-['JetBrains_Mono'] break-words">{aiResult.custom_metrics?.buy_expr}</span>
+                    <div className="rounded-xl bg-white/90 border border-cyan-100 p-3 text-slate-950">
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold block mb-1">Entry rule</span>
+                      <span className="text-xs text-slate-950 font-['JetBrains_Mono'] break-words">{aiResult.custom_metrics?.buy_expr}</span>
                     </div>
-                    <div className="rounded-xl bg-black/25 border border-white/5 p-3">
-                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Exit rule</span>
-                      <span className="text-xs text-zinc-300 font-['JetBrains_Mono'] break-words">{aiResult.custom_metrics?.sell_expr}</span>
+                    <div className="rounded-xl bg-white/90 border border-cyan-100 p-3 text-slate-950">
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold block mb-1">Exit rule</span>
+                      <span className="text-xs text-slate-950 font-['JetBrains_Mono'] break-words">{aiResult.custom_metrics?.sell_expr}</span>
                     </div>
                   </div>
                 </div>
@@ -1217,23 +1395,27 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                 )}
 
                 {aiResult.custom_metrics?.trades?.length > 0 && (
-                  <div className="mt-4 rounded-2xl border border-white/10 overflow-hidden">
-                    <div className="px-4 py-3 bg-black/30 border-b border-white/10 flex items-center justify-between">
-                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">Trade log</span>
-                      <span className="text-[9px] text-zinc-500 font-['JetBrains_Mono']">Latest {aiResult.custom_metrics.trades.length}</span>
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-cyan-300/25 bg-slate-950/80">
+                    <div className="px-4 py-3 bg-slate-900 border-b border-cyan-300/15 flex items-center justify-between">
+                      <span className="text-[10px] text-cyan-300 uppercase tracking-widest font-black font-['Space_Grotesk']">
+                        {aiResult.custom_metrics?.mode === 'weekday_projection' ? 'Projected setups' : 'Trade log'}
+                      </span>
+                      <span className="text-[9px] text-slate-300 font-['JetBrains_Mono']">
+                        {aiResult.custom_metrics?.mode === 'weekday_projection' ? aiResult.custom_metrics.scope : `Latest ${aiResult.custom_metrics.trades.length}`}
+                      </span>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[820px] text-left">
-                        <thead className="bg-black/20">
+                      <table className="w-full min-w-[820px] border-separate border-spacing-0 text-left">
+                        <thead className="bg-slate-800">
                           <tr>
                             {['Buy day', 'Buy date', 'Buy', 'Sell day', 'Sell date', 'Sell', 'Hold', 'Return', 'Result'].map(label => (
-                              <th key={label} className="px-4 py-3 text-[9px] text-zinc-500 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</th>
+                              <th key={label} className="px-4 py-3 text-[9px] text-slate-300 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {aiResult.custom_metrics.trades.map((trade: any, index: number) => (
-                            <tr key={`${trade.buy_date}-${trade.sell_date}-${index}`} className="border-t border-white/5">
+                            <tr key={`${trade.buy_date}-${trade.sell_date}-${index}`} className="border-t border-cyan-300/10 odd:bg-slate-950/40 even:bg-slate-900/40">
                               <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.buy_day || '-'}</td>
                               <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.buy_date}</td>
                               <td className="px-4 py-3 text-xs text-white font-bold font-['JetBrains_Mono']">{currency}{trade.buy_price}</td>
@@ -1242,7 +1424,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                               <td className="px-4 py-3 text-xs text-white font-bold font-['JetBrains_Mono']">{currency}{trade.sell_price}</td>
                               <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.holding_days}d</td>
                               <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${trade.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>{trade.return_pct}%</td>
-                              <td className={`px-4 py-3 text-xs font-black font-['Space_Grotesk'] ${trade.result === 'WIN' ? 'text-green-400' : 'text-red-400'}`}>{trade.result}</td>
+                              <td className={`px-4 py-3 text-xs font-black font-['Space_Grotesk'] ${trade.result === 'PROJECTED' ? 'text-cyan-300' : trade.result === 'WIN' ? 'text-green-400' : 'text-red-400'}`}>{trade.result}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1688,6 +1870,7 @@ export default function Home() {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [authPromptDismissed, setAuthPromptDismissed] = useState(false);
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
   const [cachedFundamentals, setCachedFundamentals] = useState<any>(undefined);
@@ -1778,19 +1961,15 @@ export default function Home() {
   }, [showProfileMenu]);
 
   useEffect(() => {
-    if (!authReady || user) return;
-    if (typeof window === 'undefined') return;
-
-    const dismissed = window.localStorage.getItem('bullseye-auth-prompt-dismissed') === '1';
-    if (!dismissed) {
+    if (!authReady || user || authPromptDismissed) return;
+    const timer = window.setTimeout(() => {
       setShowAuthModal(true);
-    }
-  }, [authReady, user]);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [authPromptDismissed, authReady, user]);
 
   const dismissAuthModal = () => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('bullseye-auth-prompt-dismissed', '1');
-    }
+    setAuthPromptDismissed(true);
     setShowAuthModal(false);
     setAuthError('');
     setAuthSuccess('');
