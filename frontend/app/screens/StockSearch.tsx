@@ -41,7 +41,7 @@ export default function StockSearch({ compact = false }: { compact?: boolean }) 
             window.location.href = `/?ticker=${encodeURIComponent(first.ticker)}`;
           }
         }}
-        placeholder="Search any stock"
+        placeholder="SEARCH ASSETS, NOT HOPE."
         className="h-11 w-full rounded-2xl border border-cyan-200 bg-white/95 px-4 pr-11 font-['JetBrains_Mono'] text-xs font-bold uppercase tracking-wider text-slate-900 outline-none shadow-[0_12px_34px_rgba(15,23,42,0.08)] transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 sm:h-12 sm:px-5 sm:text-sm"
       />
       <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-cyan-600">

@@ -71,6 +71,7 @@ export default function ScreensPage() {
   const sectors = useMemo(() => getAvailableSectors(), []);
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<QueryResult | null>(null);
+  const [expandedSector, setExpandedSector] = useState<string | null>(null);
 
   const runQuery = (nextQuery = query) => {
     const clean = nextQuery.trim();
@@ -85,13 +86,7 @@ export default function ScreensPage() {
   };
 
   const openSector = (sector: string) => {
-    const rows = getRowsForSector(sector);
-    setQuery(`Show ${sector} stocks`);
-    setResult({
-      title: `${sector}: ${rows.length} stocks in Bullseye database`,
-      query: `SELECT * FROM stocks WHERE sector = "${sector}" ORDER BY market_cap DESC;`,
-      rows,
-    });
+    setExpandedSector(current => current === sector ? null : sector);
   };
 
   return (
@@ -230,17 +225,50 @@ export default function ScreensPage() {
             <div className="rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
               <h2 className="font-['Space_Grotesk'] text-lg font-black sm:text-xl">Browse sectors</h2>
               <p className="mt-1 text-xs text-slate-500">Only sectors with stocks in the Bullseye database are shown.</p>
-              <div className="mt-4 flex max-h-[62vh] flex-wrap gap-2 overflow-y-auto pr-1">
-                {sectors.map(sector => (
-                  <button
-                    key={sector.name}
-                    type="button"
-                    onClick={() => openSector(sector.name)}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700 sm:text-xs"
-                  >
-                    {sector.name} <span className="text-slate-400">({sector.count})</span>
-                  </button>
-                ))}
+              <div className="mt-4 flex max-h-[62vh] flex-col gap-2 overflow-y-auto pr-1">
+                {sectors.map(sector => {
+                  const isOpen = expandedSector === sector.name;
+                  const previewRows = isOpen ? getRowsForSector(sector.name).slice(0, 5) : [];
+
+                  return (
+                    <div
+                      key={sector.name}
+                      className={`rounded-xl border bg-white transition ${isOpen ? 'border-cyan-300 shadow-[0_16px_38px_rgba(8,145,178,0.12)]' : 'border-slate-200 hover:border-cyan-300'}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openSector(sector.name)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[11px] text-slate-600 transition hover:bg-cyan-50 hover:text-cyan-700 sm:text-xs"
+                      >
+                        <span>{sector.name}</span>
+                        <span className="shrink-0 text-slate-400">{sector.count}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+                          <div className="flex flex-col gap-1.5">
+                            {previewRows.map(row => (
+                              <Link
+                                key={row.stock.ticker}
+                                href={`/?ticker=${encodeURIComponent(row.stock.ticker)}`}
+                                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600 transition hover:bg-cyan-50 hover:text-cyan-700"
+                              >
+                                <span className="min-w-0 truncate font-bold">{row.stock.name}</span>
+                                <span className="shrink-0 font-['JetBrains_Mono'] text-[10px] text-slate-400">{row.stock.symbol}</span>
+                              </Link>
+                            ))}
+                          </div>
+                          <Link
+                            href={`/screens/sector/${encodeURIComponent(sector.name)}`}
+                            className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-slate-950 px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-cyan-600"
+                          >
+                            Show full detailed list
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

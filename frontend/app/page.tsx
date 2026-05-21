@@ -410,7 +410,7 @@ const MarketAssetCard = ({
 
   return (
     <div
-      className={`relative min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
+      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
         ${expanded ? 'border-cyan-300 ring-2 ring-cyan-200/70 bg-white' : 'border-slate-200/80 hover:border-cyan-200'}`}
     >
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
@@ -460,9 +460,9 @@ const MarketAssetCard = ({
               <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Verdict</span>
               <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysisView.displayVerdict}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">FISO Confidence</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-slate-950 font-bold">{analysisView.confidenceLevel}/100</span>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+              <span className="min-w-0 text-[10px] text-slate-500 uppercase tracking-widest font-bold leading-tight">FISO Confidence</span>
+              <span className="whitespace-nowrap text-[12px] sm:text-sm font-['JetBrains_Mono'] text-slate-950 font-bold">{analysisView.confidenceLevel}/100</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Target</span>
@@ -1460,6 +1460,7 @@ export default function Home() {
   const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
   const [chartRange, setChartRange] = useState<ChartRange>('max');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+  const [assetColumnCount, setAssetColumnCount] = useState(2);
   const chartRef = useRef<HTMLDivElement>(null);
 
   // ── Auth state ───────────────────────────────────────────────────────────
@@ -1561,6 +1562,25 @@ export default function Home() {
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [showProfileMenu]);
+
+  useEffect(() => {
+    if (!authReady || user) return;
+    if (typeof window === 'undefined') return;
+
+    const dismissed = window.localStorage.getItem('bullseye-auth-prompt-dismissed') === '1';
+    if (!dismissed) {
+      setShowAuthModal(true);
+    }
+  }, [authReady, user]);
+
+  const dismissAuthModal = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('bullseye-auth-prompt-dismissed', '1');
+    }
+    setShowAuthModal(false);
+    setAuthError('');
+    setAuthSuccess('');
+  };
 
   const getSupabaseClient = async () => {
     if (supabaseRef.current) return supabaseRef.current;
@@ -1858,6 +1878,11 @@ export default function Home() {
     return [];
   };
 
+  const visibleMarketStocks = getMarketStocks();
+  const assetColumns = Array.from({ length: assetColumnCount }, (_, columnIndex) =>
+    visibleMarketStocks.filter((_, stockIndex) => stockIndex % assetColumnCount === columnIndex)
+  );
+
   // ── Prefetch cache: ticker → analysis result ──────────────────────────────
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
   const prefetchedRef = useRef<Set<string>>(new Set());
@@ -1901,6 +1926,21 @@ export default function Home() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMarket]);
+
+  useEffect(() => {
+    const syncAssetColumns = () => {
+      const width = window.innerWidth;
+      if (width >= 1280) setAssetColumnCount(6);
+      else if (width >= 1024) setAssetColumnCount(5);
+      else if (width >= 768) setAssetColumnCount(4);
+      else if (width >= 640) setAssetColumnCount(3);
+      else setAssetColumnCount(2);
+    };
+
+    syncAssetColumns();
+    window.addEventListener('resize', syncAssetColumns);
+    return () => window.removeEventListener('resize', syncAssetColumns);
+  }, []);
 
   const dashboardAnalysisView = getAnalysisPresentation(analysis);
   const isBull = dashboardAnalysisView?.isBullish;
@@ -2175,7 +2215,7 @@ export default function Home() {
                 fontFamily: "'Inter', sans-serif",
               }}
             >
-              Your market intelligence, ready.
+              Your market intelligence is ready.
             </span>
           </div>
         </div>
@@ -2198,31 +2238,31 @@ export default function Home() {
         </div>
 
         {/* NAV */}
-        <nav className="relative z-20 w-full px-4 sm:px-6 py-4 sm:py-5 flex flex-col md:flex-row justify-between items-center gap-4 sm:gap-8 max-w-[1600px] mx-auto border-b border-white/5 bg-black/20 backdrop-blur-sm">
-          <div className="flex flex-col items-start cursor-pointer group shrink-0 w-full md:w-auto" onClick={goHome}>
-            <div className="flex items-center gap-3">
-              <div className="brand-mark w-11 h-11 rounded-2xl bg-gradient-to-br from-white via-cyan-100 to-emerald-100 border border-cyan-200 flex items-center justify-center">
-                <span className="font-black text-cyan-700 font-['Space_Grotesk'] text-base">BE</span>
+        <nav className="relative z-20 mx-auto grid w-full max-w-[1600px] grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-white/5 bg-black/20 px-3 py-3 backdrop-blur-sm sm:gap-3 sm:px-6 sm:py-4 lg:gap-5">
+          <div className="min-w-0 cursor-pointer group shrink-0" onClick={goHome}>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-200 bg-gradient-to-br from-white via-cyan-100 to-emerald-100 sm:h-11 sm:w-11">
+                <span className="font-black text-cyan-700 font-['Space_Grotesk'] text-sm sm:text-base">BE</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-[0.18em] uppercase font-['Space_Grotesk']">
+              <h1 className="hidden text-xl font-black uppercase tracking-[0.16em] font-['Space_Grotesk'] min-[430px]:block sm:text-3xl sm:tracking-[0.18em]">
                 <span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span>
               </h1>
             </div>
-            <p className="text-[10px] text-zinc-400 uppercase tracking-widest mt-1 ml-[48px] font-['Space_Grotesk'] font-bold hidden sm:block">
+            <p className="ml-[52px] mt-1 hidden text-[10px] font-bold uppercase tracking-widest text-zinc-400 font-['Space_Grotesk'] lg:block">
               AI-Powered Market Intelligence
             </p>
           </div>
 
-          <div className="flex-1 w-full max-w-4xl relative">
-            <div className="absolute inset-0 bg-cyan-500/5 rounded-2xl blur-lg"></div>
+          <div className="relative min-w-0">
+            <div className="absolute inset-0 bg-cyan-500/5 rounded-xl blur-lg sm:rounded-2xl"></div>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => input.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={(e) => { if (e.key === 'Enter' && suggestions.length > 0) selectStock(suggestions[0]); }}
-              className="relative z-10 w-full bg-black/60 backdrop-blur-2xl border border-white/10 hover:border-cyan-500/50 px-5 sm:px-8 py-4 sm:py-5 rounded-2xl text-sm sm:text-base font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all placeholder-zinc-500 shadow-2xl tracking-widest uppercase"
-              placeholder="SEARCH ASSETS. NOT HOPE."
+              className="relative z-10 h-11 w-full rounded-xl border border-white/10 bg-black/60 px-3 text-[11px] uppercase tracking-[0.16em] text-white shadow-2xl outline-none transition-all placeholder-zinc-500 hover:border-cyan-500/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 sm:h-12 sm:rounded-2xl sm:px-5 sm:text-sm sm:tracking-widest font-['JetBrains_Mono']"
+              placeholder="SEARCH ASSETS, NOT HOPE."
             />
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute z-50 w-full bg-black/95 backdrop-blur-3xl border border-white/10 rounded-2xl mt-2 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
@@ -2242,13 +2282,13 @@ export default function Home() {
           <Link
             href="/screens"
             onClick={() => setShowProfileMenu(false)}
-            className="force-light-text inline-flex h-12 shrink-0 items-center justify-center rounded-2xl border border-slate-900 bg-slate-950 px-5 text-xs font-black uppercase tracking-[0.2em] shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition-all hover:border-cyan-500 hover:bg-cyan-600"
+            className="force-light-text inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-slate-900 bg-slate-950 px-3 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition-all hover:border-cyan-500 hover:bg-cyan-600 sm:h-12 sm:rounded-2xl sm:px-5 sm:text-xs sm:tracking-[0.2em]"
           >
             Screens
           </Link>
 
           {/* Account menu */}
-          <div ref={accountMenuRef} className="relative shrink-0 self-end md:self-auto">
+          <div ref={accountMenuRef} className="relative shrink-0">
             <button
               type="button"
               onClick={() => setShowProfileMenu(prev => !prev)}
@@ -2258,7 +2298,7 @@ export default function Home() {
                   setShowProfileMenu(prev => !prev);
                 }
               }}
-              className="h-12 w-12 rounded-full bg-white border border-cyan-200 text-cyan-700 font-black uppercase flex items-center justify-center shadow-[0_12px_32px_rgba(6,182,212,0.16)] hover:bg-cyan-50 hover:border-cyan-400 transition-all overflow-hidden"
+              className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-cyan-200 bg-white text-cyan-700 font-black uppercase shadow-[0_12px_32px_rgba(6,182,212,0.16)] transition-all hover:border-cyan-400 hover:bg-cyan-50 sm:h-12 sm:w-12"
               title={user ? 'Open user dashboard' : 'Open account menu'}
               aria-label={user ? 'Open user dashboard' : 'Open account menu'}
               aria-expanded={showProfileMenu}
@@ -2390,16 +2430,23 @@ export default function Home() {
                   <h2 className="text-xs sm:text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Live Scan</h2>
                   <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full text-zinc-300 font-['JetBrains_Mono']">{activeMarket}</span>
                 </div>
-                <div className="grid items-start grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-                  {getMarketStocks().map(s => (
-                    <MarketAssetCard
-                      key={s.ticker}
-                      stock={s}
-                      onSelect={selectStock}
-                      prefetchedAnalysis={prefetchCache[s.ticker]}
-                      expanded={expandedTicker === s.ticker}
-                      onToggle={(nextTicker) => setExpandedTicker(current => current === nextTicker ? null : nextTicker)}
-                    />
+                <div
+                  className="grid gap-4 sm:gap-5"
+                  style={{ gridTemplateColumns: `repeat(${assetColumnCount}, minmax(0, 1fr))` }}
+                >
+                  {assetColumns.map((columnStocks, columnIndex) => (
+                    <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-4 sm:gap-5">
+                      {columnStocks.map(s => (
+                        <MarketAssetCard
+                          key={s.ticker}
+                          stock={s}
+                          onSelect={selectStock}
+                          prefetchedAnalysis={prefetchCache[s.ticker]}
+                          expanded={expandedTicker === s.ticker}
+                          onToggle={(nextTicker) => setExpandedTicker(current => current === nextTicker ? null : nextTicker)}
+                        />
+                      ))}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -2564,7 +2611,7 @@ export default function Home() {
                   <span className="text-white">BULLS</span><span className="text-cyan-500">EYE</span>
                 </h2>
               </div>
-              <button onClick={() => { setShowAuthModal(false); setAuthError(''); setAuthSuccess(''); }}
+              <button onClick={dismissAuthModal}
                 className="text-zinc-500 hover:text-white transition-colors text-xl">✕</button>
             </div>
 
@@ -2632,6 +2679,14 @@ export default function Home() {
               className="force-light-text w-full bg-slate-950 border border-slate-800 font-bold uppercase tracking-widest text-sm py-3 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-40 font-['Space_Grotesk']"
             >
               {authLoading ? 'Please wait...' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
+            </button>
+
+            <button
+              type="button"
+              onClick={dismissAuthModal}
+              className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-bold uppercase tracking-widest text-zinc-300 transition-all hover:border-cyan-400/50 hover:bg-cyan-400/10 hover:text-white font-['Space_Grotesk']"
+            >
+              Continue browsing
             </button>
 
             <p className="text-[9px] text-zinc-600 text-center mt-4 font-['JetBrains_Mono']">
