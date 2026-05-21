@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
@@ -2237,6 +2238,14 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          <Link
+            href="/screens"
+            onClick={() => setShowProfileMenu(false)}
+            className="h-12 shrink-0 rounded-2xl border border-cyan-300/40 bg-cyan-400/10 px-5 text-xs font-black uppercase tracking-[0.2em] text-cyan-100 shadow-[0_12px_32px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-300 hover:bg-cyan-400/20"
+          >
+            Screens
+          </Link>
 
           {/* Account menu */}
           <div ref={accountMenuRef} className="relative shrink-0 self-end md:self-auto">
