@@ -39,6 +39,14 @@ export type ScreenMetricRow = {
   avgPat10Yrs: number;
   score: number;
   reason: string;
+  technical?: {
+    latestDate?: string;
+    gainStreakDays?: number;
+    recentVolumeAvg?: number;
+    previousWeekVolumeAvg?: number;
+    volumeRatioVsPreviousWeek?: number;
+    recentReturnPct?: number;
+  };
 };
 
 type MetricOverride = Partial<Omit<ScreenMetricRow, 'stock'>>;
@@ -431,30 +439,28 @@ export function buildCustomQueryResult(prompt: string, selectedSector?: string) 
     ? universe.filter(row => parsed.conditions.every(condition => condition(row)))
     : [];
 
-  const rowsAfterPlainEnglish = rowsAfterSql.length ? rowsAfterSql : filterPlainEnglishRows(universe, lower);
-  const sortedRows = sortRows(rowsAfterPlainEnglish.length ? rowsAfterPlainEnglish : universe, parsed.orderBy);
+  const plainEnglish = filterPlainEnglishRows(universe, lower);
+  const rowsAfterPlainEnglish = rowsAfterSql.length ? rowsAfterSql : plainEnglish.rows;
+  const sortedRows = sortRows(rowsAfterPlainEnglish, parsed.orderBy);
   const rows = sortedRows.slice(0, 60);
 
-  const conditions = [
-    sector ? `sector = "${sector}"` : '',
-    lower.includes('dividend') ? 'dividend_yield > 2' : '',
-    lower.includes('rsi') || lower.includes('oversold') ? 'rsi_14 < 30' : '',
-    lower.includes('debt') ? 'debt_to_equity < 1' : '',
-    lower.includes('growth') ? 'revenue_growth_3yr > 10' : '',
-    lower.includes('52 week') || lower.includes('new high') ? 'close >= 0.9 * high_52_week' : '',
+  const recognizedRules = [
+    ...parsed.labels,
+    ...plainEnglish.labels,
+    sector ? `Sector matched: ${sector}` : '',
   ].filter(Boolean);
 
-  const generatedQuery = [
-    'SELECT name, symbol, sector, cmp, pe, roce, dividend_yield',
-    'FROM stocks',
-    `WHERE ${conditions.length ? conditions.join(' AND ') : 'market_cap > 1000'}`,
-    `ORDER BY ${parsed.orderBy?.field ?? 'score'} ${parsed.orderBy?.direction ?? 'DESC'}`,
-    'LIMIT 50;',
-  ].join('\n');
+  const querySummary = recognizedRules.length
+    ? recognizedRules.join('\n')
+    : 'No supported local rule was recognized. The live AI screener can still handle price/volume prompts when the backend is available.';
 
   return {
     rows,
-    query: parsed.isSql ? prompt.trim() : generatedQuery,
+    query: querySummary,
+    explanation: rows.length
+      ? `Matched ${rows.length} stocks using deterministic local rules.`
+      : 'No stocks matched, or the prompt needs live OHLCV/fundamental data that is not available in the local fallback.',
+    matchedRules: recognizedRules,
   };
 }
 
@@ -496,12 +502,13 @@ const FIELD_PATTERN = Object.keys(FIELD_ALIASES)
   .map(field => field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   .join('|');
 
-function parseSqlLikeQuery(prompt: string): { isSql: boolean; conditions: QueryCondition[]; orderBy: OrderBy } {
+function parseSqlLikeQuery(prompt: string): { isSql: boolean; conditions: QueryCondition[]; orderBy: OrderBy; labels: string[] } {
   const normalized = prompt.replace(/\s+/g, ' ').trim();
   const isSql = /\bselect\b[\s\S]+\bfrom\b[\s\S]+\bwhere\b/i.test(prompt);
   const whereMatch = normalized.match(/\bwhere\b([\s\S]*?)(?:\border\s+by\b|\blimit\b|;|$)/i);
   const whereText = whereMatch?.[1] ?? normalized;
   const conditions: QueryCondition[] = [];
+  const labels: string[] = [];
 
   const betweenRegex = new RegExp(`\\b(${FIELD_PATTERN})\\b\\s+between\\s+(-?\\d+(?:\\.\\d+)?)\\s+and\\s+(-?\\d+(?:\\.\\d+)?)`, 'gi');
   for (const match of whereText.matchAll(betweenRegex)) {
@@ -509,6 +516,7 @@ function parseSqlLikeQuery(prompt: string): { isSql: boolean; conditions: QueryC
     const min = Number(match[2]);
     const max = Number(match[3]);
     if (key && Number.isFinite(min) && Number.isFinite(max)) {
+      labels.push(`${match[1]} between ${min} and ${max}`);
       conditions.push(row => {
         const value = getComparableValue(row, key);
         return typeof value === 'number' && value >= min && value <= max;
@@ -523,6 +531,7 @@ function parseSqlLikeQuery(prompt: string): { isSql: boolean; conditions: QueryC
     const operator = match[2];
     const target = Number(match[3]);
     if (key && Number.isFinite(target)) {
+      labels.push(`${match[1]} ${operator} ${target}`);
       conditions.push(row => {
         const value = getComparableValue(row, key);
         if (typeof value !== 'number') return false;
@@ -542,6 +551,7 @@ function parseSqlLikeQuery(prompt: string): { isSql: boolean; conditions: QueryC
     isSql,
     conditions,
     orderBy: orderField ? { field: orderMatch![1], direction: (orderMatch?.[2]?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC') } : null,
+    labels,
   };
 }
 
@@ -571,7 +581,18 @@ function sortRows(rows: ScreenMetricRow[], orderBy: OrderBy) {
 }
 
 function filterPlainEnglishRows(rows: ScreenMetricRow[], lower: string) {
-  return rows.filter(row => {
+  const labels: string[] = [];
+  if (lower.includes('dividend')) labels.push('Dividend yield above 2%');
+  if (lower.includes('debt')) labels.push('Debt to equity below 1');
+  if (lower.includes('growth')) labels.push('Revenue growth above 10%');
+  if (lower.includes('roe')) labels.push('ROE above 15%');
+  if (lower.includes('roce')) labels.push('Average ROCE above 15%');
+  if (lower.includes('piotroski')) labels.push('Piotroski score at least 7');
+
+  if (!labels.length) return { rows: [], labels };
+
+  return {
+    rows: rows.filter(row => {
     if (lower.includes('dividend') && row.divYield <= 2) return false;
     if (lower.includes('debt') && row.debtToEquity >= 1) return false;
     if (lower.includes('growth') && row.revenueGrowth3Yr <= 10) return false;
@@ -579,5 +600,7 @@ function filterPlainEnglishRows(rows: ScreenMetricRow[], lower: string) {
     if (lower.includes('roce') && row.avgRoce7Yr <= 15) return false;
     if (lower.includes('piotroski') && row.piotroskiScore < 7) return false;
     return true;
-  });
+    }),
+    labels,
+  };
 }

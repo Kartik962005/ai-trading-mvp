@@ -38,6 +38,7 @@ app.add_middleware(
 )
 
 from app.services.data_service import get_latest_quote, get_historical_data, get_fundamentals_data, get_chart_data
+from app.services.screener_service import screen_stocks
 from app.strategies.engine import run_analysis, evaluate_strategies
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
@@ -144,6 +145,32 @@ async def strategy_analysis(request: Request, ticker: str, strategy_name: str):
 class BacktestRequest(BaseModel):
     ticker: str
     prompt: str
+
+
+class ScreenerStock(BaseModel):
+    name: str
+    symbol: str
+    exchange: str
+    ticker: str
+    currency: str | None = None
+
+
+class ScreenerRequest(BaseModel):
+    prompt: str
+    stocks: list[ScreenerStock]
+
+
+@app.post("/api/v1/screener/search")
+@limiter.limit("6/minute")
+async def screener_search(request: Request, body: ScreenerRequest):
+    try:
+        stocks = [
+            stock.model_dump() if hasattr(stock, "model_dump") else stock.dict()
+            for stock in body.stocks[:240]
+        ]
+        return screen_stocks(body.prompt, stocks)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/backtest/custom")

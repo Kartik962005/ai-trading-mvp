@@ -1,29 +1,62 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ALL_SCREENS,
   SCREEN_SECTIONS,
   buildCustomQueryResult,
   getAvailableSectors,
   getRowsForSector,
+  type Stock,
   type ScreenMetricRow,
 } from './screen-data';
 import StockSearch from './StockSearch';
+import { STOCKS } from '../stocks';
+
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL
+  || (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 'http://127.0.0.1:8000'
+    : 'https://ai-trading-backend-jhcl.onrender.com');
 
 type QueryResult = {
   title: string;
   query: string;
   rows: ScreenMetricRow[];
+  explanation?: string;
+  source?: string;
 };
 
 const examples = [
-  'revenue_growth_3yr > 20 AND profit_growth_3yr > 20 AND roe > 18 AND piotroski_score >= 6',
-  'dividend_yield > 3 AND avg_dividend_payout_3yr > 25 AND debt_to_equity < 0.5 AND piotroski_score >= 7',
-  'market_capitalization BETWEEN 500000000 AND 20000000000 AND revenue_growth_3yr > 25 AND avg_roce_7yr > 20',
-  'roe > 20 AND avg_roce_7yr > 20 AND operating_margin > 15 AND piotroski_score >= 7',
+  'Stocks that gained last 4 consecutive days and whose average volume is above last week average',
+  'Near 52 week high with unusual volume',
+  'Oversold stocks with RSI below 30',
 ];
+
+function candidateStocksForPrompt(prompt: string) {
+  const lower = prompt.toLowerCase();
+  if (/\b(us|usa|nasdaq|nyse|america|american)\b/.test(lower)) {
+    return STOCKS.filter(stock => stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE').slice(0, 180);
+  }
+  return STOCKS.filter(stock => stock.exchange === 'NSE').slice(0, 180);
+}
+
+async function runLiveScreener(prompt: string, stocks: Stock[]) {
+  const response = await fetch(`${BACKEND}/api/v1/screener/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, stocks }),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text().catch(() => 'Live screener failed'));
+  }
+  return response.json() as Promise<{
+    rows: ScreenMetricRow[];
+    matchedRules?: string[];
+    explanation?: string;
+    source?: string;
+  }>;
+}
 
 function MetricTable({ rows }: { rows: ScreenMetricRow[] }) {
   const [tableZoom, setTableZoom] = useState(0.78);
@@ -57,6 +90,9 @@ function MetricTable({ rows }: { rows: ScreenMetricRow[] }) {
                     {row.stock.name}
                   </Link>
                   <div className="mt-0.5 text-[10px] font-['JetBrains_Mono'] text-slate-400">{row.stock.symbol} · {row.stock.exchange}</div>
+                  {row.technical?.latestDate && (
+                    <div className="mt-1 max-w-[300px] text-[10px] leading-relaxed text-slate-500">{row.reason}</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.cmp.toFixed(2)}</td>
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.pe.toFixed(2)}</td>
@@ -73,6 +109,11 @@ function MetricTable({ rows }: { rows: ScreenMetricRow[] }) {
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.avgDividendPayout3Yr.toFixed(2)}</td>
                 <td className="px-4 py-3">
                   <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-700">{row.score}</span>
+                  {row.technical && (
+                    <div className="mt-2 whitespace-nowrap text-[10px] font-['JetBrains_Mono'] text-slate-500">
+                      {row.technical.gainStreakDays ?? 0}d up / {row.technical.volumeRatioVsPreviousWeek?.toFixed(2) ?? '-'}x vol
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -87,18 +128,54 @@ export default function ScreensPage() {
   const sectors = useMemo(() => getAvailableSectors(), []);
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<QueryResult | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [expandedSector, setExpandedSector] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLElement | null>(null);
 
-  const runQuery = (nextQuery = query) => {
+  const scrollToResults = () => {
+    window.setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  const runQuery = async (nextQuery = query) => {
     const clean = nextQuery.trim();
     if (!clean) return;
     setQuery(clean);
-    const custom = buildCustomQueryResult(clean);
-    setResult({
-      title: `${custom.rows.length} custom query matches`,
-      query: custom.query,
-      rows: custom.rows,
-    });
+    setIsSearching(true);
+    try {
+      const live = await runLiveScreener(clean, candidateStocksForPrompt(clean));
+      if (live.rows.length || live.matchedRules?.length) {
+        setResult({
+          title: `${live.rows.length} AI screener matches`,
+          query: live.matchedRules?.join('\n') || 'No supported live rules matched.',
+          rows: live.rows,
+          explanation: live.explanation,
+          source: live.source,
+        });
+      } else {
+        const custom = buildCustomQueryResult(clean);
+        setResult({
+          title: `${custom.rows.length} AI screener matches`,
+          query: custom.query,
+          rows: custom.rows,
+          explanation: live.explanation || custom.explanation,
+          source: custom.rows.length ? 'Local deterministic fallback' : live.source,
+        });
+      }
+    } catch {
+      const custom = buildCustomQueryResult(clean);
+      setResult({
+        title: `${custom.rows.length} AI screener matches`,
+        query: custom.query,
+        rows: custom.rows,
+        explanation: custom.explanation || 'Live screener is unavailable, so only supported local fundamentals filters were evaluated.',
+        source: 'Local deterministic fallback',
+      });
+    } finally {
+      setIsSearching(false);
+      scrollToResults();
+    }
   };
 
   const openSector = (sector: string) => {
@@ -158,7 +235,7 @@ export default function ScreensPage() {
                   <div className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-700 sm:mb-3 sm:text-[10px]">Screens</div>
                   <h1 className="font-['Space_Grotesk'] text-2xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Explore category-wise stocks</h1>
                   <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:mt-3 sm:text-base">
-                    Preset screens open full result pages. The query box below is only for custom SQL-style or plain-English filtering.
+                    Ask in plain English. Price and volume prompts are screened against live daily candles; supported fundamentals use deterministic local filters.
                   </p>
                 </div>
                 <Link href="/screens/growth-stocks" className="inline-flex h-11 items-center justify-center rounded-xl bg-slate-950 px-4 text-[10px] font-black uppercase tracking-[0.18em] text-white transition hover:bg-cyan-600 sm:h-12 sm:rounded-2xl sm:px-6 sm:text-xs">
@@ -167,50 +244,68 @@ export default function ScreensPage() {
               </div>
 
               <div className="mt-4 rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-3 sm:mt-6">
-                <div className="flex flex-col gap-3 lg:flex-row">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
                   <textarea
                     value={query}
                     onChange={event => setQuery(event.target.value)}
-                    placeholder="Paste SQL or type plain English: roe > 20 AND debt_to_equity < 0.5"
-                    className="min-h-20 flex-1 resize-none rounded-xl border border-cyan-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-24 sm:rounded-2xl"
+                    onInput={event => setQuery(event.currentTarget.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        runQuery();
+                      }
+                    }}
+                    placeholder="Ask AI: stocks that gained last 4 consecutive days and whose average volume is above last week average"
+                    className="min-h-14 flex-1 resize-none rounded-2xl border border-cyan-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-16"
                   />
                   <button
                     type="button"
                     onClick={() => runQuery()}
-                    disabled={!query.trim()}
-                    className="rounded-xl bg-cyan-500 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-cyan-600 disabled:opacity-40 sm:rounded-2xl sm:text-xs lg:w-44"
+                    disabled={!query.trim() || isSearching}
+                    className="rounded-2xl bg-cyan-500 px-5 py-4 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-cyan-600 disabled:opacity-40 sm:text-xs lg:w-36"
                   >
-                    Run query
+                    {isSearching ? 'Thinking' : 'Ask AI'}
                   </button>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {examples.map(example => (
-                    <button
-                      key={example}
-                      type="button"
-                      onClick={() => runQuery(example)}
-                      className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-[11px] text-slate-600 transition hover:border-cyan-400 hover:text-cyan-700 sm:text-xs"
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[10px] font-black uppercase tracking-widest text-cyan-700">Examples</summary>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {examples.map(example => (
+                      <button
+                        key={example}
+                        type="button"
+                        onClick={() => runQuery(example)}
+                        className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-[11px] text-slate-600 transition hover:border-cyan-400 hover:text-cyan-700 sm:text-xs"
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                </details>
               </div>
             </section>
 
             {result && (
-              <section className="rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
+              <section ref={resultsRef} className="scroll-mt-24 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-cyan-700">Custom query result</div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-cyan-700">AI screener result</div>
                     <h2 className="mt-1 font-['Space_Grotesk'] text-xl font-black sm:text-2xl">{result.title}</h2>
+                    {result.explanation && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">{result.explanation}</p>}
+                    {result.source && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{result.source}</p>}
                   </div>
                   <details className="max-w-xl rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <summary className="cursor-pointer text-[10px] font-black uppercase tracking-widest text-slate-500">View generated SQL</summary>
+                    <summary className="cursor-pointer text-[10px] font-black uppercase tracking-widest text-slate-500">Matched rules</summary>
                     <pre className="mt-3 overflow-x-auto text-xs leading-relaxed text-slate-700"><code>{result.query}</code></pre>
                   </details>
                 </div>
-                <MetricTable rows={result.rows} />
+                {result.rows.length ? (
+                  <MetricTable rows={result.rows} />
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                    No stocks matched this prompt. I did not return broad or random fallback rows.
+                  </div>
+                )}
               </section>
             )}
 
