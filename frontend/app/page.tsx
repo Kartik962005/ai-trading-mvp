@@ -145,6 +145,122 @@ function hasPriceLookupIntent(prompt: string) {
   return /\b(price|open|opening|close|closing|ohlc|candle|high|low)\b/i.test(prompt);
 }
 
+function hasBacktestIntent(prompt: string) {
+  return /\b(backtest|test|strategy|simulate|if i|what if|buy.*sell|sell.*buy|bought.*sold|closing.*opening|opening.*closing|rsi|sma|ema|macd|bollinger|crossover|volume|gap|friday|monday|tuesday|wednesday|thursday)\b/i.test(prompt);
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  monday: 1, mon: 1,
+  tuesday: 2, tue: 2, tues: 2,
+  wednesday: 3, wed: 3,
+  thursday: 4, thu: 4, thur: 4, thurs: 4,
+  friday: 5, fri: 5,
+};
+
+function getIsoWeekday(day: string) {
+  const value = new Date(`${day}T00:00:00`).getDay();
+  return value === 0 ? 7 : value;
+}
+
+function parseWeekdayTradePrompt(prompt: string) {
+  const clean = prompt.toLowerCase();
+  const buyDay = Object.keys(WEEKDAY_INDEX).find(day => new RegExp(`\\b(?:buy|bought|enter|entry).*\\b${day}\\b|\\b${day}\\b.*\\b(?:buy|bought|enter|entry)\\b`).test(clean));
+  const sellDay = Object.keys(WEEKDAY_INDEX).find(day => new RegExp(`\\b(?:sell|sold|exit).*\\b${day}\\b|\\b${day}\\b.*\\b(?:sell|sold|exit)\\b`).test(clean));
+  if (!buyDay || !sellDay) return null;
+
+  const buyField = /\b(?:buy|bought|enter|entry)[\s\S]{0,40}\b(opening|open)\b|\b(opening|open)\b[\s\S]{0,40}\b(?:buy|bought|enter|entry)\b/.test(clean) ? 'open' : 'close';
+  const sellField = /\b(?:sell|sold|exit)[\s\S]{0,40}\b(closing|close)\b|\b(closing|close)\b[\s\S]{0,40}\b(?:sell|sold|exit)\b/.test(clean) ? 'close' : 'open';
+
+  return {
+    buyDayName: buyDay,
+    sellDayName: sellDay,
+    buyDayIndex: WEEKDAY_INDEX[buyDay],
+    sellDayIndex: WEEKDAY_INDEX[sellDay],
+    buyField: buyField as 'open' | 'close',
+    sellField: sellField as 'open' | 'close',
+  };
+}
+
+function summarizeTrades(trades: any[]) {
+  const totalTrades = trades.length;
+  const wins = trades.filter(trade => trade.return_pct > 0).length;
+  const losses = trades.filter(trade => trade.return_pct < 0).length;
+  const totalReturn = trades.reduce((sum, trade) => sum + Number(trade.return_pct || 0), 0);
+  const avgReturn = totalTrades ? totalReturn / totalTrades : 0;
+  const best = trades.reduce((current, trade) => Number(trade.return_pct) > Number(current?.return_pct ?? -Infinity) ? trade : current, null);
+  const worst = trades.reduce((current, trade) => Number(trade.return_pct) < Number(current?.return_pct ?? Infinity) ? trade : current, null);
+
+  return {
+    total_trades: totalTrades,
+    wins,
+    losses,
+    win_rate: totalTrades ? Number(((wins / totalTrades) * 100).toFixed(2)) : 0,
+    avg_return_per_trade_pct: Number(avgReturn.toFixed(2)),
+    total_return_pct: Number(totalReturn.toFixed(2)),
+    best_trade_pct: best ? best.return_pct : 0,
+    worst_trade_pct: worst ? worst.return_pct : 0,
+  };
+}
+
+function runWeekdayBacktest(prompt: string, chartData: any, ticker: string) {
+  const rule = parseWeekdayTradePrompt(prompt);
+  const candles = getChartCandles(chartData);
+  if (!rule || candles.length < 5) return null;
+
+  const trades: any[] = [];
+  for (let i = 0; i < candles.length - 1; i++) {
+    const buyCandle = candles[i];
+    if (getIsoWeekday(buyCandle.day) !== rule.buyDayIndex) continue;
+
+    const sellCandle = candles.slice(i + 1).find((candle: any) => getIsoWeekday(candle.day) === rule.sellDayIndex);
+    if (!sellCandle) continue;
+
+    const buyPrice = Number(buyCandle[rule.buyField]);
+    const sellPrice = Number(sellCandle[rule.sellField]);
+    if (!Number.isFinite(buyPrice) || !Number.isFinite(sellPrice) || buyPrice <= 0) continue;
+
+    const returnPct = ((sellPrice - buyPrice) / buyPrice) * 100;
+    trades.push({
+      buy_day: buyCandle.day ? new Date(`${buyCandle.day}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) : rule.buyDayName,
+      buy_date: buyCandle.day,
+      buy_price: Number(buyPrice.toFixed(2)),
+      sell_day: sellCandle.day ? new Date(`${sellCandle.day}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) : rule.sellDayName,
+      sell_date: sellCandle.day,
+      sell_price: Number(sellPrice.toFixed(2)),
+      holding_days: Math.max(1, Math.round((new Date(`${sellCandle.day}T00:00:00`).getTime() - new Date(`${buyCandle.day}T00:00:00`).getTime()) / 86400000)),
+      pnl_per_share: Number((sellPrice - buyPrice).toFixed(2)),
+      pnl_100shares: Number(((sellPrice - buyPrice) * 100).toFixed(2)),
+      return_pct: Number(returnPct.toFixed(2)),
+      result: returnPct >= 0 ? 'WIN' : 'LOSS',
+    });
+  }
+
+  const summary = summarizeTrades(trades);
+  const buyLabel = `${rule.buyDayName} ${rule.buyField}`;
+  const sellLabel = `${rule.sellDayName} ${rule.sellField}`;
+
+  return {
+    type: 'strategy_test',
+    custom_metrics: {
+      success: true,
+      prompt,
+      buy_expr: `Buy ${ticker} on ${buyLabel}`,
+      sell_expr: `Sell on the next ${sellLabel}`,
+      mode: 'weekday_price_pair',
+      analysis_text: trades.length
+        ? `Tested ${buyLabel} to next ${sellLabel} over loaded price history. It produced ${summary.total_trades} closed trades with ${summary.win_rate}% win rate and ${summary.total_return_pct}% cumulative simple return.`
+        : `No matching ${buyLabel} to ${sellLabel} trades were found in the loaded price history.`,
+      current_signal: 'HOLD',
+      summary,
+      trades: trades.slice(-30),
+      total_trades: summary.total_trades,
+      win_rate: summary.win_rate,
+      avg_return_per_trade_pct: summary.avg_return_per_trade_pct,
+      total_return_pct: summary.total_return_pct,
+    },
+  };
+}
+
 function getCache<T>(key: string): T | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
@@ -242,8 +358,13 @@ function buildMarketAnswer(prompt: string, analysis: any, ticker: string, curren
   const clean = prompt.toLowerCase();
   const candles = getChartCandles(chartData);
   const latest = candles[candles.length - 1];
+  const recent = candles.slice(-20);
+  const previous = candles[candles.length - 2];
   const wantsNowPrice = /\b(current|now|today|latest|live).*\b(price|close|value)\b|\b(price|close|value).*\b(current|now|today|latest|live)\b/i.test(prompt);
   const wantsPrediction = /\b(should i buy|buy or sell|prediction|target|stop loss|forecast|verdict|recommend)\b/i.test(prompt);
+  const wantsTrend = /\b(trend|momentum|bullish|bearish|uptrend|downtrend|moving average|ma|strong|weak)\b/i.test(prompt);
+  const wantsRisk = /\b(risk|risky|stop|stoploss|stop loss|downside|upside|reward|target)\b/i.test(prompt);
+  const wantsLevels = /\b(support|resistance|range|breakout|break down|breakdown|level)\b/i.test(prompt);
   const analysisView = getAnalysisPresentation(analysis);
 
   if (wantsNowPrice && latest) {
@@ -274,12 +395,72 @@ function buildMarketAnswer(prompt: string, analysis: any, ticker: string, curren
     };
   }
 
+  if ((wantsTrend || wantsLevels) && latest && recent.length >= 5) {
+    const closes = recent.map((candle: any) => Number(candle.close)).filter(Number.isFinite);
+    const highs = recent.map((candle: any) => Number(candle.high)).filter(Number.isFinite);
+    const lows = recent.map((candle: any) => Number(candle.low)).filter(Number.isFinite);
+    const high20 = Math.max(...highs);
+    const low20 = Math.min(...lows);
+    const startClose = closes[0];
+    const endClose = closes[closes.length - 1];
+    const changePct = startClose ? ((endClose - startClose) / startClose) * 100 : 0;
+    const direction = changePct > 2 ? 'positive' : changePct < -2 ? 'weak' : 'sideways';
+
+    return {
+      type: 'assistant_answer',
+      title: wantsLevels ? 'Support and resistance' : 'Trend read',
+      answer: `${ticker} looks ${direction} over the last ${recent.length} loaded candles. The recent range is ${currency}${low20.toLocaleString(undefined, { maximumFractionDigits: 2 })} to ${currency}${high20.toLocaleString(undefined, { maximumFractionDigits: 2 })}, with a ${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}% close-to-close move.`,
+      rows: [
+        ['Latest close', latest.close],
+        ['20-candle support', low20],
+        ['20-candle resistance', high20],
+        ['20-candle move', `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`],
+      ],
+    };
+  }
+
+  if (wantsRisk && analysisView && latest) {
+    const entry = Number(analysisView.entry || latest.close);
+    const target = Number(analysisView.target);
+    const stop = Number(analysisView.stop_loss);
+    const upside = entry ? ((target - entry) / entry) * 100 : 0;
+    const downside = entry ? ((entry - stop) / entry) * 100 : 0;
+
+    return {
+      type: 'assistant_answer',
+      title: 'Risk and reward',
+      answer: `${ticker} setup has about ${upside.toFixed(2)}% target room versus ${downside.toFixed(2)}% stop-loss risk from the model entry. Treat this as research, not financial advice.`,
+      rows: [
+        ['Entry', entry],
+        ['Target', target],
+        ['Stop loss', stop],
+        ['Reward/risk', downside > 0 ? (upside / downside).toFixed(2) : '-'],
+      ],
+    };
+  }
+
+  if (/\b(yesterday|previous|last session|last candle)\b/i.test(clean) && previous) {
+    const move = Number(previous.close) ? ((Number(latest.close) - Number(previous.close)) / Number(previous.close)) * 100 : 0;
+    return {
+      type: 'assistant_answer',
+      title: 'Previous session comparison',
+      answer: `${ticker} moved ${move >= 0 ? '+' : ''}${move.toFixed(2)}% from ${previous.day} close to ${latest.day} close.`,
+      rows: [
+        ['Previous close', previous.close],
+        ['Latest close', latest.close],
+        ['Change', `${move >= 0 ? '+' : ''}${move.toFixed(2)}%`],
+        ['Latest date', latest.day],
+      ],
+    };
+  }
+
   if (/\b(help|what can you do|examples?)\b/i.test(clean)) {
     return {
       type: 'assistant_answer',
       title: 'AI search is ready',
       answer: 'Ask for a dated price, current loaded price, holding profit/loss, buy/sell read, or a custom backtest strategy.',
       rows: [
+        ['Example', 'If I buy Friday closing price and sell Monday opening price, test it'],
         ['Example', 'Bought 1000 shares 60 days ago profit or loss'],
         ['Example', 'Opening price on 12 Feb 2025'],
         ['Example', 'Backtest RSI crosses above 30 and sell above 70'],
@@ -531,11 +712,41 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
     setIsAiRunning(true);
     setAiResult(null);
     try {
-      if (hasPriceLookupIntent(aiPrompt)) {
+      const prompt = aiPrompt.trim();
+
+      const holdingPnl = resolveHoldingPnl(prompt, chartData);
+      if (holdingPnl) {
+        setAiResult(holdingPnl);
+        return;
+      }
+
+      if (hasBacktestIntent(prompt)) {
+        const localBacktest = runWeekdayBacktest(prompt, chartData, ticker);
+        if (localBacktest) {
+          setAiResult(localBacktest);
+          return;
+        }
+      }
+
+      const marketAnswer = buildMarketAnswer(prompt, analysis, ticker, currency, chartData);
+      if (marketAnswer && !hasBacktestIntent(prompt)) {
+        setAiResult(marketAnswer);
+        return;
+      }
+
+      if (hasPriceLookupIntent(prompt) && !hasBacktestIntent(prompt)) {
         const requestedDate = parseRequestedDate(aiPrompt);
         if (!requestedDate) {
-          setAiResult({
-            error: 'I could not read that date. Try a clearer format like "price on 12 Feb 2025" or "open on 2025-02-12".',
+          const latestAnswer = buildMarketAnswer('latest price', analysis, ticker, currency, chartData);
+          setAiResult(latestAnswer ?? {
+            type: 'assistant_answer',
+            title: 'Need a date for price lookup',
+            answer: 'Tell me the date you want, for example "HDFC opening price on 12 Feb 2025". For strategy tests, write the buy and sell rule.',
+            rows: [
+              ['Example', 'price on 2025-02-12'],
+              ['Example', 'open on 12 Feb 2025'],
+              ['Example', 'buy Friday close sell Monday open'],
+            ],
           });
           return;
         }
@@ -552,13 +763,6 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         return;
       }
 
-      const holdingPnl = resolveHoldingPnl(aiPrompt, chartData);
-      if (holdingPnl) {
-        setAiResult(holdingPnl);
-        return;
-      }
-
-      const marketAnswer = buildMarketAnswer(aiPrompt, analysis, ticker, currency, chartData);
       if (marketAnswer) {
         setAiResult(marketAnswer);
         return;
@@ -567,7 +771,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, prompt: aiPrompt })
+        body: JSON.stringify({ ticker, prompt })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -578,7 +782,17 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       }
       setAiResult({ type: 'strategy_test', ...data });
     } catch {
-      setAiResult({ error: "Failed to connect to backend." });
+      const fallback = buildMarketAnswer('help examples', analysis, ticker, currency, chartData);
+      setAiResult(fallback ?? {
+        type: 'assistant_answer',
+        title: 'AI search fallback',
+        answer: 'I could not reach the strategy engine, but price lookup, trend read, risk/reward, and Friday-to-Monday tests can still run from loaded chart data.',
+        rows: [
+          ['Try', 'current price'],
+          ['Try', 'support and resistance'],
+          ['Try', 'buy Friday close sell Monday open'],
+        ],
+      });
     } finally {
       setIsAiRunning(false);
     }
@@ -758,7 +972,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
           AI Market Search
         </h3>
         <p className="relative text-[11px] text-cyan-100/75 font-['JetBrains_Mono'] mb-4">
-          Ask Bullseye for dated prices, trade ideas, profit and loss checks, or custom backtests.
+          Ask prices, trend questions, risk checks, profit/loss, or any buy/sell strategy in plain English.
         </p>
 
         <div className="relative flex flex-col sm:flex-row gap-3">
@@ -766,7 +980,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask a price question or test a strategy, e.g. opening price on 12th Feb"
+            placeholder="Ask anything: buy Friday close, sell Monday open; price on 12 Feb; should I buy?"
             className="flex-1 bg-white/8 border border-cyan-300/25 rounded-xl px-4 py-3.5 text-sm font-['JetBrains_Mono'] text-white outline-none focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20 placeholder-cyan-100/40 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
           />
           <button
