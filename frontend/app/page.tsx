@@ -2242,7 +2242,7 @@ export default function Home() {
           <Link
             href="/screens"
             onClick={() => setShowProfileMenu(false)}
-            className="h-12 shrink-0 rounded-2xl border border-cyan-300/40 bg-cyan-400/10 px-5 text-xs font-black uppercase tracking-[0.2em] text-cyan-100 shadow-[0_12px_32px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-300 hover:bg-cyan-400/20"
+            className="force-light-text inline-flex h-12 shrink-0 items-center justify-center rounded-2xl border border-slate-900 bg-slate-950 px-5 text-xs font-black uppercase tracking-[0.2em] shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition-all hover:border-cyan-500 hover:bg-cyan-600"
           >
             Screens
           </Link>
