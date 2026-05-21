@@ -747,16 +747,16 @@ const MarketAssetCard = ({
         </span>
       </div>
 
-      <div className={`relative transition-all duration-300 ease-in-out ${expanded ? 'max-h-56 opacity-100 mt-4 border-t border-slate-200 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+      <div className={`relative transition-all duration-300 ease-in-out ${expanded ? 'max-h-72 opacity-100 mt-4 border-t border-slate-200 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
         {isReady ? (
           <div className="space-y-2.5">
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Verdict</span>
               <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysisView.displayVerdict}</span>
             </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-              <span className="min-w-0 text-[10px] text-slate-500 uppercase tracking-widest font-bold leading-tight">FISO Confidence</span>
-              <span className="whitespace-nowrap text-[12px] sm:text-sm font-['JetBrains_Mono'] text-slate-950 font-bold">{analysisView.confidenceLevel}/100</span>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+              <span className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold leading-tight">FISO Confidence</span>
+              <span className="mt-1 block whitespace-nowrap text-sm font-['JetBrains_Mono'] text-slate-950 font-black leading-none">{analysisView.confidenceLevel}/100</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Target</span>
@@ -1130,7 +1130,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       </div>
 
       {/* ── Section 3: AI Market Search ── */}
-      <div className="relative overflow-hidden rounded-3xl border border-cyan-300/35 bg-slate-950/95 p-4 text-slate-100 shadow-[0_18px_50px_rgba(8,145,178,0.22)] ring-1 ring-cyan-400/15 sm:p-6">
+      <div className="ai-market-panel relative overflow-hidden rounded-3xl border border-cyan-300/35 bg-slate-950/95 p-4 text-slate-100 shadow-[0_18px_50px_rgba(8,145,178,0.22)] ring-1 ring-cyan-400/15 sm:p-6">
         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(135deg,rgba(8,145,178,0.22),transparent_34%,rgba(15,23,42,0.36)),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_34%)]" />
         <h3 className="relative text-[10px] font-bold text-cyan-300 tracking-[0.2em] uppercase mb-2 border-b border-cyan-300/20 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-300 animate-pulse inline-block"></span>
@@ -1395,34 +1395,34 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                 )}
 
                 {aiResult.custom_metrics?.trades?.length > 0 && (
-                  <div className="mt-4 overflow-hidden rounded-2xl border border-cyan-300/25 bg-slate-950/80">
-                    <div className="px-4 py-3 bg-slate-900 border-b border-cyan-300/15 flex items-center justify-between">
-                      <span className="text-[10px] text-cyan-300 uppercase tracking-widest font-black font-['Space_Grotesk']">
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-cyan-200 bg-white text-slate-950 shadow-[0_18px_45px_rgba(2,6,23,0.22)]">
+                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                      <span className="text-[10px] text-cyan-700 uppercase tracking-widest font-black font-['Space_Grotesk']">
                         {aiResult.custom_metrics?.mode === 'weekday_projection' ? 'Projected setups' : 'Trade log'}
                       </span>
-                      <span className="text-[9px] text-slate-300 font-['JetBrains_Mono']">
+                      <span className="text-[9px] text-slate-600 font-['JetBrains_Mono']">
                         {aiResult.custom_metrics?.mode === 'weekday_projection' ? aiResult.custom_metrics.scope : `Latest ${aiResult.custom_metrics.trades.length}`}
                       </span>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[820px] border-separate border-spacing-0 text-left">
-                        <thead className="bg-slate-800">
+                        <thead className="bg-slate-100">
                           <tr>
                             {['Buy day', 'Buy date', 'Buy', 'Sell day', 'Sell date', 'Sell', 'Hold', 'Return', 'Result'].map(label => (
-                              <th key={label} className="px-4 py-3 text-[9px] text-slate-300 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</th>
+                              <th key={label} className="px-4 py-3 text-[9px] text-slate-600 uppercase tracking-widest font-black font-['Space_Grotesk']">{label}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {aiResult.custom_metrics.trades.map((trade: any, index: number) => (
-                            <tr key={`${trade.buy_date}-${trade.sell_date}-${index}`} className="border-t border-cyan-300/10 odd:bg-slate-950/40 even:bg-slate-900/40">
-                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.buy_day || '-'}</td>
-                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.buy_date}</td>
-                              <td className="px-4 py-3 text-xs text-white font-bold font-['JetBrains_Mono']">{currency}{trade.buy_price}</td>
-                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.sell_day || '-'}</td>
-                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.sell_date}</td>
-                              <td className="px-4 py-3 text-xs text-white font-bold font-['JetBrains_Mono']">{currency}{trade.sell_price}</td>
-                              <td className="px-4 py-3 text-xs text-zinc-300 font-['JetBrains_Mono']">{trade.holding_days}d</td>
+                            <tr key={`${trade.buy_date}-${trade.sell_date}-${index}`} className="border-t border-slate-200 odd:bg-white even:bg-slate-50 hover:bg-cyan-50">
+                              <td className="px-4 py-3 text-xs text-slate-800 font-['JetBrains_Mono']">{trade.buy_day || '-'}</td>
+                              <td className="px-4 py-3 text-xs text-slate-800 font-['JetBrains_Mono']">{trade.buy_date}</td>
+                              <td className="px-4 py-3 text-xs text-slate-950 font-bold font-['JetBrains_Mono']">{currency}{trade.buy_price}</td>
+                              <td className="px-4 py-3 text-xs text-slate-800 font-['JetBrains_Mono']">{trade.sell_day || '-'}</td>
+                              <td className="px-4 py-3 text-xs text-slate-800 font-['JetBrains_Mono']">{trade.sell_date}</td>
+                              <td className="px-4 py-3 text-xs text-slate-950 font-bold font-['JetBrains_Mono']">{currency}{trade.sell_price}</td>
+                              <td className="px-4 py-3 text-xs text-slate-800 font-['JetBrains_Mono']">{trade.holding_days}d</td>
                               <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${trade.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>{trade.return_pct}%</td>
                               <td className={`px-4 py-3 text-xs font-black font-['Space_Grotesk'] ${trade.result === 'PROJECTED' ? 'text-cyan-300' : trade.result === 'WIN' ? 'text-green-400' : 'text-red-400'}`}>{trade.result}</td>
                             </tr>
@@ -2380,6 +2380,29 @@ export default function Home() {
         .bullseye-light [class*="text-zinc-400"],
         .bullseye-light [class*="text-zinc-500"],
         .bullseye-light [class*="text-zinc-600"] { color: #64748b !important; }
+        .bullseye-light .ai-market-panel {
+          background-color: rgba(15,23,42,0.96) !important;
+          color: #e2e8f0 !important;
+        }
+        .bullseye-light .ai-market-panel [class*="bg-black"],
+        .bullseye-light .ai-market-panel [class*="bg-slate-900"],
+        .bullseye-light .ai-market-panel [class*="bg-slate-950"] {
+          background-color: rgba(15,23,42,0.84) !important;
+        }
+        .bullseye-light .ai-market-panel [class*="text-white"],
+        .bullseye-light .ai-market-panel [class*="text-zinc-200"],
+        .bullseye-light .ai-market-panel [class*="text-zinc-300"],
+        .bullseye-light .ai-market-panel [class*="text-slate-100"],
+        .bullseye-light .ai-market-panel [class*="text-slate-300"] {
+          color: #e2e8f0 !important;
+        }
+        .bullseye-light .ai-market-panel table [class*="text-slate-"],
+        .bullseye-light .ai-market-panel table [class*="text-zinc-"] {
+          color: #0f172a !important;
+        }
+        .bullseye-light .ai-market-panel table [class*="text-green"] { color: #059669 !important; }
+        .bullseye-light .ai-market-panel table [class*="text-red"] { color: #dc2626 !important; }
+        .bullseye-light .ai-market-panel table [class*="text-cyan"] { color: #0891b2 !important; }
         .bullseye-light input {
           background: rgba(255,255,255,0.92) !important;
           color: #0f172a !important;
