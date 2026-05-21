@@ -2,15 +2,26 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { ALL_SCREENS, buildCustomQueryResult, getRowsForScreen, getScreenBySlug, type ScreenMetricRow } from '../screen-data';
 import StockSearch from '../StockSearch';
 
 function ResultsTable({ rows }: { rows: ScreenMetricRow[] }) {
+  const [tableZoom, setTableZoom] = useState(0.82);
+  const changeZoom = (delta: number) => setTableZoom(current => Math.min(1.15, Math.max(0.55, Number((current + delta).toFixed(2)))));
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Table zoom</div>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => changeZoom(-0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom out">-</button>
+          <button type="button" onClick={() => setTableZoom(0.82)} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:border-cyan-300">{Math.round(tableZoom * 100)}%</button>
+          <button type="button" onClick={() => changeZoom(0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom in">+</button>
+        </div>
+      </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-left">
+        <table className="w-full min-w-[1180px] text-left" style={{ zoom: tableZoom } as CSSProperties}>
           <thead className="bg-slate-950 text-white">
             <tr>
               {['S.No.', 'Name', 'CMP Rs.', 'P/E', 'Mar Cap Rs.Cr.', 'Div Yld %', 'Qtr Sales Cr.', 'Qtr Profit Var %', 'Sales Qtr Var %', 'ROCE %', 'Avg PAT 10Yrs', 'Score'].map(label => (

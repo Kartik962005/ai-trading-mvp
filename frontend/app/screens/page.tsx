@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import {
   ALL_SCREENS,
   SCREEN_SECTIONS,
@@ -19,20 +19,31 @@ type QueryResult = {
 };
 
 const examples = [
-  'banks with low debt and ROCE above 15',
-  'dividend stocks in power sector',
-  'IT stocks with strong growth',
-  'stocks near 52 week high',
+  'revenue_growth_3yr > 20 AND profit_growth_3yr > 20 AND roe > 18 AND piotroski_score >= 6',
+  'dividend_yield > 3 AND avg_dividend_payout_3yr > 25 AND debt_to_equity < 0.5 AND piotroski_score >= 7',
+  'market_capitalization BETWEEN 500000000 AND 20000000000 AND revenue_growth_3yr > 25 AND avg_roce_7yr > 20',
+  'roe > 20 AND avg_roce_7yr > 20 AND operating_margin > 15 AND piotroski_score >= 7',
 ];
 
 function MetricTable({ rows }: { rows: ScreenMetricRow[] }) {
+  const [tableZoom, setTableZoom] = useState(0.78);
+  const changeZoom = (delta: number) => setTableZoom(current => Math.min(1.15, Math.max(0.55, Number((current + delta).toFixed(2)))));
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/80 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Table zoom</div>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => changeZoom(-0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom out">-</button>
+          <button type="button" onClick={() => setTableZoom(0.78)} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:border-cyan-300">{Math.round(tableZoom * 100)}%</button>
+          <button type="button" onClick={() => changeZoom(0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom in">+</button>
+        </div>
+      </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] text-left">
+        <table className="w-full min-w-[1580px] text-left" style={{ zoom: tableZoom } as CSSProperties}>
           <thead className="bg-slate-950 text-white">
             <tr>
-              {['S.No.', 'Name', 'CMP Rs.', 'P/E', 'Mar Cap Rs.Cr.', 'Div Yld %', 'Qtr Sales Cr.', 'Qtr Profit Var %', 'Sales Qtr Var %', 'ROCE %', 'Score'].map(label => (
+              {['S.No.', 'Name', 'CMP Rs.', 'P/E', 'Mar Cap Rs.Cr.', 'Rev Growth 3Y %', 'Profit Growth 3Y %', 'Profit Growth 5Y %', 'ROE %', 'Avg ROCE 7Y %', 'Debt/Eq', 'Op Margin %', 'Piotroski', 'Div Yld %', 'Payout 3Y %', 'Score'].map(label => (
                 <th key={label} className="px-4 py-3 text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']">{label}</th>
               ))}
             </tr>
@@ -50,11 +61,16 @@ function MetricTable({ rows }: { rows: ScreenMetricRow[] }) {
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.cmp.toFixed(2)}</td>
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.pe.toFixed(2)}</td>
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.marketCapCr.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.revenueGrowth3Yr.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.profitGrowth3Yr.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.profitGrowth5Yr.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.roe.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.avgRoce7Yr.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.debtToEquity.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.operatingMargin.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.piotroskiScore}</td>
                 <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.divYield.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.qtrSalesCr.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${row.qtrProfitVar >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{row.qtrProfitVar.toFixed(2)}</td>
-                <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${row.qtrSalesVar >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{row.qtrSalesVar.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.roce.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.avgDividendPayout3Yr.toFixed(2)}</td>
                 <td className="px-4 py-3">
                   <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-700">{row.score}</span>
                 </td>
@@ -155,7 +171,7 @@ export default function ScreensPage() {
                   <textarea
                     value={query}
                     onChange={event => setQuery(event.target.value)}
-                    placeholder="Custom query only: e.g. banks with low debt and ROCE above 15"
+                    placeholder="Paste SQL or type plain English: roe > 20 AND debt_to_equity < 0.5"
                     className="min-h-20 flex-1 resize-none rounded-xl border border-cyan-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-24 sm:rounded-2xl"
                   />
                   <button

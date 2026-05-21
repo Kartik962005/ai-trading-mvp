@@ -21,11 +21,21 @@ export type ScreenMetricRow = {
   cmp: number;
   pe: number;
   marketCapCr: number;
+  marketCapitalization: number;
   divYield: number;
+  avgDividendPayout3Yr: number;
   qtrSalesCr: number;
   qtrProfitVar: number;
   qtrSalesVar: number;
+  revenueGrowth3Yr: number;
+  profitGrowth3Yr: number;
+  profitGrowth5Yr: number;
+  roe: number;
   roce: number;
+  avgRoce7Yr: number;
+  debtToEquity: number;
+  operatingMargin: number;
+  piotroskiScore: number;
   avgPat10Yrs: number;
   score: number;
   reason: string;
@@ -289,22 +299,52 @@ export function getAvailableSectors() {
 function makeRow(symbol: string, index: number, overrides: MetricOverride = {}): ScreenMetricRow | null {
   const stock = indianStockBySymbol.get(symbol);
   if (!stock) return null;
+  const hash = getStableHash(`${stock.symbol}:${stock.name}`);
+  const marketCapCr = 55 + (hash % 1900) + (index % 7) * 11;
+  const revenueGrowth3Yr = 8 + (hash % 38);
+  const profitGrowth3Yr = 7 + ((hash * 3) % 42);
+  const profitGrowth5Yr = 6 + ((hash * 5) % 36);
+  const roe = 11 + ((hash * 7) % 25);
+  const avgRoce7Yr = 12 + ((hash * 11) % 25);
+  const debtToEquity = Number((((hash % 95) / 100)).toFixed(2));
+  const piotroskiScore = 5 + (hash % 5);
+  const operatingMargin = 9 + ((hash * 13) % 26);
+  const divYield = Number(Math.max(0, 1 + ((hash * 17) % 520) / 100).toFixed(2));
+  const avgDividendPayout3Yr = 12 + ((hash * 19) % 55);
 
-  return {
+  const row: ScreenMetricRow = {
     stock,
     cmp: 82 + index * 47.35,
     pe: 7.4 + index * 1.27,
-    marketCapCr: 4200 + index * 6420,
-    divYield: Math.max(0, 4.8 - index * 0.32),
+    marketCapCr,
+    marketCapitalization: marketCapCr * 10000000,
+    divYield,
+    avgDividendPayout3Yr,
     qtrSalesCr: 320 + index * 1180,
     qtrProfitVar: 11.4 + index * 3.7,
     qtrSalesVar: 8.2 + index * 2.2,
+    revenueGrowth3Yr,
+    profitGrowth3Yr,
+    profitGrowth5Yr,
+    roe,
     roce: 18.5 + index * 1.65,
+    avgRoce7Yr,
+    debtToEquity,
+    operatingMargin,
+    piotroskiScore,
     avgPat10Yrs: 180 + index * 22,
     score: 92 - index * 3,
     reason: 'Matched the core screen rules with stronger-than-peer fundamentals.',
     ...overrides,
   };
+  if (overrides.marketCapCr !== undefined && overrides.marketCapitalization === undefined) {
+    row.marketCapitalization = row.marketCapCr * 10000000;
+  }
+  return row;
+}
+
+function getStableHash(value: string) {
+  return value.split('').reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
 }
 
 const screenSymbols: Record<string, string[]> = {
@@ -379,38 +419,165 @@ export function buildCustomQueryResult(prompt: string, selectedSector?: string) 
   const base = (wantsUs ? STOCKS.filter(stock => ['NASDAQ', 'NYSE'].includes(stock.exchange)) : nseStocks)
     .filter(stock => !sector || getStockSector(stock) === sector);
 
-  const terms = lower
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/\s+/)
-    .filter(term => term.length > 2 && !['find', 'show', 'stock', 'stocks', 'with', 'and', 'the', 'where', 'filter'].includes(term));
+  const universe = base
+    .map((stock, index) => makeRow(stock.symbol, index, {
+      score: 90 - (index % 40),
+      reason: 'Matched the custom SQL/plain-English query against the loaded Bullseye fundamentals universe.',
+    }))
+    .filter((row): row is ScreenMetricRow => Boolean(row));
 
-  const matched = base.filter(stock => {
-    if (terms.length === 0) return true;
-    const haystack = `${stock.name} ${stock.symbol} ${stock.exchange} ${getStockSector(stock)}`.toLowerCase();
-    return terms.some(term => haystack.includes(term));
-  });
+  const parsed = parseSqlLikeQuery(prompt);
+  const rowsAfterSql = parsed.conditions.length
+    ? universe.filter(row => parsed.conditions.every(condition => condition(row)))
+    : [];
 
-  const rows = (matched.length ? matched : base).slice(0, 36).map((stock, index) => makeRow(stock.symbol, index, {
-    score: 86 - index,
-    reason: 'Matched the custom query terms against the available stock universe.',
-  })).filter((row): row is ScreenMetricRow => Boolean(row));
+  const rowsAfterPlainEnglish = rowsAfterSql.length ? rowsAfterSql : filterPlainEnglishRows(universe, lower);
+  const sortedRows = sortRows(rowsAfterPlainEnglish.length ? rowsAfterPlainEnglish : universe, parsed.orderBy);
+  const rows = sortedRows.slice(0, 60);
 
   const conditions = [
     sector ? `sector = "${sector}"` : '',
     lower.includes('dividend') ? 'dividend_yield > 2' : '',
     lower.includes('rsi') || lower.includes('oversold') ? 'rsi_14 < 30' : '',
     lower.includes('debt') ? 'debt_to_equity < 1' : '',
-    lower.includes('growth') ? 'sales_growth_3y > 10' : '',
+    lower.includes('growth') ? 'revenue_growth_3yr > 10' : '',
     lower.includes('52 week') || lower.includes('new high') ? 'close >= 0.9 * high_52_week' : '',
   ].filter(Boolean);
 
-  const query = [
+  const generatedQuery = [
     'SELECT name, symbol, sector, cmp, pe, roce, dividend_yield',
     'FROM stocks',
     `WHERE ${conditions.length ? conditions.join(' AND ') : 'market_cap > 1000'}`,
-    'ORDER BY score DESC',
+    `ORDER BY ${parsed.orderBy?.field ?? 'score'} ${parsed.orderBy?.direction ?? 'DESC'}`,
     'LIMIT 50;',
   ].join('\n');
 
-  return { rows, query };
+  return {
+    rows,
+    query: parsed.isSql ? prompt.trim() : generatedQuery,
+  };
+}
+
+type QueryCondition = (row: ScreenMetricRow) => boolean;
+type OrderBy = { field: string; direction: 'ASC' | 'DESC' } | null;
+
+const FIELD_ALIASES: Record<string, keyof ScreenMetricRow> = {
+  stock_name: 'stock',
+  name: 'stock',
+  symbol: 'stock',
+  revenue_growth_3yr: 'revenueGrowth3Yr',
+  revenue_growth_3y: 'revenueGrowth3Yr',
+  sales_growth_3yr: 'revenueGrowth3Yr',
+  profit_growth_3yr: 'profitGrowth3Yr',
+  profit_growth_5yr: 'profitGrowth5Yr',
+  roe: 'roe',
+  roce: 'roce',
+  avg_roce_7yr: 'avgRoce7Yr',
+  average_roce_7yr: 'avgRoce7Yr',
+  debt_to_equity: 'debtToEquity',
+  debt_equity: 'debtToEquity',
+  operating_margin: 'operatingMargin',
+  piotroski_score: 'piotroskiScore',
+  dividend_yield: 'divYield',
+  div_yield: 'divYield',
+  avg_dividend_payout_3yr: 'avgDividendPayout3Yr',
+  dividend_payout_3yr: 'avgDividendPayout3Yr',
+  market_capitalization: 'marketCapitalization',
+  market_cap: 'marketCapitalization',
+  market_capitalisation: 'marketCapitalization',
+  cmp: 'cmp',
+  pe: 'pe',
+  p_e: 'pe',
+  score: 'score',
+};
+
+const FIELD_PATTERN = Object.keys(FIELD_ALIASES)
+  .sort((a, b) => b.length - a.length)
+  .map(field => field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|');
+
+function parseSqlLikeQuery(prompt: string): { isSql: boolean; conditions: QueryCondition[]; orderBy: OrderBy } {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  const isSql = /\bselect\b[\s\S]+\bfrom\b[\s\S]+\bwhere\b/i.test(prompt);
+  const whereMatch = normalized.match(/\bwhere\b([\s\S]*?)(?:\border\s+by\b|\blimit\b|;|$)/i);
+  const whereText = whereMatch?.[1] ?? normalized;
+  const conditions: QueryCondition[] = [];
+
+  const betweenRegex = new RegExp(`\\b(${FIELD_PATTERN})\\b\\s+between\\s+(-?\\d+(?:\\.\\d+)?)\\s+and\\s+(-?\\d+(?:\\.\\d+)?)`, 'gi');
+  for (const match of whereText.matchAll(betweenRegex)) {
+    const key = resolveFieldKey(match[1]);
+    const min = Number(match[2]);
+    const max = Number(match[3]);
+    if (key && Number.isFinite(min) && Number.isFinite(max)) {
+      conditions.push(row => {
+        const value = getComparableValue(row, key);
+        return typeof value === 'number' && value >= min && value <= max;
+      });
+    }
+  }
+
+  const comparisonText = whereText.replace(betweenRegex, ' ');
+  const comparisonRegex = new RegExp(`\\b(${FIELD_PATTERN})\\b\\s*(>=|<=|=|>|<)\\s*(-?\\d+(?:\\.\\d+)?)`, 'gi');
+  for (const match of comparisonText.matchAll(comparisonRegex)) {
+    const key = resolveFieldKey(match[1]);
+    const operator = match[2];
+    const target = Number(match[3]);
+    if (key && Number.isFinite(target)) {
+      conditions.push(row => {
+        const value = getComparableValue(row, key);
+        if (typeof value !== 'number') return false;
+        if (operator === '>') return value > target;
+        if (operator === '>=') return value >= target;
+        if (operator === '<') return value < target;
+        if (operator === '<=') return value <= target;
+        return value === target;
+      });
+    }
+  }
+
+  const orderMatch = normalized.match(new RegExp(`\\border\\s+by\\s+(${FIELD_PATTERN})(?:\\s+(asc|desc))?`, 'i'));
+  const orderField = orderMatch ? resolveFieldKey(orderMatch[1]) : null;
+
+  return {
+    isSql,
+    conditions,
+    orderBy: orderField ? { field: orderMatch![1], direction: (orderMatch?.[2]?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC') } : null,
+  };
+}
+
+function resolveFieldKey(field: string) {
+  return FIELD_ALIASES[field.toLowerCase().trim().replace(/\s+/g, '_')];
+}
+
+function getComparableValue(row: ScreenMetricRow, key: keyof ScreenMetricRow) {
+  if (key === 'stock') return row.stock.name;
+  return row[key];
+}
+
+function sortRows(rows: ScreenMetricRow[], orderBy: OrderBy) {
+  if (!orderBy) return [...rows].sort((a, b) => b.score - a.score);
+  const key = resolveFieldKey(orderBy.field);
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    const left = getComparableValue(a, key);
+    const right = getComparableValue(b, key);
+    if (typeof left === 'number' && typeof right === 'number') {
+      return orderBy.direction === 'ASC' ? left - right : right - left;
+    }
+    return orderBy.direction === 'ASC'
+      ? String(left).localeCompare(String(right))
+      : String(right).localeCompare(String(left));
+  });
+}
+
+function filterPlainEnglishRows(rows: ScreenMetricRow[], lower: string) {
+  return rows.filter(row => {
+    if (lower.includes('dividend') && row.divYield <= 2) return false;
+    if (lower.includes('debt') && row.debtToEquity >= 1) return false;
+    if (lower.includes('growth') && row.revenueGrowth3Yr <= 10) return false;
+    if (lower.includes('roe') && row.roe <= 15) return false;
+    if (lower.includes('roce') && row.avgRoce7Yr <= 15) return false;
+    if (lower.includes('piotroski') && row.piotroskiScore < 7) return false;
+    return true;
+  });
 }
