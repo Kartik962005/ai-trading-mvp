@@ -377,7 +377,10 @@ def get_historical_data(ticker: str, days: int = 365):
     # ── Layer 1: RAM cache ─────────────────────────────────────────────────────
     now = time.time()
     if ticker in _hist_cache and now - _hist_cache[ticker]['ts'] < HIST_TTL:
-        return _hist_cache[ticker]['df'].copy()
+        cached_df = _hist_cache[ticker]['df'].copy()
+        required_rows = max(50, min(days, int(days * 0.55)))
+        if len(cached_df) >= required_rows:
+            return cached_df
 
     # ── Layer 2: Supabase database (simplified — single table, no asset_id) ───
     if SUPABASE_OK and supabase:

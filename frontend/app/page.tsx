@@ -100,280 +100,6 @@ function getAnalysisPresentation(analysis: any) {
   };
 }
 
-const MONTH_INDEX: Record<string, string> = {
-  jan: '01', january: '01',
-  feb: '02', february: '02',
-  mar: '03', march: '03',
-  apr: '04', april: '04',
-  may: '05',
-  jun: '06', june: '06',
-  jul: '07', july: '07',
-  aug: '08', august: '08',
-  sep: '09', sept: '09', september: '09',
-  oct: '10', october: '10',
-  nov: '11', november: '11',
-  dec: '12', december: '12',
-};
-const MONTH_WORDS = Object.keys(MONTH_INDEX);
-
-function parseRequestedDate(prompt: string) {
-  const clean = prompt.toLowerCase();
-  const namedDate = clean.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})(?:\s+(\d{4}))?\b/);
-  if (namedDate) {
-    const year = namedDate[3] ?? String(new Date().getFullYear());
-    const monthToken = namedDate[2];
-    const month = MONTH_INDEX[monthToken] ?? MONTH_INDEX[MONTH_WORDS.find(word => getLevenshteinDistance(monthToken, word) <= 1) ?? ''];
-    if (!month) return null;
-    const day = namedDate[1].padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  const numericDate = clean.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/) ?? clean.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?\b/);
-  if (!numericDate) return null;
-
-  if (numericDate[0].includes('-') && numericDate[1].length === 4) {
-    return `${numericDate[1]}-${numericDate[2].padStart(2, '0')}-${numericDate[3].padStart(2, '0')}`;
-  }
-
-  const year = numericDate[3] ?? String(new Date().getFullYear());
-  const day = numericDate[1].padStart(2, '0');
-  const month = numericDate[2].padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function hasPriceLookupIntent(prompt: string) {
-  return /\b(price|open|opening|close|closing|ohlc|candle|high|low)\b/i.test(prompt);
-}
-
-function hasBacktestIntent(prompt: string) {
-  return /\b(backtest|test|strategy|simulate|if i|what if|buy.*sell|sell.*buy|bought.*sold|closing.*opening|opening.*closing|rsi|sma|ema|macd|bollinger|crossover|volume|gap|friday|monday|tuesday|wednesday|thursday)\b/i.test(prompt);
-}
-
-const WEEKDAY_INDEX: Record<string, number> = {
-  monday: 1, mon: 1,
-  tuesday: 2, tue: 2, tues: 2,
-  wednesday: 3, wed: 3,
-  thursday: 4, thu: 4, thur: 4, thurs: 4,
-  friday: 5, fri: 5,
-};
-
-function getIsoWeekday(day: string) {
-  const value = new Date(`${day}T00:00:00`).getDay();
-  return value === 0 ? 7 : value;
-}
-
-function findWeekdayToken(text: string) {
-  return Object.keys(WEEKDAY_INDEX).find(day => new RegExp(`\\b${day}\\b`).test(text)) ?? null;
-}
-
-function getTradeClause(cleanPrompt: string, action: 'buy' | 'sell') {
-  const actionPattern = action === 'buy' ? '(?:buy|bought|enter|entry)' : '(?:sell|sold|exit)';
-  const stopPattern = action === 'buy' ? '(?=\\b(?:sell|sold|exit)\\b|$)' : '$';
-  const match = cleanPrompt.match(new RegExp(`\\b${actionPattern}\\b([\\s\\S]*?)${stopPattern}`));
-  return match?.[1]?.trim() ?? '';
-}
-
-function parseWeekdayTradePrompt(prompt: string) {
-  const clean = prompt.toLowerCase().replace(/[,.]/g, ' ');
-  const buyClause = getTradeClause(clean, 'buy');
-  const sellClause = getTradeClause(clean, 'sell');
-  const buyDay = findWeekdayToken(buyClause);
-  const sellDay = findWeekdayToken(sellClause);
-  if (!buyDay || !sellDay) return null;
-
-  const buyField = /\b(opening|open)\b/.test(buyClause) ? 'open' : 'close';
-  const sellField = /\b(closing|close)\b/.test(sellClause) ? 'close' : 'open';
-
-  return {
-    buyDayName: buyDay,
-    sellDayName: sellDay,
-    buyDayIndex: WEEKDAY_INDEX[buyDay],
-    sellDayIndex: WEEKDAY_INDEX[sellDay],
-    buyField: buyField as 'open' | 'close',
-    sellField: sellField as 'open' | 'close',
-  };
-}
-
-function parseBacktestWindow(prompt: string) {
-  const clean = prompt.toLowerCase();
-  const forwardMatch = clean.match(/\b(?:coming|next|future|upcoming|ahead)(?:\s+\w+){0,2}\s+(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\b/) ??
-    clean.match(/\b(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\s*(?:from now|ahead|forward)\b/);
-  if (forwardMatch) {
-    return { mode: 'forecast' as const, days: Math.max(1, Number(forwardMatch[1])) };
-  }
-
-  const historicalMatch = clean.match(/\b(?:last|past|previous|recent)\s+(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\b/) ??
-    clean.match(/\b(\d{1,4})\s*(?:calendar\s*)?(?:days?|sessions?)\s*(?:ago|history|historical)\b/);
-  if (historicalMatch) {
-    return { mode: 'historical' as const, days: Math.max(1, Number(historicalMatch[1])) };
-  }
-
-  return { mode: 'all' as const, days: null };
-}
-
-function summarizeTrades(trades: any[]) {
-  const totalTrades = trades.length;
-  const wins = trades.filter(trade => trade.return_pct > 0).length;
-  const losses = trades.filter(trade => trade.return_pct < 0).length;
-  const totalReturn = trades.reduce((sum, trade) => sum + Number(trade.return_pct || 0), 0);
-  const avgReturn = totalTrades ? totalReturn / totalTrades : 0;
-  const best = trades.reduce((current, trade) => Number(trade.return_pct) > Number(current?.return_pct ?? -Infinity) ? trade : current, null);
-  const worst = trades.reduce((current, trade) => Number(trade.return_pct) < Number(current?.return_pct ?? Infinity) ? trade : current, null);
-
-  return {
-    total_trades: totalTrades,
-    wins,
-    losses,
-    win_rate: totalTrades ? Number(((wins / totalTrades) * 100).toFixed(2)) : 0,
-    avg_return_per_trade_pct: Number(avgReturn.toFixed(2)),
-    total_return_pct: Number(totalReturn.toFixed(2)),
-    best_trade_pct: best ? best.return_pct : 0,
-    worst_trade_pct: worst ? worst.return_pct : 0,
-  };
-}
-
-function filterCandlesByCalendarDays(candles: any[], days: number | null) {
-  if (!days || candles.length === 0) return candles;
-  const latest = new Date(`${candles[candles.length - 1].day}T00:00:00`);
-  const cutoff = new Date(latest);
-  cutoff.setDate(cutoff.getDate() - days);
-  return candles.filter(candle => new Date(`${candle.day}T00:00:00`) >= cutoff);
-}
-
-function buildWeekdayTrades(candles: any[], rule: ReturnType<typeof parseWeekdayTradePrompt>) {
-  if (!rule) return [];
-  const trades: any[] = [];
-
-  for (let i = 0; i < candles.length - 1; i++) {
-    const buyCandle = candles[i];
-    if (getIsoWeekday(buyCandle.day) !== rule.buyDayIndex) continue;
-
-    const sellCandle = candles.slice(i + 1).find((candle: any) => getIsoWeekday(candle.day) === rule.sellDayIndex);
-    if (!sellCandle) continue;
-
-    const buyPrice = Number(buyCandle[rule.buyField]);
-    const sellPrice = Number(sellCandle[rule.sellField]);
-    if (!Number.isFinite(buyPrice) || !Number.isFinite(sellPrice) || buyPrice <= 0) continue;
-
-    const returnPct = ((sellPrice - buyPrice) / buyPrice) * 100;
-    trades.push({
-      buy_day: buyCandle.day ? new Date(`${buyCandle.day}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) : rule.buyDayName,
-      buy_date: buyCandle.day,
-      buy_price: Number(buyPrice.toFixed(2)),
-      sell_day: sellCandle.day ? new Date(`${sellCandle.day}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) : rule.sellDayName,
-      sell_date: sellCandle.day,
-      sell_price: Number(sellPrice.toFixed(2)),
-      holding_days: Math.max(1, Math.round((new Date(`${sellCandle.day}T00:00:00`).getTime() - new Date(`${buyCandle.day}T00:00:00`).getTime()) / 86400000)),
-      pnl_per_share: Number((sellPrice - buyPrice).toFixed(2)),
-      pnl_100shares: Number(((sellPrice - buyPrice) * 100).toFixed(2)),
-      return_pct: Number(returnPct.toFixed(2)),
-      result: returnPct >= 0 ? 'WIN' : 'LOSS',
-    });
-  }
-
-  return trades;
-}
-
-function buildProjectedWeekdayTrades(rule: ReturnType<typeof parseWeekdayTradePrompt>, candles: any[], days: number, historicalSummary: ReturnType<typeof summarizeTrades>) {
-  if (!rule || candles.length === 0) return [];
-  const latest = candles[candles.length - 1];
-  const latestClose = Number(latest.close);
-  const projectedTrades: any[] = [];
-  const cursor = new Date(`${latest.day}T00:00:00`);
-  const end = new Date(cursor);
-  end.setDate(end.getDate() + days);
-
-  cursor.setDate(cursor.getDate() + 1);
-  while (cursor <= end) {
-    const iso = cursor.toISOString().slice(0, 10);
-    if (getIsoWeekday(iso) === rule.buyDayIndex) {
-      const sellCursor = new Date(cursor);
-      while (sellCursor <= end && getIsoWeekday(sellCursor.toISOString().slice(0, 10)) !== rule.sellDayIndex) {
-        sellCursor.setDate(sellCursor.getDate() + 1);
-      }
-      if (sellCursor <= end) {
-        const buyDate = cursor.toISOString().slice(0, 10);
-        const sellDate = sellCursor.toISOString().slice(0, 10);
-        const buyPrice = latestClose;
-        const expectedReturn = historicalSummary.avg_return_per_trade_pct;
-        const sellPrice = buyPrice * (1 + expectedReturn / 100);
-        projectedTrades.push({
-          buy_day: new Date(`${buyDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }),
-          buy_date: buyDate,
-          buy_price: Number(buyPrice.toFixed(2)),
-          sell_day: new Date(`${sellDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }),
-          sell_date: sellDate,
-          sell_price: Number(sellPrice.toFixed(2)),
-          holding_days: Math.max(1, Math.round((new Date(`${sellDate}T00:00:00`).getTime() - new Date(`${buyDate}T00:00:00`).getTime()) / 86400000)),
-          pnl_per_share: Number((sellPrice - buyPrice).toFixed(2)),
-          pnl_100shares: Number(((sellPrice - buyPrice) * 100).toFixed(2)),
-          return_pct: Number(expectedReturn.toFixed(2)),
-          result: 'PROJECTED',
-        });
-      }
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return projectedTrades;
-}
-
-function runWeekdayBacktest(prompt: string, chartData: any, ticker: string) {
-  const rule = parseWeekdayTradePrompt(prompt);
-  const candles = getChartCandles(chartData);
-  if (!rule || candles.length < 5) return null;
-
-  const window = parseBacktestWindow(prompt);
-  const historicalCandles = filterCandlesByCalendarDays(candles, window.mode === 'historical' ? window.days : null);
-  const historicalTrades = buildWeekdayTrades(historicalCandles, rule);
-  const allTrades = buildWeekdayTrades(candles, rule);
-  const historicalSummary = summarizeTrades(allTrades);
-  const trades = window.mode === 'forecast'
-    ? buildProjectedWeekdayTrades(rule, candles, window.days ?? 30, historicalSummary)
-    : historicalTrades;
-  const summary = window.mode === 'forecast'
-    ? {
-        ...summarizeTrades(trades),
-        win_rate: historicalSummary.win_rate,
-        wins: Math.round(trades.length * historicalSummary.win_rate / 100),
-        losses: Math.max(0, trades.length - Math.round(trades.length * historicalSummary.win_rate / 100)),
-        avg_return_per_trade_pct: historicalSummary.avg_return_per_trade_pct,
-        total_return_pct: Number((historicalSummary.avg_return_per_trade_pct * trades.length).toFixed(2)),
-        best_trade_pct: historicalSummary.best_trade_pct,
-        worst_trade_pct: historicalSummary.worst_trade_pct,
-      }
-    : summarizeTrades(trades);
-  const buyLabel = `${rule.buyDayName} ${rule.buyField}`;
-  const sellLabel = `${rule.sellDayName} ${rule.sellField}`;
-  const scope = window.mode === 'forecast'
-    ? `next ${window.days} calendar days, projected from historical ${buyLabel} to ${sellLabel} behavior`
-    : window.mode === 'historical'
-      ? `last ${window.days} calendar days`
-      : 'loaded price history';
-
-  return {
-    type: 'strategy_test',
-    custom_metrics: {
-      success: true,
-      prompt,
-      buy_expr: `Buy ${ticker} on ${buyLabel}`,
-      sell_expr: `Sell on the next ${sellLabel}`,
-      mode: window.mode === 'forecast' ? 'weekday_projection' : 'weekday_price_pair',
-      analysis_text: trades.length
-        ? `${window.mode === 'forecast' ? 'Projected' : 'Tested'} ${buyLabel} to next ${sellLabel} over ${scope}. It produced ${summary.total_trades} ${window.mode === 'forecast' ? 'projected setups' : 'closed trades'} with ${summary.win_rate}% historical win rate and ${summary.total_return_pct}% ${window.mode === 'forecast' ? 'expected simple return' : 'cumulative simple return'}.`
-        : `No matching ${buyLabel} to ${sellLabel} setups were found over ${scope}.`,
-      current_signal: 'HOLD',
-      summary,
-      trades: trades.slice(-30),
-      scope,
-      total_trades: summary.total_trades,
-      win_rate: summary.win_rate,
-      avg_return_per_trade_pct: summary.avg_return_per_trade_pct,
-      total_return_pct: summary.total_return_pct,
-    },
-  };
-}
-
 function getCache<T>(key: string): T | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
@@ -394,19 +120,6 @@ function setCache(key: string, data: any) {
   } catch {}
 }
 
-function getNearestCandles(chartData: any, requestedDate: string | null) {
-  if (!requestedDate || !Array.isArray(chartData)) return { previous: null, next: null };
-  const candles = chartData
-    .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
-    .map((d: any) => ({ ...d, day: d.date.toString().slice(0, 10) }))
-    .sort((a: any, b: any) => a.day.localeCompare(b.day));
-
-  return {
-    previous: [...candles].reverse().find((d: any) => d.day < requestedDate) ?? null,
-    next: candles.find((d: any) => d.day > requestedDate) ?? null,
-  };
-}
-
 function getChartCandles(chartData: any) {
   if (!Array.isArray(chartData)) return [];
   return chartData
@@ -415,56 +128,23 @@ function getChartCandles(chartData: any) {
     .sort((a: any, b: any) => a.day.localeCompare(b.day));
 }
 
-function parseShareQuantity(prompt: string) {
-  const clean = prompt.toLowerCase();
-  const match =
-    clean.match(/\b(?:bought|buy|purchased|purchase|held|holding)\s+(\d+(?:,\d{3})*|\d+(?:\.\d+)?)\s*(?:shares|stocks|qty|quantity)?\b/) ??
-    clean.match(/\b(\d+(?:,\d{3})*|\d+(?:\.\d+)?)\s*(?:shares|stocks|qty|quantity)\b/);
-  if (!match) return null;
-  const value = Number(String(match[1]).replace(/,/g, ''));
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function parseDaysAgo(prompt: string) {
-  const match = prompt.toLowerCase().match(/\b(\d+)\s*(?:trading\s*)?(?:days?|sessions?)\s*ago\b/);
-  if (!match) return null;
-  const value = Number(match[1]);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function resolveHoldingPnl(prompt: string, chartData: any) {
-  const quantity = parseShareQuantity(prompt);
-  const daysAgo = parseDaysAgo(prompt);
-  const candles = getChartCandles(chartData);
-  const wantsPnl = /\b(profit|loss|pnl|p&l|return|earned|made|gain|gained)\b/i.test(prompt);
-  const hasHoldingIntent = /\b(bought|buy|purchased|purchase|invested|held|holding|shares|stocks)\b/i.test(prompt);
-
-  if (!quantity || !daysAgo || !wantsPnl || !hasHoldingIntent || candles.length < 2) return null;
-
-  const buyIndex = Math.max(0, candles.length - 1 - daysAgo);
-  const buyCandle = candles[buyIndex];
-  const latest = candles[candles.length - 1];
-  const buyPrice = Number(buyCandle.close);
-  const currentPrice = Number(latest.close);
-  const pnl = (currentPrice - buyPrice) * quantity;
-  const invested = buyPrice * quantity;
-  const currentValue = currentPrice * quantity;
-  const returnPct = invested ? (pnl / invested) * 100 : 0;
-
-  return {
-    type: 'holding_pnl',
-    quantity,
-    requestedDays: daysAgo,
-    actualDays: candles.length - 1 - buyIndex,
-    buyDate: buyCandle.day,
-    latestDate: latest.day,
-    buyPrice,
-    currentPrice,
-    invested,
-    currentValue,
-    pnl,
-    returnPct,
-  };
+function getLevenshteinDistance(s: string, t: string) {
+  if (!s.length) return t.length;
+  if (!t.length) return s.length;
+  const arr: number[][] = [];
+  for (let i = 0; i <= t.length; i++) {
+    arr[i] = [i];
+    for (let j = 1; j <= s.length; j++) {
+      arr[i][j] = i === 0
+        ? j
+        : Math.min(
+            arr[i - 1][j] + 1,
+            arr[i][j - 1] + 1,
+            arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1)
+          );
+    }
+  }
+  return arr[t.length][s.length];
 }
 
 function buildMarketAnswer(prompt: string, analysis: any, ticker: string, currency: string, chartData: any) {
@@ -582,14 +262,6 @@ function buildMarketAnswer(prompt: string, analysis: any, ticker: string, curren
   }
 
   return null;
-}
-
-function getLevenshteinDistance(s: string, t: string) {
-  if (!s.length) return t.length;
-  if (!t.length) return s.length;
-  const arr: number[][] = [];
-  for (let i = 0; i <= t.length; i++) { arr[i] = [i]; for (let j = 1; j <= s.length; j++) { arr[i][j] = i === 0 ? j : Math.min(arr[i - 1][j] + 1, arr[i][j - 1] + 1, arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1)); } }
-  return arr[t.length][s.length];
 }
 
 function resolveMarket(exchange: string): MarketScope {
@@ -876,130 +548,52 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResult, setAiResult] = useState<any>(null);
   const [isAiRunning, setIsAiRunning] = useState(false);
-
-  const askAiChat = async (prompt: string) => {
-    const candles = getChartCandles(chartData);
-    const latest = candles[candles.length - 1];
-    const response = await fetch('/api/market-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        ticker,
-        context: {
-          latestDate: latest?.day,
-          latestClose: latest?.close,
-          verdict: analysisView.displayVerdict,
-          confidence: analysisView.confidenceLevel,
-          target: analysisView.target,
-          stopLoss: analysisView.stop_loss,
-        },
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error || 'AI chat failed');
-    return {
-      type: 'assistant_answer',
-      title: data.title || 'Bullseye AI answer',
-      answer: data.answer,
-      rows: data.rows ?? [],
-    };
-  };
+  const [aiLoaderSummary, setAiLoaderSummary] = useState('');
 
   const handleAiSearch = async () => {
     if (!aiPrompt || !ticker) return;
     setIsAiRunning(true);
     setAiResult(null);
+    setAiLoaderSummary(`Compiling your request for ${ticker} and reading local OHLCV history...`);
     try {
       const prompt = aiPrompt.trim();
-
-      const holdingPnl = resolveHoldingPnl(prompt, chartData);
-      if (holdingPnl) {
-        setAiResult(holdingPnl);
-        return;
-      }
-
-      if (hasBacktestIntent(prompt)) {
-        const localBacktest = runWeekdayBacktest(prompt, chartData, ticker);
-        if (localBacktest) {
-          setAiResult(localBacktest);
-          return;
-        }
-      }
-
-      const marketAnswer = buildMarketAnswer(prompt, analysis, ticker, currency, chartData);
-      if (marketAnswer && !hasBacktestIntent(prompt)) {
-        setAiResult(marketAnswer);
-        return;
-      }
-
-      if (hasPriceLookupIntent(prompt) && !hasBacktestIntent(prompt)) {
-        const requestedDate = parseRequestedDate(aiPrompt);
-        if (!requestedDate) {
-          const latestAnswer = buildMarketAnswer('latest price', analysis, ticker, currency, chartData);
-          setAiResult(latestAnswer ?? {
-            type: 'assistant_answer',
-            title: 'Need a date for price lookup',
-            answer: 'Tell me the date you want, for example "HDFC opening price on 12 Feb 2025". For strategy tests, write the buy and sell rule.',
-            rows: [
-              ['Example', 'price on 2025-02-12'],
-              ['Example', 'open on 12 Feb 2025'],
-              ['Example', 'buy Friday close sell Monday open'],
-            ],
-          });
-          return;
-        }
-        const candle = Array.isArray(chartData)
-          ? chartData.find((d: any) => d.date?.toString().slice(0, 10) === requestedDate)
-          : null;
-
-        setAiResult({
-          type: 'price_lookup',
-          requestedDate,
-          candle,
-          nearest: getNearestCandles(chartData, requestedDate),
-        });
-        return;
-      }
-
-      if (marketAnswer) {
-        setAiResult(marketAnswer);
-        return;
-      }
-
-      if (!hasBacktestIntent(prompt)) {
-        const chatAnswer = await askAiChat(prompt);
-        setAiResult(chatAnswer);
-        return;
-      }
-
-      const res = await fetch(`${BACKEND}/api/v1/backtest/custom`, {
+      const res = await fetch(`${BACKEND}/api/v1/stock-ai/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, prompt })
+        body: JSON.stringify({
+          prompt,
+          current_ticker: ticker,
+          stocks: STOCKS.map(stock => ({
+            name: stock.name,
+            symbol: stock.symbol,
+            exchange: stock.exchange,
+            ticker: stock.ticker,
+            currency: stock.currency,
+          })),
+        })
       });
       const data = await res.json();
       if (!res.ok) {
-        const chatAnswer = await askAiChat(prompt).catch(() => null);
-        setAiResult(chatAnswer ?? {
+        setAiResult({
           type: 'assistant_answer',
-          title: 'Strategy needs a clearer rule',
-          answer: data?.detail || 'The strategy engine could not answer that yet. Mention a clear buy condition and sell condition, for example "buy when RSI is below 30 and sell when RSI is above 70".',
+          title: 'AI search needs a clearer request',
+          answer: data?.detail || 'The stock AI engine could not answer that yet. Try a specific date, quantity, indicator, or buy/sell rule.',
           rows: [
-            ['Try', 'buy Friday close sell Monday open'],
-            ['Try', 'RSI below 30 sell above 70'],
-            ['Try', 'price above 50 SMA sell below 20 EMA'],
+            ['Try', 'Buy Friday close, sell Monday open'],
+            ['Try', 'If I bought 100 shares 30 days ago'],
+            ['Try', 'Current RSI and support resistance'],
           ],
         });
         return;
       }
-      setAiResult({ type: 'strategy_test', ...data });
+      setAiLoaderSummary(data.ai_context_summary || `Running local analytics for ${data.target_stock || ticker}...`);
+      setAiResult(data);
     } catch {
       const fallback = buildMarketAnswer('help examples', analysis, ticker, currency, chartData);
       setAiResult(fallback ?? {
         type: 'assistant_answer',
         title: 'AI search fallback',
-        answer: 'I could not reach the strategy engine, but price lookup, trend read, risk/reward, and Friday-to-Monday tests can still run from loaded chart data.',
+        answer: 'I could not reach the stock AI engine. The backend may be starting up, or the model/data service may be unavailable.',
         rows: [
           ['Try', 'current price'],
           ['Try', 'support and resistance'],
@@ -1019,12 +613,12 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
   };
 
   const aiExamples = [
+    'Buy when stock drops 1% intraday, sell at 3% profit',
     'Buy Friday close, sell Monday open',
-    'Buy Friday close, sell Monday open in last 30 days',
-    'Buy Friday close, sell Monday open in next 30 days',
-    'Current price and trend',
-    'Support and resistance',
-    'Should I buy or sell?',
+    'If I bought 100 shares 30 days ago, profit or loss?',
+    'What was the price on 15 Oct 2024?',
+    'Current RSI and overbought status',
+    'SMA 50, EMA 20, support and resistance',
   ];
 
   const topStrategies = normalizeStrategyEvals(analysis?.strategy_evals).slice(0, 10);
@@ -1232,7 +826,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
           <div className="mt-4 flex items-center gap-3 py-4">
             <div className="w-5 h-5 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0"></div>
             <span className="text-xs text-slate-300 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">
-              Reading market data for {ticker}...
+              {aiLoaderSummary || `Reading market data for ${ticker}...`}
             </span>
           </div>
         )}
@@ -1277,6 +871,98 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                       <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{label}</span>
                       <span className="text-lg font-['JetBrains_Mono'] font-bold text-white">
                         {currency}{Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : aiResult.type === 'historical_roi' ? (
+              <div className={`${aiResult.pnl >= 0 ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'} border rounded-2xl p-4`}>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-4">
+                  <div>
+                    <span className={`text-[10px] uppercase tracking-widest font-bold font-['Space_Grotesk'] ${aiResult.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      Historical ROI
+                    </span>
+                    <p className="text-sm text-zinc-300 font-['JetBrains_Mono'] mt-1 leading-relaxed">
+                      {aiResult.answer}
+                    </p>
+                    {!aiResult.exact_match && (
+                      <p className="mt-2 text-[10px] text-amber-300 font-['JetBrains_Mono']">
+                        Requested date was not a trading candle, so the nearest available candle was used.
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <div className={`text-2xl font-black font-['JetBrains_Mono'] ${aiResult.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {aiResult.pnl >= 0 ? '+' : '-'}{currency}{Math.abs(Number(aiResult.pnl || 0)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </div>
+                    <div className={`text-xs font-bold font-['JetBrains_Mono'] ${aiResult.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {aiResult.return_pct >= 0 ? '+' : ''}{Number(aiResult.return_pct || 0).toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    ['Quantity', aiResult.quantity],
+                    ['Buy close', aiResult.buy_price],
+                    ['Latest close', aiResult.current_price],
+                    ['Invested', aiResult.invested],
+                    ['Current value', aiResult.current_value],
+                    ['Buy date', aiResult.investment_date],
+                    ['Latest date', aiResult.latest_date],
+                    ['Ticker', aiResult.target_stock],
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{label}</span>
+                      <span className="text-sm font-['JetBrains_Mono'] font-bold text-white break-words">
+                        {typeof value === 'number'
+                          ? (String(label).toLowerCase().includes('quantity') ? value.toLocaleString() : `${currency}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`)
+                          : value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : aiResult.type === 'historical_price' ? (
+              <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold font-['Space_Grotesk']">Historical Price</span>
+                  <span className="text-[10px] text-zinc-500 font-['JetBrains_Mono']">{aiResult.target_stock} · {aiResult.requested_date}</span>
+                </div>
+                {aiResult.candle ? (
+                  <>
+                    <p className="mb-4 text-sm text-zinc-300 font-['JetBrains_Mono'] leading-relaxed">{aiResult.answer}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      {[
+                        ['Date', aiResult.candle.date],
+                        ['Open', aiResult.candle.open],
+                        ['High', aiResult.candle.high],
+                        ['Low', aiResult.candle.low],
+                        ['Close', aiResult.candle.close],
+                      ].map(([label, value]) => (
+                        <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{label}</span>
+                          <span className="text-lg font-['JetBrains_Mono'] font-bold text-white">
+                            {typeof value === 'number' ? `${currency}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-zinc-300 font-['JetBrains_Mono']">No historical candle was found for this request.</p>
+                )}
+              </div>
+            ) : aiResult.type === 'technical_analysis' ? (
+              <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4">
+                <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold font-['Space_Grotesk']">{aiResult.title}</span>
+                <p className="text-sm text-zinc-300 font-['JetBrains_Mono'] leading-relaxed mt-2 mb-4">{aiResult.answer}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {(aiResult.rows ?? []).map(([label, value]: [string, any]) => (
+                    <div key={label} className="bg-black/30 rounded-xl p-3 border border-white/5">
+                      <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{String(label).replaceAll('_', ' ')}</span>
+                      <span className="text-sm font-['JetBrains_Mono'] font-bold text-white break-words">
+                        {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value}
                       </span>
                     </div>
                   ))}
@@ -1354,8 +1040,8 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               </div>
             ) : (
               <>
-                {/* 4 metric cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Backtest metric cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   {[
                     {
                       label: 'Total Trades',
@@ -1404,12 +1090,15 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                         {aiResult.custom_metrics?.analysis_text || aiResult.custom_metrics?.warning || 'Strategy completed. Review the trade log below for entries and exits.'}
                       </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 shrink-0 min-w-[240px]">
+                    <div className="grid grid-cols-2 gap-2 shrink-0 min-w-[320px]">
                       {[
                         ['Wins', aiResult.custom_metrics?.summary?.wins ?? aiResult.custom_metrics?.wins ?? 0],
                         ['Losses', aiResult.custom_metrics?.summary?.losses ?? aiResult.custom_metrics?.losses ?? 0],
                         ['Best', `${aiResult.custom_metrics?.summary?.best_trade_pct ?? aiResult.custom_metrics?.best_trade_pct ?? 0}%`],
                         ['Worst', `${aiResult.custom_metrics?.summary?.worst_trade_pct ?? aiResult.custom_metrics?.worst_trade_pct ?? 0}%`],
+                        ['Max DD', `${aiResult.custom_metrics?.summary?.max_drawdown_pct ?? aiResult.custom_metrics?.max_drawdown_pct ?? 0}%`],
+                        ['Buy & Hold', `${aiResult.custom_metrics?.summary?.buy_and_hold_return_pct ?? aiResult.custom_metrics?.buy_and_hold_return_pct ?? 0}%`],
+                        ['Alpha', `${aiResult.custom_metrics?.summary?.alpha_vs_buy_hold_pct ?? aiResult.custom_metrics?.alpha_vs_buy_hold_pct ?? 0}%`],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl bg-white/90 border border-cyan-100 p-3 text-slate-950">
                           <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold block">{label}</span>

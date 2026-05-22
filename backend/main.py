@@ -42,6 +42,7 @@ app.add_middleware(
 from app.services.data_service import get_latest_quote, get_historical_data, get_fundamentals_data, get_chart_data
 from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
+from app.services.stock_ai_service import run_stock_ai_search
 from app.strategies.engine import run_analysis, evaluate_strategies
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
@@ -185,6 +186,12 @@ class SmartScreenerRequest(BaseModel):
     sectors: list[dict[str, Any]] = []
 
 
+class StockAiRequest(BaseModel):
+    prompt: str
+    current_ticker: str
+    stocks: list[ScreenerStock] = []
+
+
 @app.post("/api/v1/screener/search")
 @limiter.limit("6/minute")
 async def screener_search(request: Request, body: ScreenerRequest):
@@ -207,6 +214,21 @@ async def smart_screener_search(request: Request, body: SmartScreenerRequest):
             for stock in body.stocks[:300]
         ]
         return smart_search(body.prompt, stocks, body.screeners, body.sectors)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/stock-ai/search")
+@limiter.limit("12/minute")
+async def stock_ai_search(request: Request, body: StockAiRequest):
+    try:
+        stocks = [
+            stock.model_dump() if hasattr(stock, "model_dump") else stock.dict()
+            for stock in body.stocks[:900]
+        ]
+        return run_stock_ai_search(body.prompt, body.current_ticker, stocks)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
