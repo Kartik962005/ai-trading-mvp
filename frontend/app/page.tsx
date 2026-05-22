@@ -3138,7 +3138,7 @@ export default function Home() {
               onClick={dismissAuthModal}
               className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-bold uppercase tracking-widest text-zinc-300 transition-all hover:border-cyan-400/50 hover:bg-cyan-400/10 hover:text-white font-['Space_Grotesk']"
             >
-              Continue browsing
+              Continue without logging in
             </button>
 
             <p className="text-[9px] text-zinc-600 text-center mt-4 font-['JetBrains_Mono']">
