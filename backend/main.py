@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Any
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 import os
 
 load_dotenv()
@@ -46,6 +47,21 @@ from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
 
 
+INDEX_TICKERS = ["^NSEI", "^BSESN", "^IXIC", "^GSPC"]
+
+
+@app.on_event("startup")
+def warm_index_quotes():
+    def warm():
+        for ticker in INDEX_TICKERS:
+            try:
+                get_latest_quote(ticker)
+            except Exception as exc:
+                print(f"[Warmup] index quote failed for {ticker}: {exc}")
+
+    Thread(target=warm, daemon=True).start()
+
+
 def analyze_ticker_sync(ticker: str):
     df = get_historical_data(ticker)
     return run_analysis(df, ticker)
@@ -68,8 +84,8 @@ async def batch_quotes(request: Request, tickers: str):
     ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
         raise HTTPException(status_code=400, detail="No tickers provided")
-    if len(ticker_list) > 20:
-        raise HTTPException(status_code=400, detail="Max 20 tickers per batch")
+    if len(ticker_list) > 30:
+        raise HTTPException(status_code=400, detail="Max 30 tickers per batch")
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=len(ticker_list)) as executor:
         tasks = [loop.run_in_executor(executor, get_latest_quote, t) for t in ticker_list]

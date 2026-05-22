@@ -647,15 +647,30 @@ function humanizeLabel(label: string) {
 }
 
 // ─── TICKER TAPE ─────────────────────────────────────────────────────────────
-const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string; currency: string }) => {
-  const { data } = useSWR(`/api/v1/quote/${symbol}`, fetcher, { refreshInterval: 60000 });
+type QuoteSnapshot = {
+  price?: number | null;
+  change_percent?: number;
+};
+
+const INDEX_TICKERS = [
+  { title: 'NIFTY 50', symbol: '^NSEI', currency: '' },
+  { title: 'SENSEX', symbol: '^BSESN', currency: '' },
+  { title: 'NASDAQ', symbol: '^IXIC', currency: '' },
+  { title: 'S&P 500', symbol: '^GSPC', currency: '' },
+];
+
+const INDEX_QUOTES_KEY = `/api/v1/quotes/batch?tickers=${INDEX_TICKERS.map(item => encodeURIComponent(item.symbol)).join(',')}`;
+
+const TickerItem = ({ title, currency, quote }: { title: string; currency: string; quote?: QuoteSnapshot }) => {
+  const price = Number(quote?.price);
+  const changePercent = Number(quote?.change_percent ?? 0);
   return (
     <div className="flex items-center gap-4 shrink-0 px-8 border-r border-white/10">
       <span className="font-bold text-xs tracking-widest text-zinc-400 uppercase font-['Space_Grotesk']">{title}</span>
-      {data?.price ? (
+      {Number.isFinite(price) && price > 0 ? (
         <div className="flex items-center gap-2">
-          <span className="text-sm font-['JetBrains_Mono'] text-white">{currency}{data.price.toLocaleString()}</span>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${data.change_percent > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>            {data.change_percent > 0 ? '▲' : '▼'}{Math.abs(data.change_percent).toFixed(2)}%
+          <span className="text-sm font-['JetBrains_Mono'] text-white">{currency}{price.toLocaleString()}</span>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>            {changePercent >= 0 ? '▲' : '▼'}{Math.abs(changePercent).toFixed(2)}%
           </span>
         </div>
       ) : <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] tracking-widest">SYNCING...</span>}
@@ -664,16 +679,49 @@ const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string
 };
 
 // ─── MARKET ASSET CARD ────────────────────────────────────────────────────────
+const IndexTickerTape = () => {
+  const cachedQuotes = getCache<Record<string, QuoteSnapshot>>('index-quotes');
+  const { data } = useSWR<Record<string, QuoteSnapshot>>(INDEX_QUOTES_KEY, fetcher, {
+    fallbackData: cachedQuotes,
+    refreshInterval: 60000,
+    revalidateOnMount: !cachedQuotes,
+    revalidateIfStale: !cachedQuotes,
+    onSuccess: quotes => setCache('index-quotes', quotes),
+  });
+
+  const content = (
+    <>
+      {INDEX_TICKERS.map(item => (
+        <TickerItem
+          key={item.symbol}
+          title={item.title}
+          currency={item.currency}
+          quote={data?.[item.symbol]}
+        />
+      ))}
+    </>
+  );
+
+  return (
+    <div className="flex w-[200%] sm:w-[150%] md:w-full">
+      <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0">{content}</div>
+      <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0">{content}</div>
+    </div>
+  );
+};
+
 const MarketAssetCard = ({
   stock,
   onSelect,
   prefetchedAnalysis,
+  quickQuote,
   expanded,
   onToggle,
 }: {
   stock: typeof STOCKS[0];
   onSelect: (s: typeof STOCKS[0]) => void;
   prefetchedAnalysis?: any;
+  quickQuote?: QuoteSnapshot;
   expanded: boolean;
   onToggle: (ticker: string) => void;
 }) => {
@@ -687,20 +735,24 @@ const MarketAssetCard = ({
   const analysis = prefetchedAnalysis ?? fetchedAnalysis;
   const analysisView = getAnalysisPresentation(analysis);
   const isReady = !!analysisView;
-  const isPrefetching = !analysisView; // still loading in background
+  const quickPrice = Number(quickQuote?.price);
+  const quickChange = Number(quickQuote?.change_percent ?? 0);
+  const quickSignal = quickChange > 0.6 ? 'Buy' : quickChange < -0.6 ? 'Sell' : 'Hold';
+  const quickConfidence = Math.min(86, Math.max(42, 56 + Math.abs(quickChange) * 8));
 
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
-  const verdictColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
-  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : 'Loading';
+  const quickSignalColor = quickSignal === 'Buy' ? 'text-green-500' : quickSignal === 'Sell' ? 'text-red-500' : 'text-slate-500';
+  const verdictColor = isReady ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400') : quickSignalColor;
+  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : quickSignal;
 
   // Mini verdict dot shown even before hover when prefetch is done
   const dotColor = isReady
     ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
-    : 'bg-zinc-700 animate-pulse';
+    : (quickSignal === 'Buy' ? 'bg-green-400' : quickSignal === 'Sell' ? 'bg-red-400' : 'bg-slate-400');
   const signalGradient = isReady
     ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
-    : 'from-slate-300 to-slate-100';
+    : (quickSignal === 'Buy' ? 'from-emerald-300 to-cyan-300' : quickSignal === 'Sell' ? 'from-rose-300 to-orange-200' : 'from-slate-300 to-cyan-200');
 
   return (
     <div
@@ -716,7 +768,7 @@ const MarketAssetCard = ({
         </div>
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Live verdict dot — green/red/grey based on prefetch status */}
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Loading...'} />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Open preview'} />
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onToggle(stock.ticker); }}
@@ -730,19 +782,24 @@ const MarketAssetCard = ({
       </div>
       <div className="relative font-black text-base text-slate-950 font-['Space_Grotesk'] leading-snug line-clamp-2 min-h-11">{stock.name}</div>
 
+      <div className="relative mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Price</span>
+        <span className="font-['JetBrains_Mono'] text-sm font-black text-slate-950">
+          {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
+        </span>
+      </div>
+
       <div className="relative mt-5 flex items-center justify-between gap-3">
         <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-1000 ${isReady ? '' : 'animate-pulse'}`}
+            className="h-full rounded-full transition-all duration-1000"
             style={{
-              width: `${isReady ? analysisView.confidenceLevel : 28}%`,
-              backgroundColor: isReady ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171') : '#94a3b8',
+              width: `${isReady ? analysisView.confidenceLevel : quickConfidence}%`,
+              backgroundColor: isReady ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171') : (quickSignal === 'Buy' ? '#4ade80' : quickSignal === 'Sell' ? '#f87171' : '#94a3b8'),
             }}
           />
         </div>
-        <span className={`shrink-0 text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk'] ${
-          isReady ? verdictColor : 'text-slate-400'
-        }`}>
+        <span className={`shrink-0 text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk'] ${verdictColor}`}>
           {verdictBadge}
         </span>
       </div>
@@ -768,7 +825,7 @@ const MarketAssetCard = ({
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onSelect(stock); }}
-              className="w-full mt-1 py-2 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-700 text-[10px] font-black uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-100 transition-all"
+              className="w-full mt-1 py-2 rounded-xl bg-cyan-50 border border-cyan-200 text-slate-950 text-[10px] font-black uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-100 transition-all"
             >
               Full Analysis →
             </button>
@@ -777,7 +834,7 @@ const MarketAssetCard = ({
           <div className="flex items-center justify-center py-4 gap-2">
             <div className="w-3 h-3 border border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0" />
             <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">
-              {isPrefetching ? 'LOADING...' : 'INITIALIZING...'}
+              RUNNING ANALYSIS...
             </span>
           </div>
         )}
@@ -1457,14 +1514,14 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             </div>
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
-            <span className="text-[9px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono']">
+            <span className="text-[9px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-800 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono']">
               {topStrategies.length} Active Signals
             </span>
             {topStrategies.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowAllStrategies(prev => !prev)}
-                className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-cyan-500 hover:bg-cyan-500/10 hover:border-cyan-400/40 transition-all flex items-center justify-center"
+                className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-cyan-800 hover:bg-cyan-500/10 hover:border-cyan-400/40 transition-all flex items-center justify-center"
                 aria-label={showAllStrategies ? 'Collapse strategies list' : 'Expand strategies list'}
                 aria-expanded={showAllStrategies}
               >
@@ -2241,6 +2298,7 @@ export default function Home() {
       ? `/?ticker=${encodeURIComponent(stock.ticker)}&view=details`
       : `/?ticker=${encodeURIComponent(stock.ticker)}`;
     window.history.pushState({ view: 'stock', ticker: stock.ticker, dashboardView: resolvedView }, '', nextUrl);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
   };
 
   const selectStock = (stock: typeof STOCKS[0]) => {
@@ -2272,16 +2330,27 @@ export default function Home() {
   };
 
   const visibleMarketStocks = getMarketStocks();
+  const visibleQuoteKey = visibleMarketStocks.length
+    ? `/api/v1/quotes/batch?tickers=${visibleMarketStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
+    : null;
+  const cachedVisibleQuotes = getCache<Record<string, QuoteSnapshot>>(`market-quotes:${activeMarket}`);
+  const { data: visibleQuotes } = useSWR<Record<string, QuoteSnapshot>>(visibleQuoteKey, fetcher, {
+    fallbackData: cachedVisibleQuotes,
+    refreshInterval: 60000,
+    revalidateOnMount: !cachedVisibleQuotes,
+    revalidateIfStale: !cachedVisibleQuotes,
+    revalidateOnFocus: false,
+    onSuccess: quotes => setCache(`market-quotes:${activeMarket}`, quotes),
+  });
   const assetColumns = Array.from({ length: assetColumnCount }, (_, columnIndex) =>
     visibleMarketStocks.filter((_, stockIndex) => stockIndex % assetColumnCount === columnIndex)
   );
 
   // ── Prefetch cache: ticker → analysis result ──────────────────────────────
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
-  const prefetchedRef = useRef<Set<string>>(new Set());
 
-  // Hydrate visible cards from browser cache, then batch-fetch fresh analysis
-  // so every visible card can show its verdict without opening the preview.
+  // Hydrate visible cards from browser cache only. Fresh analysis runs on demand
+  // when a card is opened or a stock dashboard is selected.
   useEffect(() => {
     setExpandedTicker(null);
     const visibleStocks = getMarketStocks();
@@ -2293,30 +2362,8 @@ export default function Home() {
 
     if (Object.keys(cachedVisible).length > 0) {
       setPrefetchCache(prev => ({ ...cachedVisible, ...prev }));
-      Object.keys(cachedVisible).forEach(t => prefetchedRef.current.add(t));
     }
 
-    const toFetch = visibleStocks.filter(s => !prefetchedRef.current.has(s.ticker));
-    if (toFetch.length === 0) return;
-
-    // Mark them as queued immediately so tab switches don't re-queue
-    toFetch.forEach(s => prefetchedRef.current.add(s.ticker));
-
-    toFetch.forEach((stock, i) => {
-      setTimeout(async () => {
-        try {
-          const res = await fetch(`${BACKEND}/api/v1/analyze/${stock.ticker}`);
-          if (!res.ok) return;
-          const data = await res.json();
-          if (data && !data.error) {
-            setCache(`analysis:${stock.ticker}`, data);
-            setPrefetchCache(prev => ({ ...prev, [stock.ticker]: data }));
-          }
-        } catch {
-          // silently ignore — card will fall back to on-demand fetch on hover
-        }
-      }, i * 400); // 400ms stagger = 24 stocks complete in ~10s background
-    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMarket]);
 
@@ -2339,15 +2386,6 @@ export default function Home() {
   const isBull = dashboardAnalysisView?.isBullish;
   const isHold = dashboardAnalysisView?.isHold;
   const accentColor = isBull ? 'text-green-400 drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]' : isHold ? 'text-zinc-300' : 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]';
-
-  const TickerContent = () => (
-    <>
-      <TickerItem title="NIFTY 50" symbol="^NSEI" currency="" />
-      <TickerItem title="SENSEX" symbol="^BSESN" currency="" />
-      <TickerItem title="NASDAQ" symbol="^IXIC" currency="" />
-      <TickerItem title="S&P 500" symbol="^GSPC" currency="" />
-    </>
-  );
 
   return (
     <>
@@ -2647,10 +2685,7 @@ export default function Home() {
 
         {/* TICKER TAPE */}
         <div className="relative z-20 w-full bg-black/60 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
-          <div className="flex w-[200%] sm:w-[150%] md:w-full">
-            <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0"><TickerContent /></div>
-            <div className="flex animate-marquee whitespace-nowrap min-w-full justify-around shrink-0"><TickerContent /></div>
-          </div>
+          <IndexTickerTape />
         </div>
 
         {/* NAV */}
@@ -2858,6 +2893,7 @@ export default function Home() {
                           stock={s}
                           onSelect={selectStock}
                           prefetchedAnalysis={prefetchCache[s.ticker]}
+                          quickQuote={visibleQuotes?.[s.ticker]}
                           expanded={expandedTicker === s.ticker}
                           onToggle={(nextTicker) => setExpandedTicker(current => current === nextTicker ? null : nextTicker)}
                         />
