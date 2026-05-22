@@ -7,6 +7,8 @@ import {
   SCREEN_SECTIONS,
   buildCustomQueryResult,
   getAvailableSectors,
+  getRowsForScreen,
+  getScreenBySlug,
   getRowsForSector,
   type Stock,
   type ScreenMetricRow,
@@ -25,12 +27,33 @@ type QueryResult = {
   rows: ScreenMetricRow[];
   explanation?: string;
   source?: string;
+  intent?: SmartSearchIntent;
+};
+
+type SmartSearchIntent = 'CUSTOM_FILTER' | 'PRE_DEFINED_SCREENER' | 'STOCK_INFO' | 'SECTOR_FILTER' | 'GENERAL_CHAT';
+
+type SmartSearchResponse = {
+  router?: {
+    intent?: SmartSearchIntent;
+    screener_name?: string | null;
+    stock_symbol?: string | null;
+    sector?: string | null;
+    custom_query_parameters?: Record<string, unknown>;
+    ai_response_message?: string;
+  };
+  rows: ScreenMetricRow[];
+  matchedRules?: string[];
+  explanation?: string;
+  source?: string;
 };
 
 const examples = [
   'Stocks that gained last 4 consecutive days and whose average volume is above last week average',
   'Near 52 week high with unusual volume',
   'Oversold stocks with RSI below 30',
+  'Show me the Magic Formula screen',
+  'List banking sector stocks',
+  'What is the price of HDFCBANK?',
 ];
 
 function candidateStocksForPrompt(prompt: string) {
@@ -41,21 +64,26 @@ function candidateStocksForPrompt(prompt: string) {
   return STOCKS.filter(stock => stock.exchange === 'NSE').slice(0, 180);
 }
 
-async function runLiveScreener(prompt: string, stocks: Stock[]) {
-  const response = await fetch(`${BACKEND}/api/v1/screener/search`, {
+async function runSmartScreener(prompt: string, stocks: Stock[], sectors: ReturnType<typeof getAvailableSectors>) {
+  const response = await fetch(`${BACKEND}/api/v1/screener/smart-search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, stocks }),
+    body: JSON.stringify({
+      prompt,
+      stocks,
+      screeners: ALL_SCREENS.map(screen => ({
+        slug: screen.slug,
+        title: screen.title,
+        query: screen.query,
+        tags: screen.tags,
+      })),
+      sectors,
+    }),
   });
   if (!response.ok) {
-    throw new Error(await response.text().catch(() => 'Live screener failed'));
+    throw new Error(await response.text().catch(() => 'Smart screener failed'));
   }
-  return response.json() as Promise<{
-    rows: ScreenMetricRow[];
-    matchedRules?: string[];
-    explanation?: string;
-    source?: string;
-  }>;
+  return response.json() as Promise<SmartSearchResponse>;
 }
 
 function MetricTable({ rows }: { rows: ScreenMetricRow[] }) {
@@ -129,6 +157,7 @@ export default function ScreensPage() {
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<QueryResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchingMessage, setSearchingMessage] = useState('');
   const [expandedSector, setExpandedSector] = useState<string | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
 
@@ -143,15 +172,60 @@ export default function ScreensPage() {
     if (!clean) return;
     setQuery(clean);
     setIsSearching(true);
+    setSearchingMessage('Routing your request through Bullseye AI...');
     try {
-      const live = await runLiveScreener(clean, candidateStocksForPrompt(clean));
-      if (live.rows.length || live.matchedRules?.length) {
+      const live = await runSmartScreener(clean, candidateStocksForPrompt(clean), sectors);
+      const intent = live.router?.intent;
+      const aiMessage = live.router?.ai_response_message || live.explanation;
+
+      if (intent === 'PRE_DEFINED_SCREENER' && live.router?.screener_name) {
+        const screen = getScreenBySlug(live.router.screener_name);
+        const rows = screen ? getRowsForScreen(screen.slug) : [];
+        setResult({
+          title: screen ? screen.title : 'Preset screen',
+          query: screen?.query || live.matchedRules?.join('\n') || clean,
+          rows,
+          explanation: aiMessage || live.explanation,
+          source: live.source,
+          intent,
+        });
+      } else if (intent === 'SECTOR_FILTER') {
+        const sector = live.router?.sector || sectors.find(item => clean.toLowerCase().includes(item.name.toLowerCase()))?.name;
+        const rows = live.rows.length ? live.rows : sector ? getRowsForSector(sector) : [];
+        setResult({
+          title: sector ? `${sector} stocks` : `${rows.length} sector matches`,
+          query: live.matchedRules?.join('\n') || `Sector matched: ${sector ?? 'Unknown'}`,
+          rows,
+          explanation: aiMessage || live.explanation,
+          source: live.source,
+          intent,
+        });
+      } else if (intent === 'STOCK_INFO') {
+        setResult({
+          title: `${live.rows.length || 1} stock lookup result`,
+          query: live.matchedRules?.join('\n') || `Stock: ${live.router?.stock_symbol ?? clean}`,
+          rows: live.rows,
+          explanation: aiMessage || live.explanation,
+          source: live.source,
+          intent,
+        });
+      } else if (intent === 'GENERAL_CHAT') {
+        setResult({
+          title: 'Bullseye AI',
+          query: 'General assistant response',
+          rows: [],
+          explanation: aiMessage || live.explanation,
+          source: live.source,
+          intent,
+        });
+      } else if (live.rows.length || live.matchedRules?.length) {
         setResult({
           title: `${live.rows.length} AI screener matches`,
           query: live.matchedRules?.join('\n') || 'No supported live rules matched.',
           rows: live.rows,
-          explanation: live.explanation,
+          explanation: aiMessage || live.explanation,
           source: live.source,
+          intent: intent || 'CUSTOM_FILTER',
         });
       } else {
         const custom = buildCustomQueryResult(clean);
@@ -159,8 +233,9 @@ export default function ScreensPage() {
           title: `${custom.rows.length} AI screener matches`,
           query: custom.query,
           rows: custom.rows,
-          explanation: live.explanation || custom.explanation,
+          explanation: aiMessage || live.explanation || custom.explanation,
           source: custom.rows.length ? 'Local deterministic fallback' : live.source,
+          intent: intent || 'CUSTOM_FILTER',
         });
       }
     } catch {
@@ -171,9 +246,11 @@ export default function ScreensPage() {
         rows: custom.rows,
         explanation: custom.explanation || 'Live screener is unavailable, so only supported local fundamentals filters were evaluated.',
         source: 'Local deterministic fallback',
+        intent: 'CUSTOM_FILTER',
       });
     } finally {
       setIsSearching(false);
+      setSearchingMessage('');
       scrollToResults();
     }
   };
@@ -238,9 +315,6 @@ export default function ScreensPage() {
                     Ask in plain English. Price and volume prompts are screened against live daily candles; supported fundamentals use deterministic local filters.
                   </p>
                 </div>
-                <Link href="/screens/growth-stocks" className="inline-flex h-11 items-center justify-center rounded-xl bg-slate-950 px-4 text-[10px] font-black uppercase tracking-[0.18em] text-white transition hover:bg-cyan-600 sm:h-12 sm:rounded-2xl sm:px-6 sm:text-xs">
-                  Create screen
-                </Link>
               </div>
 
               <div className="mt-4 rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-3 sm:mt-6">
@@ -282,6 +356,11 @@ export default function ScreensPage() {
                     ))}
                   </div>
                 </details>
+                {isSearching && (
+                  <div className="mt-3 rounded-xl border border-cyan-200 bg-white/80 px-3 py-2 text-xs font-bold text-cyan-700">
+                    {searchingMessage || 'Routing your request through Bullseye AI...'}
+                  </div>
+                )}
               </div>
             </section>
 
@@ -301,6 +380,10 @@ export default function ScreensPage() {
                 </div>
                 {result.rows.length ? (
                   <MetricTable rows={result.rows} />
+                ) : result.intent === 'GENERAL_CHAT' ? (
+                  <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 text-sm leading-relaxed text-slate-700">
+                    {result.explanation || 'Ask for a preset screen, sector, ticker lookup, or technical filter to fetch stock rows.'}
+                  </div>
                 ) : (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
                     No stocks matched this prompt. I did not return broad or random fallback rows.

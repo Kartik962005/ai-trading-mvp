@@ -4,6 +4,9 @@ from typing import Any
 import pandas as pd
 import yfinance as yf
 
+_download_cache: dict[str, dict[str, Any]] = {}
+SCREENER_DOWNLOAD_TTL = 900
+
 
 def _clean_number(value: Any, fallback: float = 0.0) -> float:
     try:
@@ -111,6 +114,26 @@ def _ticker_frame(download: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return frame
 
 
+def _download_ohlcv(tickers: list[str], period: str) -> pd.DataFrame:
+    cache_key = f"{period}:{','.join(sorted(tickers))}"
+    now = pd.Timestamp.utcnow().timestamp()
+    cached = _download_cache.get(cache_key)
+    if cached and now - cached["ts"] < SCREENER_DOWNLOAD_TTL:
+        return cached["data"]
+
+    download = yf.download(
+        tickers,
+        period=period,
+        interval="1d",
+        group_by="ticker",
+        threads=True,
+        progress=False,
+        auto_adjust=True,
+    )
+    _download_cache[cache_key] = {"data": download, "ts": now}
+    return download
+
+
 def _passes_direction(frame: pd.DataFrame, direction: str | None, days: int | None) -> bool:
     if not direction or not days:
         return True
@@ -204,7 +227,7 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
         return {"rows": [], "matchedRules": [], "explanation": "No tickers were supplied.", "source": "No screener run"}
 
     period = "1y" if rules["near_high"] or rules["oversold"] else "45d"
-    download = yf.download(tickers, period=period, interval="1d", group_by="ticker", threads=True, progress=False, auto_adjust=True)
+    download = _download_ohlcv(tickers, period)
 
     matched_rows = []
     stock_by_ticker = {stock["ticker"]: stock for stock in stocks if stock.get("ticker")}

@@ -648,7 +648,7 @@ function humanizeLabel(label: string) {
 
 // ─── TICKER TAPE ─────────────────────────────────────────────────────────────
 const TickerItem = ({ title, symbol, currency }: { title: string; symbol: string; currency: string }) => {
-  const { data } = useSWR(`/api/v1/quote/${symbol}`, fetcher, { refreshInterval: 15000 });
+  const { data } = useSWR(`/api/v1/quote/${symbol}`, fetcher, { refreshInterval: 60000 });
   return (
     <div className="flex items-center gap-4 shrink-0 px-8 border-r border-white/10">
       <span className="font-bold text-xs tracking-widest text-zinc-400 uppercase font-['Space_Grotesk']">{title}</span>
@@ -1854,7 +1854,7 @@ export default function Home() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeMarket, setActiveMarket] = useState<MarketScope>('INDIA');
   const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
-  const [chartRange, setChartRange] = useState<ChartRange>('max');
+  const [chartRange, setChartRange] = useState<ChartRange>('1y');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [assetColumnCount, setAssetColumnCount] = useState(2);
   const chartRef = useRef<HTMLDivElement>(null);
@@ -2103,7 +2103,7 @@ export default function Home() {
     setCachedFundamentals(getCache(`fundamentals:${ticker}`));
   }, [ticker, chartRange]);
 
-  const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 10000 });
+  const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 30000 });
   const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}?range=${chartRange}` : null, fetcher, {
     fallbackData: cachedChart,
     revalidateIfStale: !cachedChart,

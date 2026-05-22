@@ -19,10 +19,12 @@ except Exception as e:
 # ── In-memory caches (fast, lost on restart) ──────────────────────────────────
 _hist_cache: dict = {}
 _quote_cache: dict = {}
+_chart_cache: dict = {}
 _fundamentals_cache: dict = {}
 _nse_quote_cache: dict = {}
 HIST_TTL  = 3600   # 1 hour
 QUOTE_TTL = 15     # 15 seconds
+CHART_TTL = 3600
 FUNDAMENTALS_TTL = 3600 * 6
 NSE_QUOTE_TTL = 3600
 
@@ -292,6 +294,11 @@ def get_fundamentals_data(ticker: str):
 
 def get_chart_data(ticker: str, range_key: str = "1y"):
     range_key = (range_key or "1y").lower()
+    cache_key = f"{ticker}:{range_key}"
+    now = time.time()
+    if cache_key in _chart_cache and now - _chart_cache[cache_key]["ts"] < CHART_TTL:
+        return _chart_cache[cache_key]["df"].copy()
+
     options = {
         "1d":  ("1d",  "5m"),
         "1w":  ("5d",  "30m"),
@@ -321,6 +328,7 @@ def get_chart_data(ticker: str, range_key: str = "1y"):
 
     if df.empty:
         raise ValueError(f"No valid chart data for ticker '{ticker}'.")
+    _chart_cache[cache_key] = {"df": df.copy(), "ts": time.time()}
     return df
 
 
