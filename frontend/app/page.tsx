@@ -782,9 +782,9 @@ const MarketAssetCard = ({
       </div>
       <div className="relative font-black text-base text-slate-950 font-['Space_Grotesk'] leading-snug line-clamp-2 min-h-11">{stock.name}</div>
 
-      <div className="relative mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Price</span>
-        <span className="font-['JetBrains_Mono'] text-sm font-black text-slate-950">
+      <div className="relative mt-3 flex min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-2 sm:px-3">
+        <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400 sm:text-[10px] sm:tracking-widest">Price</span>
+        <span className="min-w-0 truncate text-right font-['JetBrains_Mono'] text-xs font-black text-slate-950 sm:text-sm">
           {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
         </span>
       </div>
@@ -2716,13 +2716,13 @@ export default function Home() {
               placeholder="SEARCH ASSETS, NOT HOPE."
             />
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-50 w-full bg-black/95 backdrop-blur-3xl border border-white/10 rounded-2xl mt-2 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
+              <div className="absolute z-50 mt-2 max-h-[72vh] w-full min-w-[min(82vw,320px)] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-3xl sm:min-w-full">
                 {suggestions.map((stock) => (
-                  <div key={stock.ticker} onMouseDown={() => selectStock(stock)} className="flex justify-between items-center px-5 py-3.5 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 group transition-all">
-                    <span className="font-bold text-sm text-zinc-300 group-hover:text-white uppercase tracking-wider font-['Space_Grotesk']">{stock.name}</span>
-                    <div className="flex items-center gap-2 ml-2 shrink-0">
-                      <span className="text-[9px] bg-white/5 px-2 py-0.5 rounded text-zinc-500 font-['JetBrains_Mono'] uppercase">{stock.exchange}</span>
-                      <span className="text-xs font-['JetBrains_Mono'] text-cyan-500/70 group-hover:text-cyan-400">{stock.symbol}</span>
+                  <div key={stock.ticker} onMouseDown={() => selectStock(stock)} className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-white/5 px-3 py-3 transition-all last:border-0 hover:bg-white/5 sm:px-5 sm:py-3.5 group">
+                    <span className="min-w-0 truncate font-['Space_Grotesk'] text-xs font-bold uppercase tracking-wide text-zinc-300 group-hover:text-white sm:text-sm sm:tracking-wider" title={stock.name}>{stock.name}</span>
+                    <div className="flex min-w-0 max-w-[92px] shrink-0 items-center justify-end gap-1.5 sm:max-w-[140px] sm:gap-2">
+                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-['JetBrains_Mono'] text-[8px] uppercase text-zinc-500 sm:px-2 sm:text-[9px]">{stock.exchange}</span>
+                      <span className="min-w-0 truncate font-['JetBrains_Mono'] text-[10px] text-cyan-500/70 group-hover:text-cyan-400 sm:text-xs" title={stock.symbol}>{stock.symbol}</span>
                     </div>
                   </div>
                 ))}
