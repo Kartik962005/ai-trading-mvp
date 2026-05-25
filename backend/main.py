@@ -43,7 +43,7 @@ from app.services.data_service import get_latest_quote, get_historical_data, get
 from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
 from app.services.stock_ai_service import run_stock_ai_search
-from app.strategies.engine import run_analysis, evaluate_strategies
+from app.strategies.engine import run_analysis, evaluate_strategies, fetch_global_market_news
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
 
@@ -145,6 +145,12 @@ async def fundamentals(request: Request, ticker: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/global-news")
+@limiter.limit("10/minute")
+async def global_news(request: Request):
+    return fetch_global_market_news()
 
 
 @app.get("/api/v1/strategies/list")

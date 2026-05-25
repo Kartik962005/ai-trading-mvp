@@ -27,7 +27,17 @@ except Exception:
 def fetch_news_sentiment(ticker: str):
     try:
         base_ticker = ticker.split('.')[0]
-        search_query = urllib.parse.quote(f"{base_ticker} stock market news")
+        company_name = base_ticker
+        try:
+            info = yf.Ticker(ticker).fast_info
+            company_name = getattr(info, "short_name", None) or company_name
+        except Exception:
+            try:
+                company_name = yf.Ticker(ticker).info.get("shortName") or yf.Ticker(ticker).info.get("longName") or company_name
+            except Exception:
+                pass
+
+        search_query = urllib.parse.quote(f'"{company_name}" OR "{base_ticker}" stock company results earnings market')
         url = f"https://news.google.com/rss/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
         
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -39,16 +49,43 @@ def fetch_news_sentiment(ticker: str):
         
         headlines = []
         total_polarity = 0
-        spam_patterns = [r'share latest news', r'share news today', r'buy or sell', r'target price']
+        spam_patterns = [
+            r'share latest news',
+            r'share news today',
+            r'buy or sell',
+            r'should you buy',
+            r'buy.*sell.*hold',
+            r'target price',
+            r'price target',
+            r'multibagger',
+            r'penny stock',
+            r'top stocks? to buy',
+            r'watch these stocks',
+        ]
+        required_terms = {
+            term.lower()
+            for term in re.split(r'[^A-Za-z0-9]+', f"{company_name} {base_ticker}")
+            if len(term) > 2
+        }
         
         for item in items:
             title_element = item.find('title')
             if title_element is not None and title_element.text:
-                clean_title = html.unescape(title_element.text).rsplit(' - ', 1)[0].strip()
-                if '|' in clean_title or any(re.search(p, clean_title.lower()) for p in spam_patterns):
+                raw_title = html.unescape(title_element.text).strip()
+                parts = raw_title.rsplit(' - ', 1)
+                clean_title = parts[0].strip()
+                source = parts[1].strip() if len(parts) > 1 else "Google News"
+                clean_lower = clean_title.lower()
+                if (
+                    '|' in clean_title
+                    or any(re.search(p, clean_lower) for p in spam_patterns)
+                    or not any(term in clean_lower for term in required_terms)
+                    or len(clean_title) < 28
+                ):
                     continue
-                if clean_title not in headlines:
-                    headlines.append(clean_title)
+                display_title = f"{clean_title} — {source}"
+                if display_title not in headlines:
+                    headlines.append(display_title)
                     total_polarity += TextBlob(clean_title).sentiment.polarity
             if len(headlines) == 5: break
                 
@@ -58,6 +95,43 @@ def fetch_news_sentiment(ticker: str):
         return {"score": round(avg_polarity, 2), "label": label, "headlines": headlines}
     except Exception:
         return {"score": 0, "label": "Neutral", "headlines": ["Live news feed unavailable."]}
+
+def fetch_global_market_news():
+    try:
+        search_query = urllib.parse.quote('"stock market" OR Nifty OR Sensex OR Nasdaq earnings economy')
+        url = f"https://news.google.com/rss/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req, timeout=8)
+        root = ET.fromstring(response.read())
+        stories = []
+        spam_patterns = [
+            r'watch these stocks',
+            r'top stocks? to buy',
+            r'multibagger',
+            r'penny stock',
+            r'price target',
+            r'buy or sell',
+        ]
+
+        for item in root.findall('.//item'):
+            title_element = item.find('title')
+            if title_element is None or not title_element.text:
+                continue
+            raw_title = html.unescape(title_element.text).strip()
+            parts = raw_title.rsplit(' - ', 1)
+            title = parts[0].strip()
+            source = parts[1].strip() if len(parts) > 1 else "Google News"
+            lower = title.lower()
+            if any(re.search(pattern, lower) for pattern in spam_patterns) or len(title) < 30:
+                continue
+            if title not in [story["title"] for story in stories]:
+                stories.append({"title": title, "source": source})
+            if len(stories) == 5:
+                break
+
+        return {"stories": stories or [{"title": "Global market news feed is temporarily unavailable.", "source": "Bullseye"}]}
+    except Exception:
+        return {"stories": [{"title": "Global market news feed is temporarily unavailable.", "source": "Bullseye"}]}
 
 def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     evals = {}

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
@@ -120,12 +120,466 @@ function setCache(key: string, data: any) {
   } catch {}
 }
 
+let supabaseClientPromise: Promise<any> | null = null;
+
+async function getSharedSupabaseClient(supabaseUrl: string, supabaseKey: string) {
+  if (typeof window === 'undefined') return null;
+  const globalKey = '__bullseyeSupabaseClient';
+  const browserWindow = window as any;
+  if (browserWindow[globalKey]) return browserWindow[globalKey];
+  if (!supabaseClientPromise) {
+    supabaseClientPromise = import('@supabase/supabase-js').then(({ createClient }) => {
+      if (!browserWindow[globalKey]) {
+        browserWindow[globalKey] = createClient(supabaseUrl, supabaseKey);
+      }
+      return browserWindow[globalKey];
+    });
+  }
+  return supabaseClientPromise;
+}
+
 function getChartCandles(chartData: any) {
   if (!Array.isArray(chartData)) return [];
   return chartData
     .filter((d: any) => d.date && d.open && d.high && d.low && d.close)
     .map((d: any) => ({ ...d, day: d.date.toString().slice(0, 10) }))
     .sort((a: any, b: any) => a.day.localeCompare(b.day));
+}
+
+type IndicatorPoint = {
+  label: string;
+  value: number;
+};
+
+type IndicatorPanelData = {
+  name: string;
+  color: string;
+  latest: string;
+  series: IndicatorPoint[];
+};
+
+const INDICATOR_NAMES = [
+  '52 Week High/Low',
+  'Accelerator Oscillator',
+  'Accumulation/Distribution',
+  'Accumulative Swing Index',
+  'Advance/Decline',
+  'Arnaud Legoux Moving Average',
+  'Aroon',
+  'Average Directional Index',
+  'Average Price',
+  'Average True Range',
+  'Awesome Oscillator',
+  'Balance of Power',
+  'Bollinger Bands',
+  'Bollinger Bands %B',
+  'Bollinger Bands Width',
+  'Chaikin Money Flow',
+  'Chaikin Oscillator',
+  'Chaikin Volatility',
+  'Chande Kroll Stop',
+  'Chande Momentum Oscillator',
+  'Chop Zone',
+  'Choppiness Index',
+  'Commodity Channel Index',
+  'Connors RSI',
+  'Coppock Curve',
+  'Correlation - Log',
+  'Correlation Coefficient',
+  'Detrended Price Oscillator',
+  'Directional Movement',
+  'Donchian Channels',
+  'Double EMA',
+  'Ease Of Movement',
+  "Elder's Force Index",
+  'EMA Cross',
+  'Envelopes',
+  'Fisher Transform',
+  'Guppy Multiple Moving Average',
+  'Historical Volatility',
+  'Hull Moving Average',
+  'Ichimoku Cloud',
+  'Keltner Channels',
+  'Klinger Oscillator',
+  'Know Sure Thing',
+  'Least Squares Moving Average',
+  'Linear Regression Curve',
+  'Linear Regression Slope',
+  'MA Cross',
+  'MA with EMA Cross',
+  'MACD',
+  'Majority Rule',
+  'Mass Index',
+  'McGinley Dynamic',
+  'Median Price',
+  'Momentum',
+  'Money Flow Index',
+  'Moving Average',
+  'Moving Average Adaptive',
+  'Moving Average Channel',
+  'Moving Average Double',
+  'Moving Average Exponential',
+  'Moving Average Hamming',
+  'Moving Average Multiple',
+  'Moving Average Triple',
+  'Moving Average Weighted',
+  'Net Volume',
+  'On Balance Volume',
+  'Parabolic SAR',
+  'Pivot Points Standard',
+  'Price Channel',
+  'Price Oscillator',
+  'Price Volume Trend',
+  'Rank Correlation Index',
+  'Rate Of Change',
+  'Ratio',
+  'Relative Strength Index',
+  'Relative Vigor Index',
+  'Relative Volatility Index',
+  'SMI Ergodic Indicator/Oscillator',
+  'Smoothed Moving Average',
+  'Spread',
+  'Standard Deviation',
+  'Standard Error',
+  'Standard Error Bands',
+  'Stochastic',
+  'Stochastic RSI',
+  'SuperTrend',
+  'Trend Strength Index',
+  'Triple EMA',
+  'TRIX',
+  'True Strength Index',
+  'Typical Price',
+  'Ultimate Oscillator',
+  'Volatility Close-to-Close',
+  'Volatility Index',
+  'Volatility O-H-L-C',
+  'Volatility Zero Trend Close-to-Close',
+  'Volume',
+  'Volume Oscillator',
+  'Volume Profile Fixed Range',
+  'Volume Profile Visible Range',
+  'Vortex Indicator',
+  'VWAP',
+  'VWMA',
+  'Williams %R',
+  'Williams Alligator',
+  'Williams Fractal',
+  'Zig Zag',
+];
+
+const STOCKS_PER_PAGE = 24;
+const STOCK_PAGE_LIMIT = 100;
+
+function asNumber(value: any, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function mean(values: number[]) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function rollingMean(values: number[], period: number) {
+  return values.map((_, index) => mean(values.slice(Math.max(0, index - period + 1), index + 1)));
+}
+
+function rollingMin(values: number[], period: number) {
+  return values.map((_, index) => Math.min(...values.slice(Math.max(0, index - period + 1), index + 1)));
+}
+
+function rollingMax(values: number[], period: number) {
+  return values.map((_, index) => Math.max(...values.slice(Math.max(0, index - period + 1), index + 1)));
+}
+
+function rollingStd(values: number[], period: number) {
+  return values.map((_, index) => {
+    const slice = values.slice(Math.max(0, index - period + 1), index + 1);
+    const avg = mean(slice);
+    return Math.sqrt(mean(slice.map(value => (value - avg) ** 2)));
+  });
+}
+
+function ema(values: number[], period: number) {
+  const smoothing = 2 / (period + 1);
+  const result: number[] = [];
+  values.forEach((value, index) => {
+    result[index] = index === 0 ? value : value * smoothing + result[index - 1] * (1 - smoothing);
+  });
+  return result;
+}
+
+function rsi(values: number[], period = 14) {
+  return values.map((value, index) => {
+    if (index === 0) return 50;
+    const slice = values.slice(Math.max(1, index - period + 1), index + 1);
+    let gains = 0;
+    let losses = 0;
+    slice.forEach((item, sliceIndex) => {
+      const previous = values[Math.max(0, index - slice.length + sliceIndex)];
+      const diff = item - previous;
+      if (diff >= 0) gains += diff;
+      else losses += Math.abs(diff);
+    });
+    if (losses === 0) return gains === 0 ? 50 : 100;
+    return 100 - 100 / (1 + gains / losses);
+  });
+}
+
+function formatIndicatorValue(value: number, name: string) {
+  if (!Number.isFinite(value)) return '-';
+  if (/rsi|stochastic|williams|volatility|percent|%|index|money flow|aroon|chop/i.test(name)) {
+    return `${value.toFixed(2)}%`;
+  }
+  if (Math.abs(value) >= 1000000) return `${(value / 1000000).toFixed(2)}M`;
+  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(2)}K`;
+  return value.toFixed(2);
+}
+
+function getIndicatorColor(name: string) {
+  if (/macd|momentum|oscillator|rate|trix|tsi/i.test(name)) return '#38bdf8';
+  if (/volume|money|accumulation|vwap/i.test(name)) return '#22c55e';
+  if (/volatility|atr|deviation|error|band/i.test(name)) return '#f59e0b';
+  if (/rsi|stochastic|williams|cci|aroon/i.test(name)) return '#a78bfa';
+  return '#06b6d4';
+}
+
+function buildIndicatorPanel(name: string, chartData: any): IndicatorPanelData | null {
+  const candles = getChartCandles(chartData);
+  if (candles.length < 2) return null;
+
+  const close = candles.map((c: any) => asNumber(c.close));
+  const open = candles.map((c: any) => asNumber(c.open));
+  const high = candles.map((c: any) => asNumber(c.high));
+  const low = candles.map((c: any) => asNumber(c.low));
+  const volume = candles.map((c: any) => asNumber(c.volume));
+  const typical = close.map((value, index) => (high[index] + low[index] + value) / 3);
+  const lowerName = name.toLowerCase();
+  const range = high.map((value, index) => Math.max(value - low[index], 0.0001));
+  const trueRange = close.map((value, index) => {
+    if (index === 0) return range[index];
+    return Math.max(high[index] - low[index], Math.abs(high[index] - close[index - 1]), Math.abs(low[index] - close[index - 1]));
+  });
+  const atr = rollingMean(trueRange, 14);
+  const ma20 = rollingMean(close, 20);
+  const ma50 = rollingMean(close, 50);
+  const ema12 = ema(close, 12);
+  const ema26 = ema(close, 26);
+  const std20 = rollingStd(close, 20);
+  const high20 = rollingMax(high, 20);
+  const low20 = rollingMin(low, 20);
+  let values: number[];
+
+  if (lowerName.includes('macd')) {
+    values = close.map((_, index) => ema12[index] - ema26[index]);
+  } else if (lowerName.includes('relative strength index') || lowerName.includes('connors rsi') || lowerName.includes('stochastic rsi')) {
+    values = rsi(close, lowerName.includes('connors') ? 3 : 14);
+  } else if (lowerName.includes('stochastic')) {
+    values = close.map((value, index) => ((value - low20[index]) / Math.max(high20[index] - low20[index], 0.0001)) * 100);
+  } else if (lowerName.includes('williams')) {
+    values = close.map((value, index) => ((high20[index] - value) / Math.max(high20[index] - low20[index], 0.0001)) * -100);
+  } else if (lowerName.includes('money flow') || lowerName.includes('chaikin money')) {
+    values = close.map((_, index) => {
+      const start = Math.max(0, index - 19);
+      let mfv = 0;
+      let vol = 0;
+      for (let i = start; i <= index; i += 1) {
+        const multiplier = ((close[i] - low[i]) - (high[i] - close[i])) / Math.max(high[i] - low[i], 0.0001);
+        mfv += multiplier * volume[i];
+        vol += volume[i];
+      }
+      return vol ? (mfv / vol) * 100 : 0;
+    });
+  } else if (lowerName.includes('accumulation') || lowerName.includes('on balance') || lowerName.includes('price volume') || lowerName.includes('net volume')) {
+    let cumulative = 0;
+    values = close.map((value, index) => {
+      if (index === 0) return 0;
+      const direction = value > close[index - 1] ? 1 : value < close[index - 1] ? -1 : 0;
+      cumulative += direction * volume[index];
+      return cumulative;
+    });
+  } else if (lowerName.includes('average true range') || lowerName.includes('atr')) {
+    values = atr;
+  } else if (lowerName.includes('bollinger') || lowerName.includes('standard error bands')) {
+    values = close.map((value, index) => ((value - (ma20[index] - 2 * std20[index])) / Math.max(4 * std20[index], 0.0001)) * 100);
+  } else if (lowerName.includes('donchian') || lowerName.includes('price channel') || lowerName.includes('52 week')) {
+    values = close.map((value, index) => ((value - low20[index]) / Math.max(high20[index] - low20[index], 0.0001)) * 100);
+  } else if (lowerName.includes('aroon')) {
+    values = close.map((_, index) => {
+      const start = Math.max(0, index - 24);
+      const highs = high.slice(start, index + 1);
+      const lows = low.slice(start, index + 1);
+      const highAge = highs.length - 1 - highs.lastIndexOf(Math.max(...highs));
+      const lowAge = lows.length - 1 - lows.lastIndexOf(Math.min(...lows));
+      return ((25 - highAge) / 25) * 100 - ((25 - lowAge) / 25) * 100;
+    });
+  } else if (lowerName.includes('commodity channel') || lowerName.includes('cci')) {
+    const avgTypical = rollingMean(typical, 20);
+    values = typical.map((value, index) => {
+      const start = Math.max(0, index - 19);
+      const deviation = mean(typical.slice(start, index + 1).map(item => Math.abs(item - avgTypical[index])));
+      return (value - avgTypical[index]) / Math.max(0.015 * deviation, 0.0001);
+    });
+  } else if (lowerName.includes('vwap') || lowerName.includes('vwma') || lowerName.includes('volume weighted')) {
+    let pv = 0;
+    let vol = 0;
+    values = close.map((value, index) => {
+      pv += typical[index] * volume[index];
+      vol += volume[index];
+      return vol ? pv / vol : value;
+    });
+  } else if (lowerName.includes('volume')) {
+    values = volume;
+  } else if (lowerName.includes('volatility') || lowerName.includes('standard deviation') || lowerName.includes('standard error')) {
+    values = close.map((value, index) => (rollingStd(close.slice(0, index + 1), 20).at(-1) || 0) / Math.max(value, 0.0001) * 100);
+  } else if (lowerName.includes('momentum') || lowerName.includes('rate of change') || lowerName.includes('roc')) {
+    values = close.map((value, index) => index < 10 ? 0 : ((value - close[index - 10]) / Math.max(close[index - 10], 0.0001)) * 100);
+  } else if (lowerName.includes('moving average') || lowerName.includes('ema') || lowerName.includes('ma cross') || lowerName.includes('alligator') || lowerName.includes('mcginley')) {
+    values = lowerName.includes('exponential') || lowerName.includes('ema') ? ema(close, 20) : ma20;
+  } else if (lowerName.includes('supertrend') || lowerName.includes('parabolic') || lowerName.includes('keltner') || lowerName.includes('chande kroll')) {
+    values = close.map((value, index) => value >= ma20[index] ? value - 2 * atr[index] : value + 2 * atr[index]);
+  } else if (lowerName.includes('median')) {
+    values = high.map((value, index) => (value + low[index]) / 2);
+  } else if (lowerName.includes('typical') || lowerName.includes('average price')) {
+    values = typical;
+  } else if (lowerName.includes('balance of power')) {
+    values = close.map((value, index) => ((value - open[index]) / range[index]) * 100);
+  } else if (lowerName.includes('directional') || lowerName.includes('trend strength')) {
+    values = close.map((value, index) => ((ma20[index] - ma50[index]) / Math.max(value, 0.0001)) * 100);
+  } else {
+    values = close.map((value, index) => index === 0 ? 0 : ((value - close[index - 1]) / Math.max(close[index - 1], 0.0001)) * 100);
+  }
+
+  const cleanValues = values.map(value => Number.isFinite(value) ? value : 0);
+  const series = cleanValues.map((value, index) => ({ label: candles[index].day, value })).slice(-120);
+  const latest = series.at(-1)?.value ?? 0;
+  return {
+    name,
+    color: getIndicatorColor(name),
+    latest: formatIndicatorValue(latest, name),
+    series,
+  };
+}
+
+function buildSvgPath(series: IndicatorPoint[], width = 720, height = 150) {
+  if (series.length < 2) return '';
+  const values = series.map(point => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(max - min, 0.0001);
+  return series
+    .map((point, index) => {
+      const x = (index / Math.max(series.length - 1, 1)) * width;
+      const y = height - ((point.value - min) / span) * height;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+const IndicatorPanel = ({ panel }: { panel: IndicatorPanelData }) => {
+  const path = buildSvgPath(panel.series);
+  return (
+    <div className="relative border-t border-slate-200 bg-white">
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-2 text-xs font-bold text-slate-700 font-['Space_Grotesk']">
+        <span>{panel.name}</span>
+        <span className="font-['JetBrains_Mono']" style={{ color: panel.color }}>{panel.latest}</span>
+      </div>
+      <div className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-l-md px-2 py-1 text-xs font-black text-white font-['JetBrains_Mono']" style={{ backgroundColor: panel.color }}>
+        {panel.latest}
+      </div>
+      <svg viewBox="0 0 720 150" className="h-[190px] w-full" preserveAspectRatio="none" role="img" aria-label={`${panel.name} indicator chart`}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <line key={`h-${index}`} x1="0" x2="720" y1={index * 30} y2={index * 30} stroke="rgba(15,23,42,0.06)" />
+        ))}
+        {Array.from({ length: 14 }, (_, index) => (
+          <line key={`v-${index}`} x1={index * 55.4} x2={index * 55.4} y1="0" y2="150" stroke="rgba(15,23,42,0.05)" />
+        ))}
+        <path d={path} fill="none" stroke={panel.color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+};
+
+const IndicatorChartPane = ({
+  panel,
+  setPaneRef,
+}: {
+  panel: IndicatorPanelData;
+  setPaneRef: (name: string, element: HTMLDivElement | null) => void;
+}) => (
+  <div className="relative border-t border-slate-200 bg-white">
+    <div className="absolute left-3 top-3 z-10 flex items-center gap-2 text-xs font-bold text-slate-700 font-['Space_Grotesk']">
+      <span>{panel.name}</span>
+      <span className="font-['JetBrains_Mono']" style={{ color: panel.color }}>{panel.latest}</span>
+    </div>
+    <div className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-l-md px-2 py-1 text-xs font-black text-white font-['JetBrains_Mono']" style={{ backgroundColor: panel.color }}>
+      {panel.latest}
+    </div>
+    <div
+      ref={(element) => setPaneRef(panel.name, element)}
+      className="h-[190px] w-full"
+      aria-label={`${panel.name} synced indicator chart`}
+    />
+  </div>
+);
+
+function buildPreviewChartPath(chartData: any, width = 720, height = 190) {
+  const candles = getChartCandles(chartData).slice(-90);
+  if (candles.length < 2) return '';
+  const values = candles.map((c: any) => asNumber(c.close));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(max - min, 0.0001);
+  return values
+    .map((value, index) => {
+      const x = (index / Math.max(values.length - 1, 1)) * width;
+      const y = height - ((value - min) / span) * height;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+function buildNewsRead(title: string, verdict?: string) {
+  const lower = title.toLowerCase();
+  const isPositive = /\b(gain|jump|surge|rally|beat|upgrade|growth|profit|record|strong|wins|expands|raises)\b/.test(lower);
+  const isNegative = /\b(fall|drop|slide|concern|miss|downgrade|loss|weak|risk|probe|lawsuit|cuts|pressure|debt)\b/.test(lower);
+  const isSell = /sell|bear/i.test(verdict ?? '');
+  const isBuy = /buy|bull/i.test(verdict ?? '');
+
+  if ((isBuy && isPositive) || (isSell && isNegative)) {
+    return {
+      label: 'Supports model call',
+      className: 'border-cyan-300/40 bg-cyan-50 text-cyan-700',
+      note: 'This item lines up with the current model direction, so it adds supporting context to the technical read.',
+    };
+  }
+  if ((isBuy && isNegative) || (isSell && isPositive)) {
+    return {
+      label: 'Watch conflict',
+      className: 'border-amber-300/50 bg-amber-50 text-amber-700',
+      note: 'This item conflicts with the model direction, so price confirmation matters before trusting the setup.',
+    };
+  }
+  return {
+    label: 'Context',
+    className: 'border-slate-200 bg-slate-50 text-slate-600',
+    note: 'This is relevant background news; the final call still comes from price action, risk levels, and FISO scoring.',
+  };
+}
+
+function buildMarketNewsRead(title: string) {
+  const lower = title.toLowerCase();
+  if (/\b(rate|inflation|fed|rbi|bond|yield|oil|dollar)\b/.test(lower)) {
+    return 'Macro driver that can affect risk appetite and market breadth.';
+  }
+  if (/\b(earnings|profit|results|revenue|guidance)\b/.test(lower)) {
+    return 'Earnings flow that can shift sector leadership and stock selection.';
+  }
+  if (/\b(nifty|sensex|nasdaq|s&p|dow|market)\b/.test(lower)) {
+    return 'Broad index context to compare against individual stock setups.';
+  }
+  return 'Market context item to review before acting on individual signals.';
 }
 
 function getLevenshteinDistance(s: string, t: string) {
@@ -272,6 +726,17 @@ function isIndianStock(stock?: typeof STOCKS[number] | null) {
   return !!stock && resolveMarket(stock.exchange) === 'INDIA';
 }
 
+function canShowDetailedAnalysis(stock?: typeof STOCKS[number] | null) {
+  return !!stock && (resolveMarket(stock.exchange) === 'INDIA' || resolveMarket(stock.exchange) === 'US');
+}
+
+function formatFaceValue(stock?: typeof STOCKS[number] | null, fallback?: any) {
+  const value = Number(fallback ?? stock?.faceValue);
+  if (!Number.isFinite(value)) return '-';
+  const currency = stock?.currency ?? '';
+  return `${currency}${formatIndianNumber(value, value < 1 ? 4 : 2)}`;
+}
+
 function formatIndianNumber(value: any, digits = 2) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return '-';
@@ -352,7 +817,12 @@ const TickerItem = ({ title, currency, quote }: { title: string; currency: strin
 
 // ─── MARKET ASSET CARD ────────────────────────────────────────────────────────
 const IndexTickerTape = () => {
-  const cachedQuotes = getCache<Record<string, QuoteSnapshot>>('index-quotes');
+  const [cachedQuotes, setCachedQuotes] = useState<Record<string, QuoteSnapshot> | undefined>(undefined);
+
+  useEffect(() => {
+    setCachedQuotes(getCache<Record<string, QuoteSnapshot>>('index-quotes'));
+  }, []);
+
   const { data } = useSWR<Record<string, QuoteSnapshot>>(INDEX_QUOTES_KEY, fetcher, {
     fallbackData: cachedQuotes,
     refreshInterval: 60000,
@@ -384,58 +854,46 @@ const IndexTickerTape = () => {
 
 const MarketAssetCard = ({
   stock,
-  onSelect,
   prefetchedAnalysis,
   quickQuote,
-  expanded,
-  onToggle,
+  onPreview,
 }: {
   stock: typeof STOCKS[0];
-  onSelect: (s: typeof STOCKS[0]) => void;
   prefetchedAnalysis?: any;
   quickQuote?: QuoteSnapshot;
-  expanded: boolean;
-  onToggle: (ticker: string) => void;
+  onPreview: (stock: typeof STOCKS[0]) => void;
 }) => {
-  // Only hit the API if we have no prefetched data yet
-  const { data: fetchedAnalysis } = useSWR(
-    expanded && !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
-    fetcher
-  );
-
-  // Prefer prefetched; fall back to on-demand fetch
-  const analysis = prefetchedAnalysis ?? fetchedAnalysis;
-  const analysisView = getAnalysisPresentation(analysis);
+  const analysisView = getAnalysisPresentation(prefetchedAnalysis);
   const isReady = !!analysisView;
   const quickPrice = Number(quickQuote?.price);
   const quickChange = Number(quickQuote?.change_percent ?? 0);
-  const quickSignal = quickChange > 0.6 ? 'Buy' : quickChange < -0.6 ? 'Sell' : 'Hold';
   const quickConfidence = Math.min(86, Math.max(42, 56 + Math.abs(quickChange) * 8));
 
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
-  const quickSignalColor = quickSignal === 'Buy' ? 'text-green-500' : quickSignal === 'Sell' ? 'text-red-500' : 'text-slate-500';
-  const verdictColor = isReady ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400') : quickSignalColor;
-  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : quickSignal;
+  const verdictColor = isReady ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400') : 'text-cyan-600';
+  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : 'Scan';
 
   // Mini verdict dot shown even before hover when prefetch is done
   const dotColor = isReady
     ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
-    : (quickSignal === 'Buy' ? 'bg-green-400' : quickSignal === 'Sell' ? 'bg-red-400' : 'bg-slate-400');
+    : 'bg-cyan-400';
   const signalGradient = isReady
     ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
-    : (quickSignal === 'Buy' ? 'from-emerald-300 to-cyan-300' : quickSignal === 'Sell' ? 'from-rose-300 to-orange-200' : 'from-slate-300 to-cyan-200');
+    : 'from-slate-200 to-cyan-200';
 
   return (
     <div
-      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
-        ${expanded ? 'border-cyan-300 ring-2 ring-cyan-200/70 bg-white' : 'border-slate-200/80 hover:border-cyan-200'}`}
+      data-market-card={stock.ticker}
+      onClick={() => onPreview(stock)}
+      className={`relative w-full min-h-[164px] cursor-pointer p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
+        border-slate-200/80 hover:border-cyan-200`}
     >
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
       <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-100/55 blur-2xl opacity-0 transition-opacity group-hover:opacity-100" />
       <div className="relative flex justify-between items-start gap-2 mb-5">
         <div className="min-w-0">
-          <span className={`block truncate text-[11px] font-black font-['JetBrains_Mono'] transition-colors ${expanded ? 'text-cyan-600' : 'text-slate-500 group-hover:text-cyan-600'}`}>{stock.symbol}</span>
+          <span className="block truncate text-[11px] font-black font-['JetBrains_Mono'] text-slate-500 transition-colors group-hover:text-cyan-600">{stock.symbol}</span>
           <span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500 font-['JetBrains_Mono']">{stock.exchange}</span>
         </div>
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
@@ -443,12 +901,12 @@ const MarketAssetCard = ({
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Open preview'} />
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onToggle(stock.ticker); }}
+            onClick={(e) => { e.stopPropagation(); onPreview(stock); }}
             className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-cyan-600 hover:bg-cyan-50 hover:border-cyan-300 transition-all flex items-center justify-center shrink-0 shadow-sm"
-            aria-label={`${expanded ? 'Hide' : 'Show'} ${stock.symbol} preview`}
-            title={`${expanded ? 'Hide' : 'Show'} preview`}
+            aria-label={`Open ${stock.symbol} preview`}
+            title="Open preview"
           >
-            <span className={`text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>⌄</span>
+            <span className="text-xs transition-transform group-hover:-rotate-90">⌄</span>
           </button>
         </div>
       </div>
@@ -460,6 +918,10 @@ const MarketAssetCard = ({
           {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
         </span>
       </div>
+      <div className="relative mt-2 flex min-w-0 items-center justify-between gap-2 px-1">
+        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Face Value</span>
+        <span className="text-[10px] font-black text-slate-600 font-['JetBrains_Mono']">{formatFaceValue(stock)}</span>
+      </div>
 
       <div className="relative mt-5 flex items-center justify-between gap-3">
         <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
@@ -467,7 +929,7 @@ const MarketAssetCard = ({
             className="h-full rounded-full transition-all duration-1000"
             style={{
               width: `${isReady ? analysisView.confidenceLevel : quickConfidence}%`,
-              backgroundColor: isReady ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171') : (quickSignal === 'Buy' ? '#4ade80' : quickSignal === 'Sell' ? '#f87171' : '#94a3b8'),
+              backgroundColor: isReady ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171') : '#67e8f9',
             }}
           />
         </div>
@@ -475,43 +937,204 @@ const MarketAssetCard = ({
           {verdictBadge}
         </span>
       </div>
+    </div>
+  );
+};
 
-      <div className={`relative transition-all duration-300 ease-in-out ${expanded ? 'max-h-72 opacity-100 mt-4 border-t border-slate-200 pt-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-        {isReady ? (
-          <div className="space-y-2.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Verdict</span>
-              <span className={`text-sm font-black uppercase tracking-widest ${verdictColor}`}>{analysisView.displayVerdict}</span>
+const StockPreviewModal = ({
+  stock,
+  quickQuote,
+  prefetchedAnalysis,
+  onClose,
+  onSelect,
+  onAnalysisReady,
+}: {
+  stock: typeof STOCKS[0];
+  quickQuote?: QuoteSnapshot;
+  prefetchedAnalysis?: any;
+  onClose: () => void;
+  onSelect: (stock: typeof STOCKS[0]) => void;
+  onAnalysisReady: (ticker: string, analysis: unknown) => void;
+}) => {
+  const { data: fetchedAnalysis } = useSWR(
+    !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
+    fetcher,
+    {
+      onSuccess: data => {
+        if (!data || data.error) return;
+        setCache(`analysis:${stock.ticker}`, data);
+        onAnalysisReady(stock.ticker, data);
+      },
+    }
+  );
+  const { data: previewChart } = useSWR(`/api/v1/chart/${stock.ticker}?range=1mo`, fetcher, {
+    fallbackData: getCache(`chart:${stock.ticker}:1mo`),
+    onSuccess: data => setCache(`chart:${stock.ticker}:1mo`, data),
+  });
+
+  const analysisView = getAnalysisPresentation(prefetchedAnalysis ?? fetchedAnalysis);
+  const previewPath = buildPreviewChartPath(previewChart);
+  const quickPrice = Number(quickQuote?.price);
+  const quickChange = Number(quickQuote?.change_percent ?? 0);
+  const isBull = analysisView?.isBullish;
+  const isHold = analysisView?.isHold;
+  const accentText = analysisView
+    ? isBull ? 'text-green-400' : isHold ? 'text-slate-400' : 'text-red-400'
+    : 'text-cyan-500';
+  const accentBg = analysisView
+    ? isBull ? 'from-emerald-400 to-cyan-300' : isHold ? 'from-slate-300 to-cyan-200' : 'from-rose-400 to-orange-300'
+    : 'from-cyan-300 to-sky-300';
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-md sm:p-6"
+      onMouseDown={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${stock.name} preview`}
+    >
+      <div
+        className="relative flex min-h-[60vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-cyan-200/70 bg-white shadow-[0_40px_120px_rgba(15,23,42,0.35)]"
+        onMouseDown={event => event.stopPropagation()}
+      >
+        <div className={`h-1.5 bg-gradient-to-r ${accentBg}`} />
+        <div className="flex flex-col gap-5 p-5 sm:p-7">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mb-4 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors hover:border-cyan-300 hover:bg-cyan-50 font-['Space_Grotesk']"
+              >
+                Back
+              </button>
+              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-600 font-['Space_Grotesk']">{stock.symbol} · {stock.exchange}</div>
+              <h2 className="mt-2 text-3xl font-black leading-tight text-slate-950 sm:text-5xl font-['Space_Grotesk']">{stock.name}</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 font-['JetBrains_Mono']">
+                Sneak peek of price action, FISO verdict, target zone, and stop-loss risk before opening the full dashboard.
+              </p>
             </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-              <span className="block text-[9px] text-slate-500 uppercase tracking-widest font-bold leading-tight">FISO Confidence</span>
-              <span className="mt-1 block whitespace-nowrap text-sm font-['JetBrains_Mono'] text-slate-950 font-black leading-none">{analysisView.confidenceLevel}/100</span>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-right">
+              <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-['Space_Grotesk']">Live Price</div>
+              <div className="mt-1 text-2xl font-black text-slate-950 font-['JetBrains_Mono']">
+                {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
+              </div>
+              <div className={`mt-1 text-xs font-black font-['JetBrains_Mono'] ${quickChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {quickChange >= 0 ? '+' : ''}{quickChange.toFixed(2)}%
+              </div>
+              <div className="mt-3 border-t border-slate-200 pt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Face Value <span className="text-slate-900 font-['JetBrains_Mono']">{formatFaceValue(stock)}</span>
+              </div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Target</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-green-400 font-bold">{stock.currency}{analysisView.target}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Stop Loss</span>
-              <span className="text-sm font-['JetBrains_Mono'] text-red-400 font-bold">{stock.currency}{analysisView.stop_loss}</span>
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onSelect(stock); }}
-              className="w-full mt-1 py-2 rounded-xl bg-cyan-50 border border-cyan-200 text-slate-950 text-[10px] font-black uppercase tracking-widest font-['JetBrains_Mono'] hover:bg-cyan-100 transition-all"
-            >
-              Full Analysis →
-            </button>
           </div>
-        ) : (
-          <div className="flex items-center justify-center py-4 gap-2">
-            <div className="w-3 h-3 border border-zinc-700 border-t-cyan-400 rounded-full animate-spin shrink-0" />
-            <span className="text-[10px] text-cyan-500/70 animate-pulse font-['JetBrains_Mono'] tracking-widest">
-              RUNNING ANALYSIS...
-            </span>
+
+          <div className="grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <div className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 font-['Space_Grotesk']">Mini Chart</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-['JetBrains_Mono']">1M preview</div>
+              </div>
+              <svg viewBox="0 0 720 230" className="h-64 w-full bg-white" preserveAspectRatio="none" role="img" aria-label={`${stock.name} mini chart`}>
+                {Array.from({ length: 7 }, (_, index) => (
+                  <line key={`h-${index}`} x1="0" x2="720" y1={index * 38} y2={index * 38} stroke="rgba(15,23,42,0.06)" />
+                ))}
+                {Array.from({ length: 13 }, (_, index) => (
+                  <line key={`v-${index}`} x1={index * 60} x2={index * 60} y1="0" y2="230" stroke="rgba(15,23,42,0.05)" />
+                ))}
+                {previewPath ? (
+                  <path d={previewPath} fill="none" stroke={isBull ? '#22c55e' : isHold ? '#06b6d4' : '#ef4444'} strokeWidth="3" vectorEffect="non-scaling-stroke" />
+                ) : (
+                  <text x="360" y="118" textAnchor="middle" className="fill-slate-400 text-xs font-bold uppercase tracking-widest">Loading chart</text>
+                )}
+              </svg>
+            </div>
+
+            <div className="grid gap-3">
+              {analysisView ? (
+                <>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-['Space_Grotesk']">Verdict</div>
+                    <div className={`mt-2 text-3xl font-black uppercase tracking-widest ${accentText} font-['Space_Grotesk']`}>{analysisView.displayVerdict}</div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                      <div className={`h-full rounded-full bg-gradient-to-r ${accentBg}`} style={{ width: `${analysisView.confidenceLevel}%` }} />
+                    </div>
+                    <div className="mt-2 text-xs font-black text-white font-['JetBrains_Mono']">{analysisView.confidenceLevel}/100 FISO confidence</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Target</div>
+                      <div className="mt-2 text-lg font-black text-green-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.target}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stop Loss</div>
+                      <div className="mt-2 text-lg font-black text-red-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.stop_loss}</div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex min-h-52 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-cyan-500" />
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 font-['JetBrains_Mono']">Running analysis</div>
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelect(stock);
+                }}
+                className="rounded-2xl border border-cyan-200 bg-cyan-50 px-5 py-4 text-xs font-black uppercase tracking-[0.2em] text-slate-950 transition-colors hover:bg-cyan-100 font-['Space_Grotesk']"
+              >
+                Open Full Analysis →
+              </button>
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
+  );
+};
+
+const GlobalNewsPanel = () => {
+  const { data } = useSWR<{ stories?: Array<{ title: string; source: string }> }>('/api/v1/global-news', fetcher, {
+    refreshInterval: 1000 * 60 * 10,
+    revalidateOnFocus: false,
+  });
+  const stories = data?.stories?.length ? data.stories : [
+    { title: 'Loading global market news and macro context...', source: 'Bullseye' },
+  ];
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.05] p-5 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:p-6">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)]" />
+          <h2 className="text-xs font-black uppercase tracking-[0.22em] text-cyan-100 font-['Space_Grotesk']">Global Market News</h2>
+        </div>
+        <span className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-100 font-['JetBrains_Mono']">
+          Live context
+        </span>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-5">
+        {stories.slice(0, 5).map((story, index) => (
+          <article key={`${story.title}-${index}`} className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 transition-colors hover:border-cyan-300/35">
+            <div className="text-[9px] font-black uppercase tracking-widest text-cyan-300 font-['JetBrains_Mono']">{story.source}</div>
+            <h3 className="mt-2 text-sm font-black leading-5 text-white font-['Space_Grotesk']">{story.title}</h3>
+            <p className="mt-3 text-[11px] leading-5 text-slate-300 font-['JetBrains_Mono']">{buildMarketNewsRead(story.title)}</p>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 };
 
@@ -1298,15 +1921,32 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
           </span>
         </div>
 
-        <ul className="space-y-3">
-          {analysis?.sentiment?.headlines?.map((h: string, i: number) => (
-            <li key={i} className="text-xs text-zinc-300 leading-relaxed border-l-2 border-white/20 pl-4 py-1.5 hover:border-cyan-400 hover:text-white transition-all cursor-pointer group">
-              <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest block mb-0.5 group-hover:text-cyan-400/70 transition-colors">
-                Headline {String(i + 1).padStart(2, '0')}
-              </span>
-              {h}
-            </li>
-          ))}
+        <ul className="grid gap-3 md:grid-cols-2">
+          {(analysis?.sentiment?.headlines?.length ? analysis.sentiment.headlines : ['No verified stock-specific news found yet.']).map((h: string, i: number) => {
+            const [title, source] = h.split(' — ');
+            const read = buildNewsRead(title, analysisView?.displayVerdict);
+            return (
+              <li key={`${title}-${i}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 leading-relaxed transition-all hover:border-cyan-400/40 hover:bg-white/[0.06]">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <span className="block text-sm font-black text-zinc-100 transition-colors">{title}</span>
+                  <span className={`shrink-0 rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-widest ${read.className}`}>
+                    {read.label}
+                  </span>
+                </div>
+                <p className="mt-3 text-xs leading-6 text-zinc-400 font-['JetBrains_Mono']">{read.note}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {source && (
+                    <span className="text-[9px] text-cyan-400/80 font-['JetBrains_Mono'] uppercase tracking-widest">
+                      {source}
+                    </span>
+                  )}
+                  <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
+                    Checked against {analysisView?.displayVerdict ?? 'model'} view
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
 
         <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
@@ -1442,12 +2082,12 @@ const IndiaDetailedAnalysisPanel = ({
   const highlights = [
     { label: 'Market Cap', value: formatMarketCap(summary.market_cap, summary.market_cap_unit, currency) },
     { label: 'Current Price', value: formatCurrencyNumber(summary.current_price, currency, 2) },
+    { label: 'Face Value', value: formatFaceValue(stock, summary.face_value) },
     { label: '52W High / Low', value: summary.high_52_week && summary.low_52_week ? `${formatCurrencyNumber(summary.high_52_week, currency, 2)} / ${formatCurrencyNumber(summary.low_52_week, currency, 2)}` : '-' },
     { label: 'Trailing P/E', value: formatRatioValue(summary.trailing_pe) },
     { label: 'Book Value', value: formatCurrencyNumber(summary.book_value, currency, 2) },
     { label: 'Dividend Yield', value: formatRatioValue(summary.dividend_yield, 'percent') },
     { label: 'ROE', value: formatRatioValue(summary.return_on_equity, 'percent') },
-    { label: 'Profit Margin', value: formatRatioValue(summary.profit_margins, 'percent') },
   ];
   const [showFullAbout, setShowFullAbout] = useState(false);
   const aboutDescription = company.description || `${stock.name} detailed profile will expand as we ingest more NSE/BSE filings.`;
@@ -1472,13 +2112,13 @@ const IndiaDetailedAnalysisPanel = ({
         <div className="xl:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
           <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
             <div>
-              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">Indian Stock Analytics</h3>
+              <h3 className="text-lg sm:text-xl font-black text-white font-['Space_Grotesk']">{resolveMarket(stock.exchange) === 'US' ? 'US Stock Analytics' : 'Indian Stock Analytics'}</h3>
               <p className="text-[10px] sm:text-xs text-zinc-500 mt-1 font-['JetBrains_Mono']">
                 Free fundamentals pipeline for {stock.symbol} using cached market data.
               </p>
             </div>
             <span className="text-[10px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono']">
-              India only
+              {resolveMarket(stock.exchange)}
             </span>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
@@ -1601,9 +2241,14 @@ export default function Home() {
   const [activeMarket, setActiveMarket] = useState<MarketScope>('INDIA');
   const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
   const [chartRange, setChartRange] = useState<ChartRange>('1y');
+  const [activeIndicators, setActiveIndicators] = useState<string[]>([]);
+  const [indicatorQuery, setIndicatorQuery] = useState('');
+  const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+  const [marketPage, setMarketPage] = useState(1);
   const [assetColumnCount, setAssetColumnCount] = useState(2);
   const chartRef = useRef<HTMLDivElement>(null);
+  const indicatorPaneRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // ── Auth state ───────────────────────────────────────────────────────────
   const [user, setUser] = useState<any>(null);
@@ -1625,7 +2270,7 @@ export default function Home() {
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const supabaseRef = useRef<any>(null);
   const selectedStock = ticker ? STOCKS.find(s => s.ticker === ticker) ?? null : null;
-  const canOpenDetailedAnalysis = isIndianStock(selectedStock);
+  const canOpenDetailedAnalysis = canShowDetailedAnalysis(selectedStock);
 
   // Check if Supabase is available
   const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1643,14 +2288,11 @@ export default function Home() {
 
     setAuthReady(false);
 
-    import('@supabase/supabase-js').then(({ createClient }) => {
+    getSharedSupabaseClient(supabaseUrl!, supabaseKey!).then((client) => {
       if (!mounted) return;
 
-      if (!supabaseRef.current) {
-        supabaseRef.current = createClient(supabaseUrl!, supabaseKey!);
-      }
-
-      const sb = supabaseRef.current;
+      supabaseRef.current = client;
+      const sb = client;
 
       sb.auth.getSession().then((result: any) => {
         if (!mounted) return;
@@ -1723,8 +2365,7 @@ export default function Home() {
 
   const getSupabaseClient = async () => {
     if (supabaseRef.current) return supabaseRef.current;
-    const { createClient } = await import('@supabase/supabase-js');
-    supabaseRef.current = createClient(supabaseUrl!, supabaseKey!);
+    supabaseRef.current = await getSharedSupabaseClient(supabaseUrl!, supabaseKey!);
     return supabaseRef.current;
   };
 
@@ -1818,7 +2459,7 @@ export default function Home() {
     setTicker(stock.ticker);
     setCurrency(stock.currency);
     setActiveMarket(market);
-    setDashboardView(market === 'INDIA' ? requestedView : 'overview');
+    setDashboardView(canShowDetailedAnalysis(stock) ? requestedView : 'overview');
   };
 
   useEffect(() => {
@@ -1900,17 +2541,23 @@ export default function Home() {
     setShowSuggestions(true);
   }, [input]);
 
+  const indicatorPanels = useMemo(
+    () => activeIndicators.map(name => buildIndicatorPanel(name, chartData)).filter(Boolean) as IndicatorPanelData[],
+    [activeIndicators, chartData]
+  );
+
   useEffect(() => {
     if (!ticker || !chartData || !chartRef.current || !Array.isArray(chartData) || chartData.length === 0) return;
     chartRef.current.innerHTML = '';
     let cleanup = () => {};
     let cancelled = false;
-    import('lightweight-charts').then(({ createChart, CandlestickSeries }) => {
+    import('lightweight-charts').then(({ createChart, CandlestickSeries, LineSeries }) => {
       if (cancelled || !chartRef.current) return;
       const container = chartRef.current;
       const rect = container.getBoundingClientRect();
       const initW = rect.width || container.clientWidth || 800;
       const initH = rect.height || container.clientHeight || 320;
+      const indicatorHeight = 190;
       const chart = createChart(container, {
         width: initW,
         height: initH,
@@ -1923,6 +2570,7 @@ export default function Home() {
           borderColor: 'rgba(15,23,42,0.12)',
           fixLeftEdge: chartRange !== 'max',
           fixRightEdge: true,
+          rightOffset: 5,
         },
       });
 
@@ -1941,7 +2589,72 @@ export default function Home() {
           low: parseFloat(d.low), close: parseFloat(d.close),
         }));
       candleSeries.setData(formattedData);
+
+      const indicatorCharts = indicatorPanels
+        .map(panel => {
+          const pane = indicatorPaneRefs.current[panel.name];
+          if (!pane) return null;
+          pane.innerHTML = '';
+          const paneRect = pane.getBoundingClientRect();
+          const paneWidth = paneRect.width || pane.clientWidth || initW;
+          const indicatorChart = createChart(pane, {
+            width: paneWidth,
+            height: indicatorHeight,
+            layout: { background: { color: '#ffffff' }, textColor: '#475569' },
+            grid: { vertLines: { color: 'rgba(15,23,42,0.05)' }, horzLines: { color: 'rgba(15,23,42,0.06)' } },
+            crosshair: { mode: 1 },
+            rightPriceScale: {
+              borderColor: 'rgba(15,23,42,0.12)',
+              scaleMargins: { top: 0.18, bottom: 0.18 },
+            },
+            timeScale: {
+              timeVisible: chartRange === '1d' || chartRange === '1w',
+              secondsVisible: false,
+              borderColor: 'rgba(15,23,42,0.12)',
+              fixLeftEdge: chartRange !== 'max',
+              fixRightEdge: true,
+              rightOffset: 5,
+            },
+          });
+          const lineSeries = indicatorChart.addSeries(LineSeries, {
+            color: panel.color,
+            lineWidth: 2,
+            priceLineVisible: true,
+            lastValueVisible: true,
+            crosshairMarkerVisible: true,
+          });
+          const panelValues = panel.series;
+          const panelTimes = formattedData.slice(-panelValues.length);
+          lineSeries.setData(panelValues.map((point, index) => ({
+            time: panelTimes[index]?.time,
+            value: point.value,
+          })).filter((point: any) => point.time !== undefined));
+          return { chart: indicatorChart, pane };
+        })
+        .filter(Boolean) as Array<{ chart: any; pane: HTMLDivElement }>;
+
+      const allCharts = [chart, ...indicatorCharts.map(item => item.chart)];
+      let syncingTimeScale = false;
+      const syncRange = (sourceChart: any) => (range: any) => {
+        if (!range || syncingTimeScale) return;
+        syncingTimeScale = true;
+        allCharts.forEach(targetChart => {
+          if (targetChart !== sourceChart) {
+            targetChart.timeScale().setVisibleLogicalRange(range);
+          }
+        });
+        syncingTimeScale = false;
+      };
+      const mainRangeHandler = syncRange(chart);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(mainRangeHandler);
+      const indicatorRangeHandlers = indicatorCharts.map(item => {
+        const handler = syncRange(item.chart);
+        item.chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+        return { item, handler };
+      });
+
       chart.timeScale().fitContent();
+      indicatorCharts.forEach(item => item.chart.timeScale().fitContent());
       // Re-fit after layout settles on mobile
       const rafId = requestAnimationFrame(() => {
         if (cancelled || !chartRef.current) return;
@@ -1949,19 +2662,34 @@ export default function Home() {
         if (r.width && r.width !== initW) {
           chart.applyOptions({ width: r.width });
         }
-        chart.timeScale().fitContent();
+        indicatorCharts.forEach(item => {
+          const paneWidth = item.pane.getBoundingClientRect().width || item.pane.clientWidth || r.width || initW;
+          item.chart.applyOptions({ width: paneWidth });
+        });
+        const range = chart.timeScale().getVisibleLogicalRange();
+        if (range) indicatorCharts.forEach(item => item.chart.timeScale().setVisibleLogicalRange(range));
       });
       const resizeObserver = new ResizeObserver(entries => {
         const entry = entries[0];
         const w = entry?.contentRect.width || container.clientWidth || 800;
         const h = entry?.contentRect.height || container.clientHeight || 320;
         chart.applyOptions({ width: w, height: h });
-        chart.timeScale().fitContent();
+        indicatorCharts.forEach(item => {
+          const paneWidth = item.pane.getBoundingClientRect().width || item.pane.clientWidth || w;
+          item.chart.applyOptions({ width: paneWidth, height: indicatorHeight });
+        });
+        const range = chart.timeScale().getVisibleLogicalRange();
+        if (range) indicatorCharts.forEach(item => item.chart.timeScale().setVisibleLogicalRange(range));
       });
       resizeObserver.observe(container);
       cleanup = () => {
         cancelAnimationFrame(rafId);
         resizeObserver.disconnect();
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(mainRangeHandler);
+        indicatorRangeHandlers.forEach(({ item, handler }) => {
+          item.chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+        });
+        indicatorCharts.forEach(item => item.chart.remove());
         chart.remove();
       };
     });
@@ -1969,11 +2697,11 @@ export default function Home() {
       cancelled = true;
       cleanup();
     };
-  }, [chartData, chartRange, ticker]);
+  }, [chartData, chartRange, indicatorPanels, ticker]);
 
   const openStockView = (stock: typeof STOCKS[0], nextView: DashboardView = 'overview') => {
     const market = resolveMarket(stock.exchange);
-    const resolvedView = market === 'INDIA' ? nextView : 'overview';
+    const resolvedView = canShowDetailedAnalysis(stock) ? nextView : 'overview';
     setCachedChart(getCache(`chart:${stock.ticker}:${chartRange}`));
     setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
     setCachedFundamentals(getCache(`fundamentals:${stock.ticker}`));
@@ -1992,6 +2720,10 @@ export default function Home() {
 
   const selectStock = (stock: typeof STOCKS[0]) => {
     openStockView(stock, 'overview');
+  };
+
+  const selectStockDetails = (stock: typeof STOCKS[0]) => {
+    openStockView(stock, 'details');
   };
 
   const openDetailedAnalysis = () => {
@@ -2013,16 +2745,23 @@ export default function Home() {
   };
 
   const getMarketStocks = () => {
-    if (activeMarket === 'INDIA') return STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE').slice(0, 24);
-    if (activeMarket === 'US') return STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE').slice(0, 24);
+    if (activeMarket === 'INDIA') return STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE').slice(0, STOCK_PAGE_LIMIT);
+    if (activeMarket === 'US') return STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE').slice(0, STOCK_PAGE_LIMIT);
     return [];
   };
 
-  const visibleMarketStocks = getMarketStocks();
+  const marketStocks = getMarketStocks();
+  const marketPageCount = Math.max(1, Math.ceil(marketStocks.length / STOCKS_PER_PAGE));
+  const visibleMarketStocks = marketStocks.slice((marketPage - 1) * STOCKS_PER_PAGE, marketPage * STOCKS_PER_PAGE);
   const visibleQuoteKey = visibleMarketStocks.length
     ? `/api/v1/quotes/batch?tickers=${visibleMarketStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
     : null;
-  const cachedVisibleQuotes = getCache<Record<string, QuoteSnapshot>>(`market-quotes:${activeMarket}`);
+  const [cachedVisibleQuotes, setCachedVisibleQuotes] = useState<Record<string, QuoteSnapshot> | undefined>(undefined);
+
+  useEffect(() => {
+    setCachedVisibleQuotes(getCache<Record<string, QuoteSnapshot>>(`market-quotes:${activeMarket}`));
+  }, [activeMarket, marketPage]);
+
   const { data: visibleQuotes } = useSWR<Record<string, QuoteSnapshot>>(visibleQuoteKey, fetcher, {
     fallbackData: cachedVisibleQuotes,
     refreshInterval: 60000,
@@ -2042,6 +2781,7 @@ export default function Home() {
   // when a card is opened or a stock dashboard is selected.
   useEffect(() => {
     setExpandedTicker(null);
+    setMarketPage(1);
     const visibleStocks = getMarketStocks();
     const cachedVisible = visibleStocks.reduce((acc, stock) => {
       const cached = getCache(`analysis:${stock.ticker}`);
@@ -2075,6 +2815,17 @@ export default function Home() {
   const isBull = dashboardAnalysisView?.isBullish;
   const isHold = dashboardAnalysisView?.isHold;
   const accentColor = isBull ? 'text-green-400 drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]' : isHold ? 'text-zinc-300' : 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]';
+  const previewStock = !ticker && expandedTicker ? STOCKS.find(stock => stock.ticker === expandedTicker) ?? null : null;
+  const filteredIndicators = INDICATOR_NAMES.filter(name =>
+    name.toLowerCase().includes(indicatorQuery.trim().toLowerCase())
+  );
+  const toggleIndicator = (name: string) => {
+    setActiveIndicators(current =>
+      current.includes(name)
+        ? current.filter(item => item !== name)
+        : [...current, name]
+    );
+  };
 
   return (
     <>
@@ -2567,7 +3318,12 @@ export default function Home() {
               {/* Asset grid */}
               <div className="bg-black/20 backdrop-blur-md rounded-3xl p-4 sm:p-6 border border-white/5 animate-in slide-in-from-bottom-8 fade-in duration-500">
                 <div className="flex items-center justify-between mb-4 sm:mb-6 px-2 border-b border-white/10 pb-4">
-                  <h2 className="text-xs sm:text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Live Scan</h2>
+                  <div>
+                    <h2 className="text-xs sm:text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Live Scan</h2>
+                    <p className="mt-1 text-[10px] font-['JetBrains_Mono'] text-zinc-600">
+                      Showing {visibleMarketStocks.length} of {marketStocks.length} tracked stocks
+                    </p>
+                  </div>
                   <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full text-zinc-300 font-['JetBrains_Mono']">{activeMarket}</span>
                 </div>
                 <div
@@ -2580,17 +3336,83 @@ export default function Home() {
                         <MarketAssetCard
                           key={s.ticker}
                           stock={s}
-                          onSelect={selectStock}
                           prefetchedAnalysis={prefetchCache[s.ticker]}
                           quickQuote={visibleQuotes?.[s.ticker]}
-                          expanded={expandedTicker === s.ticker}
-                          onToggle={(nextTicker) => setExpandedTicker(current => current === nextTicker ? null : nextTicker)}
+                          onPreview={(nextStock) => setExpandedTicker(nextStock.ticker)}
                         />
                       ))}
                     </div>
                   ))}
                 </div>
+                <div className="mt-6 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-4 sm:flex-row">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 font-['Space_Grotesk']">
+                    Page {marketPage} / {marketPageCount}
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {Array.from({ length: marketPageCount }, (_, index) => index + 1).map(page => (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => {
+                          setMarketPage(page);
+                          setExpandedTicker(null);
+                        }}
+                        className={`h-9 min-w-9 rounded-xl border px-3 text-xs font-black transition-all font-['JetBrains_Mono'] ${
+                          marketPage === page
+                            ? 'border-cyan-300 bg-cyan-400 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.35)]'
+                            : 'border-white/10 bg-white/5 text-zinc-400 hover:border-cyan-300/50 hover:text-cyan-200'
+                        }`}
+                        aria-label={`Show stock page ${page}`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
+
+              <GlobalNewsPanel />
+
+              <section className="overflow-hidden rounded-3xl border border-cyan-300/25 bg-slate-950 p-5 text-white shadow-[0_28px_90px_rgba(8,47,73,0.28)] sm:p-7">
+                <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
+                  <div className="flex min-h-[230px] flex-col justify-between rounded-2xl border border-white/10 bg-white/[0.06] p-5 sm:p-6">
+                    <div>
+                    <div className="text-2xl font-black uppercase tracking-[0.12em] sm:text-3xl font-['Space_Grotesk']" style={{ color: '#dffcff', textShadow: '0 0 24px rgba(103,232,249,0.75)' }}>About Bullseye</div>
+                    <h2 className="mt-4 max-w-3xl text-2xl font-black leading-tight sm:text-4xl font-['Space_Grotesk']" style={{ color: '#f8fdff', textShadow: '0 2px 24px rgba(255,255,255,0.22)' }}>
+                        A focused market cockpit for scanning, comparing, and validating stock setups.
+                      </h2>
+                      <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 font-['JetBrains_Mono']">
+                        Bullseye brings chart action, FISO confidence, technical studies, strategy ranking, live quotes, and deeper stock context into a single research flow. The homepage helps you move quickly across markets, while each stock page gives you a cleaner place to inspect the setup before you decide what deserves more attention.
+                      </p>
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {['Live market scan', 'AI verdict context', 'Chart-led research', 'India and US coverage'].map(label => (
+                        <span key={label} className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cyan-100 font-['Space_Grotesk']">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    {[
+                      ['Signal Engine', 'FISO scoring converts trend, momentum, risk, and sentiment inputs into one readable market verdict.'],
+                      ['Technical Workspace', 'Indicator panels sit below the candle chart so momentum, volume, volatility, and trend studies can be compared without leaving the page.'],
+                      ['Research Flow', 'Paginated cards keep the homepage fast to scan, then detailed stock dashboards open with price, chart, targets, stop loss, and strategy context.'],
+                    ].map(([title, body]) => (
+                      <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 transition-colors hover:border-cyan-300/30 hover:bg-white/[0.07]">
+                        <div className="flex items-start gap-3">
+                          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.75)]" />
+                          <div>
+                            <div className="text-sm font-black uppercase tracking-[0.18em] font-['Space_Grotesk']" style={{ color: '#f8fdff', textShadow: '0 0 16px rgba(103,232,249,0.35)' }}>{title}</div>
+                            <p className="mt-2 text-xs leading-6 font-['JetBrains_Mono']" style={{ color: '#d8e2f0' }}>{body}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
             </div>
           )}
 
@@ -2651,9 +3473,9 @@ export default function Home() {
               </div>
 
               {/* Chart */}
-              <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5),0_0_0_1px_rgba(6,182,212,0.04)] overflow-hidden">
-                <div className="flex items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3 flex-wrap">
-                  <span className="font-bold text-xs text-zinc-400 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2 shrink-0">
+              <div className="relative rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_22px_70px_rgba(15,23,42,0.14)] sm:p-5">
+                <div className="flex items-center justify-between gap-3 mb-4 border-b border-slate-200 pb-3 flex-wrap">
+                  <span className="font-bold text-xs text-slate-500 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2 shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
                     Chart Geometry
                   </span>
@@ -2682,19 +3504,91 @@ export default function Home() {
                         </button>
                       ))}
                     </div>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowIndicatorMenu(value => !value)}
+                        className="h-10 rounded-full border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-slate-800 shadow-sm transition-all hover:border-cyan-300 hover:bg-cyan-50 font-['Space_Grotesk']"
+                      >
+                        Indicators
+                      </button>
+                      {showIndicatorMenu && (
+                        <div className="absolute right-0 top-12 z-50 w-[min(86vw,420px)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.28)]">
+                          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                            <div className="text-lg font-black font-['Space_Grotesk']">Indicators</div>
+                            <button
+                              type="button"
+                              onClick={() => setShowIndicatorMenu(false)}
+                              className="h-9 w-9 rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-950"
+                              aria-label="Close indicators"
+                            >
+                              X
+                            </button>
+                          </div>
+                          <div className="border-b border-slate-100 p-3">
+                            <input
+                              value={indicatorQuery}
+                              onChange={event => setIndicatorQuery(event.target.value)}
+                              placeholder="Search"
+                              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-300 focus:bg-white font-['Space_Grotesk']"
+                            />
+                          </div>
+                          <div className="max-h-[420px] overflow-y-auto py-2">
+                            {filteredIndicators.map(name => {
+                              const selected = activeIndicators.includes(name);
+                              return (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => toggleIndicator(name)}
+                                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-bold transition-colors font-['Space_Grotesk'] ${
+                                    selected ? 'bg-slate-100 text-slate-950' : 'text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[10px] ${
+                                    selected ? 'border-cyan-400 bg-cyan-50 text-cyan-700' : 'border-slate-200 text-slate-400'
+                                  }`}>
+                                    {selected ? '+' : ''}
+                                  </span>
+                                  <span>{name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     {analysis && !analysis.error && (
                       <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] shrink-0 ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
                     )}
                   </div>
                 </div>
                 {!chartData ? (
-                  <div className="h-[260px] sm:h-[320px] flex flex-col items-center justify-center font-['JetBrains_Mono'] text-zinc-500 gap-4 text-xs sm:text-sm uppercase tracking-widest">
+                  <div className="h-[260px] sm:h-[360px] flex flex-col items-center justify-center font-['JetBrains_Mono'] text-zinc-500 gap-4 text-xs sm:text-sm uppercase tracking-widest">
                     <div className="w-8 h-8 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
                     Loading Data Stream...
                   </div>
                 ) : (
-                  <div className="w-full overflow-hidden rounded-2xl border border-white/5 bg-white/3">
-                    <div ref={chartRef} className="w-full h-[260px] sm:h-[320px] overflow-hidden" />
+                  <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <div ref={chartRef} className="w-full h-[300px] sm:h-[390px] overflow-hidden" />
+                    {indicatorPanels.length > 0 && (
+                      <div>
+                        {indicatorPanels.map(panel => (
+                          <IndicatorChartPane
+                            key={panel.name}
+                            panel={panel}
+                            setPaneRef={(name, element) => {
+                              indicatorPaneRefs.current[name] = element;
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {indicatorPanels.length === 0 && chartData && (
+                  <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500 font-['JetBrains_Mono']">
+                    Select an indicator to add a professional study pane below the stock chart.
                   </div>
                 )}
               </div>
@@ -2736,6 +3630,22 @@ export default function Home() {
           )}
         </main>
       </div>
+
+      {previewStock && (
+        <StockPreviewModal
+          stock={previewStock}
+          quickQuote={visibleQuotes?.[previewStock.ticker]}
+          prefetchedAnalysis={prefetchCache[previewStock.ticker]}
+          onClose={() => setExpandedTicker(null)}
+          onSelect={(stock) => {
+            setExpandedTicker(null);
+            selectStockDetails(stock);
+          }}
+          onAnalysisReady={(nextTicker, nextAnalysis) => {
+            setPrefetchCache(prev => ({ ...prev, [nextTicker]: nextAnalysis }));
+          }}
+        />
+      )}
 
       {/* ── AUTH MODAL ── */}
       {showAuthModal && (

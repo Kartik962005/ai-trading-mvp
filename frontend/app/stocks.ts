@@ -873,4 +873,32 @@ const RAW_STOCKS = [
   { name: 'VeChain', symbol: 'VET', exchange: 'CRYPTO', ticker: 'VET-USD', currency: '$' }
 ];
 
-export const STOCKS = RAW_STOCKS.filter((stock) => stock.exchange !== 'CRYPTO');
+const FACE_VALUE_OVERRIDES: Record<string, number> = {
+  'HDFCBANK.NS': 1,
+  'ICICIBANK.NS': 2,
+  'SBIN.NS': 1,
+  'AXISBANK.NS': 2,
+  'KOTAKBANK.NS': 5,
+  'INDUSINDBK.NS': 10,
+  'BANKBARODA.NS': 2,
+  'PNB.NS': 2,
+  'CANBK.NS': 2,
+  'IDFCFIRSTB.NS': 10,
+  'FEDERALBNK.NS': 2,
+  'BANDHANBNK.NS': 10,
+  'TCS.NS': 1,
+  'INFY.NS': 5,
+  'RELIANCE.NS': 10,
+  'ITC.NS': 1,
+  'TATAMOTORS.NS': 2,
+};
+
+function inferFaceValue(stock: typeof RAW_STOCKS[number]) {
+  if (FACE_VALUE_OVERRIDES[stock.ticker] !== undefined) return FACE_VALUE_OVERRIDES[stock.ticker];
+  if (stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE') return 0.0001;
+  return 1;
+}
+
+export const STOCKS = RAW_STOCKS
+  .filter((stock) => stock.exchange !== 'CRYPTO')
+  .map((stock) => ({ ...stock, faceValue: inferFaceValue(stock) }));
