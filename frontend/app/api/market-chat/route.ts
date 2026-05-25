@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND =
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  process.env.BACKEND_URL ||
-  'http://127.0.0.1:8000';
+import { getBackendBaseUrl } from '../backend-url';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
@@ -14,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Prompt and ticker are required' }, { status: 400 });
   }
 
-  const response = await fetch(`${BACKEND}/api/v1/stock-ai/search`, {
+  const response = await fetch(`${getBackendBaseUrl()}/api/v1/stock-ai/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -16,10 +16,7 @@ import {
 import StockSearch from './StockSearch';
 import { STOCKS } from '../stocks';
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL
-  || (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? 'http://127.0.0.1:8000'
-    : 'https://ai-trading-backend-jhcl.onrender.com');
+const BACKEND = '/api/backend';
 
 type QueryResult = {
   title: string;

@@ -5,25 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
-function resolveBackendUrl() {
-  if (process.env.NEXT_PUBLIC_BACKEND_URL) {
-    return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/$/, '');
-  }
-  if (typeof window === 'undefined') return 'https://ai-trading-backend-jhcl.onrender.com';
-
-  const host = window.location.hostname;
-  const isLoopback = host === 'localhost' || host === '127.0.0.1';
-  const isPrivateLan =
-    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
-    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host);
-
-  if (isLoopback) return 'http://127.0.0.1:8000';
-  if (isPrivateLan) return `http://${host}:8000`;
-  return 'https://ai-trading-backend-jhcl.onrender.com';
-}
-
-const BACKEND = resolveBackendUrl();
+const BACKEND = '/api/backend';
 const fetcher = async (url: string) => {
   const response = await fetch(`${BACKEND}${url}`);
   const data = await response.json().catch(() => ({}));
@@ -131,6 +113,14 @@ function getCache<T>(key: string): T | undefined {
     const parsed = JSON.parse(raw);
     if (!parsed?.ts || Date.now() - parsed.ts > CACHE_TTL) return undefined;
     if (parsed.data?.error || parsed.data?.detail) return undefined;
+    if (
+      parsed.data &&
+      typeof parsed.data === 'object' &&
+      !Array.isArray(parsed.data) &&
+      Object.keys(parsed.data).length === 0
+    ) {
+      return undefined;
+    }
     return parsed.data;
   } catch {
     return undefined;
@@ -139,6 +129,7 @@ function getCache<T>(key: string): T | undefined {
 
 function setCache(key: string, data: any) {
   if (typeof window === 'undefined' || !data || data.error || data.detail) return;
+  if (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 0) return;
   try {
     window.localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
   } catch {}
