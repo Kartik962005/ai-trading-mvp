@@ -5,10 +5,25 @@ import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL
-  || (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? 'http://127.0.0.1:8000'
-    : 'https://ai-trading-backend-jhcl.onrender.com');
+function resolveBackendUrl() {
+  if (process.env.NEXT_PUBLIC_BACKEND_URL) {
+    return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/$/, '');
+  }
+  if (typeof window === 'undefined') return 'https://ai-trading-backend-jhcl.onrender.com';
+
+  const host = window.location.hostname;
+  const isLoopback = host === 'localhost' || host === '127.0.0.1';
+  const isPrivateLan =
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host);
+
+  if (isLoopback) return 'http://127.0.0.1:8000';
+  if (isPrivateLan) return `http://${host}:8000`;
+  return 'https://ai-trading-backend-jhcl.onrender.com';
+}
+
+const BACKEND = resolveBackendUrl();
 const fetcher = async (url: string) => {
   const response = await fetch(`${BACKEND}${url}`);
   const data = await response.json().catch(() => ({}));
@@ -1136,22 +1151,22 @@ const GlobalNewsPanel = () => {
   ];
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.05] p-5 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:p-6">
+    <section className="global-news-panel rounded-3xl border border-white/10 bg-white/[0.05] p-5 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)]" />
-          <h2 className="text-xs font-black uppercase tracking-[0.22em] text-cyan-100 font-['Space_Grotesk']">Global Market News</h2>
+          <h2 className="global-news-heading text-xs font-black uppercase tracking-[0.22em] text-cyan-100 font-['Space_Grotesk']">Global Market News</h2>
         </div>
-        <span className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-100 font-['JetBrains_Mono']">
+        <span className="global-news-pill rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-100 font-['JetBrains_Mono']">
           Live context
         </span>
       </div>
       <div className="grid gap-3 lg:grid-cols-5">
         {stories.slice(0, 5).map((story, index) => (
-          <article key={`${story.title}-${index}`} className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 transition-colors hover:border-cyan-300/35">
-            <div className="text-[9px] font-black uppercase tracking-widest text-cyan-300 font-['JetBrains_Mono']">{story.source}</div>
-            <h3 className="mt-2 text-sm font-black leading-5 text-white font-['Space_Grotesk']">{story.title}</h3>
-            <p className="mt-3 text-[11px] leading-5 text-slate-300 font-['JetBrains_Mono']">{buildMarketNewsRead(story.title)}</p>
+          <article key={`${story.title}-${index}`} className="global-news-card rounded-2xl border border-white/10 bg-slate-950/70 p-4 transition-colors hover:border-cyan-300/35">
+            <div className="global-news-source text-[9px] font-black uppercase tracking-widest text-cyan-300 font-['JetBrains_Mono']">{story.source}</div>
+            <h3 className="global-news-title mt-2 text-sm font-black leading-5 text-white font-['Space_Grotesk']">{story.title}</h3>
+            <p className="global-news-copy mt-3 text-[11px] leading-5 text-slate-300 font-['JetBrains_Mono']">{buildMarketNewsRead(story.title)}</p>
           </article>
         ))}
       </div>
@@ -1187,6 +1202,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
     : analysisView.direction === 'bullish'
       ? 'Buy-side target'
       : 'Balanced setup';
+  const stockMeta = STOCKS.find(stock => stock.ticker === ticker);
 
   // AI search state (lifted into FisoDetailPanel so it lives next to the section)
   const [aiPrompt, setAiPrompt] = useState('');
@@ -1410,6 +1426,12 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">Risk:Reward</span>
               <span className="text-sm font-black text-white font-['JetBrains_Mono']">1 : {rr}</span>
+            </div>
+            <div className="col-span-2 rounded-2xl bg-cyan-500/5 border border-cyan-400/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Face Value</span>
+                <span className="text-sm font-black text-slate-950 font-['JetBrains_Mono']">{formatFaceValue(stockMeta)}</span>
+              </div>
             </div>
             <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-4">
               <div className="flex items-center justify-between mb-2">
@@ -1928,11 +1950,11 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       </div>
 
       {/* ── Section 5: Global NLP Feed (LAST) ── */}
-      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
+      <div className="stock-news-panel bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
         <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse inline-block"></span>
-            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Stock News</span>
+            <span className="stock-news-heading text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Stock News</span>
           </div>
           <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
             ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
@@ -1947,21 +1969,21 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             const [title, source] = h.split(' — ');
             const read = buildNewsRead(title, analysisView?.displayVerdict);
             return (
-              <li key={`${title}-${i}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 leading-relaxed transition-all hover:border-cyan-400/40 hover:bg-white/[0.06]">
+              <li key={`${title}-${i}`} className="stock-news-card rounded-2xl border border-white/10 bg-white/[0.03] p-4 leading-relaxed transition-all hover:border-cyan-400/40 hover:bg-white/[0.06]">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <span className="block text-sm font-black text-zinc-100 transition-colors">{title}</span>
+                  <span className="stock-news-title block text-sm font-black text-zinc-100 transition-colors">{title}</span>
                   <span className={`shrink-0 rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-widest ${read.className}`}>
                     {read.label}
                   </span>
                 </div>
-                <p className="mt-3 text-xs leading-6 text-zinc-400 font-['JetBrains_Mono']">{read.note}</p>
+                <p className="stock-news-note mt-3 text-xs leading-6 text-zinc-400 font-['JetBrains_Mono']">{read.note}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {source && (
                     <span className="text-[9px] text-cyan-400/80 font-['JetBrains_Mono'] uppercase tracking-widest">
                       {source}
                     </span>
                   )}
-                  <span className="text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
+                  <span className="stock-news-meta text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
                     Checked against {analysisView?.displayVerdict ?? 'model'} view
                   </span>
                 </div>
@@ -2948,6 +2970,7 @@ function HomeContent() {
         }
         .bullseye-light [class*="border-white"] { border-color: rgba(15,23,42,0.10) !important; }
         .bullseye-light [class*="text-white"],
+        .bullseye-light [class*="text-zinc-100"],
         .bullseye-light [class*="text-zinc-200"],
         .bullseye-light [class*="text-zinc-300"] { color: #0f172a !important; }
         .bullseye-light [class*="text-zinc-400"],
@@ -2976,6 +2999,43 @@ function HomeContent() {
         .bullseye-light .ai-market-panel table [class*="text-green"] { color: #059669 !important; }
         .bullseye-light .ai-market-panel table [class*="text-red"] { color: #dc2626 !important; }
         .bullseye-light .ai-market-panel table [class*="text-cyan"] { color: #0891b2 !important; }
+        .bullseye-light .global-news-panel {
+          background: rgba(255,255,255,0.82) !important;
+          border-color: rgba(8,145,178,0.18) !important;
+        }
+        .bullseye-light .global-news-heading,
+        .bullseye-light .global-news-pill {
+          color: #0891b2 !important;
+        }
+        .bullseye-light .global-news-card {
+          background: rgba(15,23,42,0.84) !important;
+          border-color: rgba(148,163,184,0.20) !important;
+          box-shadow: 0 18px 45px rgba(15,23,42,0.12);
+        }
+        .bullseye-light .global-news-source { color: #67e8f9 !important; }
+        .bullseye-light .global-news-title { color: #f8fafc !important; }
+        .bullseye-light .global-news-copy { color: #dbeafe !important; }
+        .bullseye-light .stock-news-panel {
+          background: rgba(255,255,255,0.94) !important;
+          border-color: rgba(100,116,139,0.22) !important;
+          box-shadow: 0 20px 60px rgba(15,23,42,0.10) !important;
+        }
+        .bullseye-light .stock-news-heading {
+          color: #475569 !important;
+        }
+        .bullseye-light .stock-news-card {
+          background: rgba(255,255,255,0.92) !important;
+          border-color: rgba(100,116,139,0.22) !important;
+        }
+        .bullseye-light .stock-news-title {
+          color: #0f172a !important;
+        }
+        .bullseye-light .stock-news-note {
+          color: #475569 !important;
+        }
+        .bullseye-light .stock-news-meta {
+          color: #64748b !important;
+        }
         .bullseye-light input {
           background: rgba(255,255,255,0.92) !important;
           color: #0f172a !important;
