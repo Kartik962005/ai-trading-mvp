@@ -14,6 +14,7 @@ type BackendRouteContext = {
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'content-length',
+  'content-encoding',
   'host',
   'keep-alive',
   'proxy-authenticate',
