@@ -74,13 +74,13 @@ async def health():
 
 
 @app.get("/api/v1/quote/{ticker}")
-@limiter.limit("30/minute")
+@limiter.limit("180/minute")
 async def quote(request: Request, ticker: str):
     return get_latest_quote(ticker)
 
 
 @app.get("/api/v1/quotes/batch")
-@limiter.limit("20/minute")
+@limiter.limit("120/minute")
 async def batch_quotes(request: Request, tickers: str):
     ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
@@ -95,7 +95,7 @@ async def batch_quotes(request: Request, tickers: str):
 
 
 @app.get("/api/v1/chart/{ticker}")
-@limiter.limit("5/minute")
+@limiter.limit("120/minute")
 async def chart(request: Request, ticker: str, range: str = "1y"):
     try:
         df = get_chart_data(ticker, range)
@@ -104,8 +104,14 @@ async def chart(request: Request, ticker: str, range: str = "1y"):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/v1/analyze-batch")
+@limiter.limit("60/minute")
+async def analyze_batch_alias(request: Request, tickers: str):
+    return await analyze_batch(request, tickers)
+
+
 @app.get("/api/v1/analyze/{ticker}")
-@limiter.limit("3/minute")
+@limiter.limit("60/minute")
 async def analyze(request: Request, ticker: str):
     try:
         return analyze_ticker_sync(ticker)
@@ -114,7 +120,7 @@ async def analyze(request: Request, ticker: str):
 
 
 @app.get("/api/v1/analyze/batch")
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")
 async def analyze_batch(request: Request, tickers: str):
     ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
@@ -137,7 +143,7 @@ async def analyze_batch(request: Request, tickers: str):
 
 
 @app.get("/api/v1/fundamentals/{ticker}")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 async def fundamentals(request: Request, ticker: str):
     try:
         return get_fundamentals_data(ticker)
@@ -148,7 +154,7 @@ async def fundamentals(request: Request, ticker: str):
 
 
 @app.get("/api/v1/global-news")
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")
 async def global_news(request: Request):
     return fetch_global_market_news()
 

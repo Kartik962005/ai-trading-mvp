@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 
@@ -8,7 +9,14 @@ const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL
   || (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? 'http://127.0.0.1:8000'
     : 'https://ai-trading-backend-jhcl.onrender.com');
-const fetcher = (url: string) => fetch(`${BACKEND}${url}`).then(res => res.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(`${BACKEND}${url}`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.detail || data?.error || `Request failed: ${response.status}`);
+  }
+  return data;
+};
 const CACHE_TTL = 1000 * 60 * 60 * 6;
 type MarketScope = 'INDIA' | 'US';
 type DashboardView = 'overview' | 'details';
@@ -107,6 +115,7 @@ function getCache<T>(key: string): T | undefined {
     if (!raw) return undefined;
     const parsed = JSON.parse(raw);
     if (!parsed?.ts || Date.now() - parsed.ts > CACHE_TTL) return undefined;
+    if (parsed.data?.error || parsed.data?.detail) return undefined;
     return parsed.data;
   } catch {
     return undefined;
@@ -114,7 +123,7 @@ function getCache<T>(key: string): T | undefined {
 }
 
 function setCache(key: string, data: any) {
-  if (typeof window === 'undefined' || !data || data.error) return;
+  if (typeof window === 'undefined' || !data || data.error || data.detail) return;
   try {
     window.localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
   } catch {}
@@ -868,23 +877,31 @@ const MarketAssetCard = ({
   const quickPrice = Number(quickQuote?.price);
   const quickChange = Number(quickQuote?.change_percent ?? 0);
   const quickConfidence = Math.min(86, Math.max(42, 56 + Math.abs(quickChange) * 8));
+  const quickSignal = quickChange < 0 ? 'Sell' : 'Buy';
+  const quickSignalBullish = quickSignal === 'Buy';
 
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
-  const verdictColor = isReady ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400') : 'text-cyan-600';
-  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : 'Scan';
+  const verdictColor = isReady
+    ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400')
+    : (quickSignalBullish ? 'text-green-500' : 'text-red-500');
+  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : quickSignal;
 
   // Mini verdict dot shown even before hover when prefetch is done
   const dotColor = isReady
     ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
-    : 'bg-cyan-400';
+    : (quickSignalBullish ? 'bg-green-400' : 'bg-red-400');
   const signalGradient = isReady
     ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
-    : 'from-slate-200 to-cyan-200';
+    : (quickSignalBullish ? 'from-emerald-300 to-cyan-300' : 'from-rose-300 to-orange-200');
 
   return (
     <div
       data-market-card={stock.ticker}
+      onPointerDown={(event) => {
+        if ((event.target as HTMLElement).closest('button, a')) return;
+        onPreview(stock);
+      }}
       onClick={() => onPreview(stock)}
       className={`relative w-full min-h-[164px] cursor-pointer p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
         border-slate-200/80 hover:border-cyan-200`}
@@ -901,6 +918,7 @@ const MarketAssetCard = ({
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Open preview'} />
           <button
             type="button"
+            onPointerDown={(e) => { e.stopPropagation(); onPreview(stock); }}
             onClick={(e) => { e.stopPropagation(); onPreview(stock); }}
             className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-cyan-600 hover:bg-cyan-50 hover:border-cyan-300 transition-all flex items-center justify-center shrink-0 shadow-sm"
             aria-label={`Open ${stock.symbol} preview`}
@@ -929,7 +947,9 @@ const MarketAssetCard = ({
             className="h-full rounded-full transition-all duration-1000"
             style={{
               width: `${isReady ? analysisView.confidenceLevel : quickConfidence}%`,
-              backgroundColor: isReady ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171') : '#67e8f9',
+              backgroundColor: isReady
+                ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171')
+                : (quickSignalBullish ? '#4ade80' : '#f87171'),
             }}
           />
         </div>
@@ -995,18 +1015,18 @@ const StockPreviewModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-md sm:p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/35 p-5 backdrop-blur-md sm:p-6"
       onMouseDown={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`${stock.name} preview`}
     >
       <div
-        className="relative flex min-h-[60vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-cyan-200/70 bg-white shadow-[0_40px_120px_rgba(15,23,42,0.35)]"
+        className="relative my-4 flex max-h-[82vh] w-[min(88vw,72rem)] flex-col overflow-y-auto rounded-[24px] border border-cyan-200/70 bg-white shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:max-h-[88vh] sm:min-h-[60vh] sm:w-full sm:rounded-[28px]"
         onMouseDown={event => event.stopPropagation()}
       >
         <div className={`h-1.5 bg-gradient-to-r ${accentBg}`} />
-        <div className="flex flex-col gap-5 p-5 sm:p-7">
+        <div className="flex flex-col gap-4 p-4 sm:gap-5 sm:p-7">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <button
@@ -1017,8 +1037,8 @@ const StockPreviewModal = ({
                 Back
               </button>
               <div className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-600 font-['Space_Grotesk']">{stock.symbol} · {stock.exchange}</div>
-              <h2 className="mt-2 text-3xl font-black leading-tight text-slate-950 sm:text-5xl font-['Space_Grotesk']">{stock.name}</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 font-['JetBrains_Mono']">
+              <h2 className="mt-2 text-2xl font-black leading-tight text-slate-950 sm:text-5xl font-['Space_Grotesk']">{stock.name}</h2>
+              <p className="mt-3 max-w-2xl text-xs leading-6 text-slate-500 font-['JetBrains_Mono'] sm:text-sm">
                 Sneak peek of price action, FISO verdict, target zone, and stop-loss risk before opening the full dashboard.
               </p>
             </div>
@@ -1042,7 +1062,7 @@ const StockPreviewModal = ({
                 <div className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 font-['Space_Grotesk']">Mini Chart</div>
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-['JetBrains_Mono']">1M preview</div>
               </div>
-              <svg viewBox="0 0 720 230" className="h-64 w-full bg-white" preserveAspectRatio="none" role="img" aria-label={`${stock.name} mini chart`}>
+              <svg viewBox="0 0 720 230" className="h-44 w-full bg-white sm:h-64" preserveAspectRatio="none" role="img" aria-label={`${stock.name} mini chart`}>
                 {Array.from({ length: 7 }, (_, index) => (
                   <line key={`h-${index}`} x1="0" x2="720" y1={index * 38} y2={index * 38} stroke="rgba(15,23,42,0.06)" />
                 ))}
@@ -1087,16 +1107,17 @@ const StockPreviewModal = ({
                   </div>
                 </div>
               )}
-              <button
-                type="button"
+              <a
+                href={`/?ticker=${encodeURIComponent(stock.ticker)}`}
                 onClick={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   onSelect(stock);
                 }}
                 className="rounded-2xl border border-cyan-200 bg-cyan-50 px-5 py-4 text-xs font-black uppercase tracking-[0.2em] text-slate-950 transition-colors hover:bg-cyan-100 font-['Space_Grotesk']"
               >
                 Open Full Analysis →
-              </button>
+              </a>
             </div>
           </div>
         </div>
@@ -2232,7 +2253,8 @@ const IndiaDetailedAnalysisPanel = ({
   );
 };
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams();
   const [ticker, setTicker] = useState<string | null>(null);
   const [currency, setCurrency] = useState('₹');
   const [input, setInput] = useState('');
@@ -2249,6 +2271,8 @@ export default function Home() {
   const [assetColumnCount, setAssetColumnCount] = useState(2);
   const chartRef = useRef<HTMLDivElement>(null);
   const indicatorPaneRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const expandedTickerRef = useRef<string | null>(null);
+  const previewHistoryOpenRef = useRef(false);
 
   // ── Auth state ───────────────────────────────────────────────────────────
   const [user, setUser] = useState<any>(null);
@@ -2463,12 +2487,31 @@ export default function Home() {
   };
 
   useEffect(() => {
-    applyUrlState(window.location.search);
+    const search = searchParams.toString();
+    applyUrlState(search ? `?${search}` : '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    const syncCurrentUrl = () => applyUrlState(window.location.search);
+    syncCurrentUrl();
+    const retryTimer = window.setTimeout(syncCurrentUrl, 250);
+    return () => window.clearTimeout(retryTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    expandedTickerRef.current = expandedTicker;
+  }, [expandedTicker]);
+
+  useEffect(() => {
     const handlePopState = () => {
+      if (expandedTickerRef.current) {
+        previewHistoryOpenRef.current = false;
+        setExpandedTicker(null);
+        setShowProfileMenu(false);
+        return;
+      }
       applyUrlState(window.location.search);
       setShowProfileMenu(false);
     };
@@ -2491,7 +2534,7 @@ export default function Home() {
   }, [ticker, chartRange]);
 
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 30000 });
-  const { data: chartData } = useSWR(ticker ? `/api/v1/chart/${ticker}?range=${chartRange}` : null, fetcher, {
+  const { data: chartData, error: chartError } = useSWR(ticker ? `/api/v1/chart/${ticker}?range=${chartRange}` : null, fetcher, {
     fallbackData: cachedChart,
     revalidateIfStale: !cachedChart,
     revalidateOnMount: !cachedChart,
@@ -2545,6 +2588,7 @@ export default function Home() {
     () => activeIndicators.map(name => buildIndicatorPanel(name, chartData)).filter(Boolean) as IndicatorPanelData[],
     [activeIndicators, chartData]
   );
+  const chartRowsAvailable = Array.isArray(chartData) && chartData.some((d: any) => d.date && d.open && d.high && d.low && d.close);
 
   useEffect(() => {
     if (!ticker || !chartData || !chartRef.current || !Array.isArray(chartData) || chartData.length === 0) return;
@@ -2726,6 +2770,22 @@ export default function Home() {
     openStockView(stock, 'details');
   };
 
+  const openPreview = (stock: typeof STOCKS[0]) => {
+    setExpandedTicker(stock.ticker);
+    if (typeof window === 'undefined' || previewHistoryOpenRef.current) return;
+    previewHistoryOpenRef.current = true;
+    window.history.pushState({ view: 'preview', ticker: stock.ticker }, '', window.location.href);
+  };
+
+  const closePreview = () => {
+    if (previewHistoryOpenRef.current && typeof window !== 'undefined') {
+      previewHistoryOpenRef.current = false;
+      window.history.back();
+      return;
+    }
+    setExpandedTicker(null);
+  };
+
   const openDetailedAnalysis = () => {
     if (!selectedStock || !canOpenDetailedAnalysis) return;
     openStockView(selectedStock, 'details');
@@ -2776,6 +2836,41 @@ export default function Home() {
 
   // ── Prefetch cache: ticker → analysis result ──────────────────────────────
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
+  const visibleAnalysisKey = visibleMarketStocks.length
+    ? `/api/v1/analyze-batch?tickers=${visibleMarketStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
+    : null;
+  const [cachedVisibleAnalysis, setCachedVisibleAnalysis] = useState<Record<string, any> | undefined>(undefined);
+
+  useEffect(() => {
+    const cachedVisible = visibleMarketStocks.reduce((acc, stock) => {
+      const cached = getCache(`analysis:${stock.ticker}`);
+      if (cached) acc[stock.ticker] = cached;
+      return acc;
+    }, {} as Record<string, any>);
+    setCachedVisibleAnalysis(Object.keys(cachedVisible).length ? cachedVisible : undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMarket, marketPage]);
+
+  const { data: visibleAnalysis } = useSWR<Record<string, any>>(visibleAnalysisKey, fetcher, {
+    fallbackData: cachedVisibleAnalysis,
+    revalidateOnFocus: false,
+    dedupingInterval: 1000 * 60 * 10,
+    revalidateIfStale: !cachedVisibleAnalysis,
+    revalidateOnMount: !cachedVisibleAnalysis,
+  });
+
+  useEffect(() => {
+    if (!visibleAnalysis) return;
+    const clean: Record<string, any> = {};
+    Object.entries(visibleAnalysis).forEach(([nextTicker, nextAnalysis]) => {
+      if (!nextAnalysis || nextAnalysis.error || nextAnalysis.detail) return;
+      clean[nextTicker] = nextAnalysis;
+      setCache(`analysis:${nextTicker}`, nextAnalysis);
+    });
+    if (Object.keys(clean).length > 0) {
+      setPrefetchCache(prev => ({ ...prev, ...clean }));
+    }
+  }, [visibleAnalysis]);
 
   // Hydrate visible cards from browser cache only. Fresh analysis runs on demand
   // when a card is opened or a stock dashboard is selected.
@@ -3338,7 +3433,7 @@ export default function Home() {
                           stock={s}
                           prefetchedAnalysis={prefetchCache[s.ticker]}
                           quickQuote={visibleQuotes?.[s.ticker]}
-                          onPreview={(nextStock) => setExpandedTicker(nextStock.ticker)}
+                          onPreview={openPreview}
                         />
                       ))}
                     </div>
@@ -3563,10 +3658,20 @@ export default function Home() {
                     )}
                   </div>
                 </div>
-                {!chartData ? (
+                {chartError && !chartData ? (
+                  <div className="h-[260px] sm:h-[360px] flex flex-col items-center justify-center rounded-2xl border border-dashed border-red-200 bg-red-50 px-6 text-center font-['JetBrains_Mono'] text-xs text-red-500 sm:text-sm">
+                    <div className="mb-2 font-black uppercase tracking-widest text-red-500">Chart unavailable</div>
+                    <div>{chartError.message || 'The chart service returned an error. Try again in a moment.'}</div>
+                  </div>
+                ) : !chartData ? (
                   <div className="h-[260px] sm:h-[360px] flex flex-col items-center justify-center font-['JetBrains_Mono'] text-zinc-500 gap-4 text-xs sm:text-sm uppercase tracking-widest">
                     <div className="w-8 h-8 border-2 border-zinc-700 border-t-cyan-400 rounded-full animate-spin"></div>
                     Loading Data Stream...
+                  </div>
+                ) : !chartRowsAvailable ? (
+                  <div className="h-[260px] sm:h-[360px] flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center font-['JetBrains_Mono'] text-xs text-slate-500 sm:text-sm">
+                    <div className="mb-2 font-black uppercase tracking-widest text-slate-700">No chart data</div>
+                    <div>The backend did not return candle rows for this symbol yet. Refresh in a moment.</div>
                   </div>
                 ) : (
                   <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -3586,7 +3691,7 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                {indicatorPanels.length === 0 && chartData && (
+                {indicatorPanels.length === 0 && chartRowsAvailable && (
                   <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500 font-['JetBrains_Mono']">
                     Select an indicator to add a professional study pane below the stock chart.
                   </div>
@@ -3636,10 +3741,11 @@ export default function Home() {
           stock={previewStock}
           quickQuote={visibleQuotes?.[previewStock.ticker]}
           prefetchedAnalysis={prefetchCache[previewStock.ticker]}
-          onClose={() => setExpandedTicker(null)}
+          onClose={closePreview}
           onSelect={(stock) => {
+            previewHistoryOpenRef.current = false;
             setExpandedTicker(null);
-            selectStockDetails(stock);
+            selectStock(stock);
           }}
           onAnalysisReady={(nextTicker, nextAnalysis) => {
             setPrefetchCache(prev => ({ ...prev, [nextTicker]: nextAnalysis }));
@@ -3747,5 +3853,13 @@ export default function Home() {
         </div>
       )}
     </>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   );
 }
