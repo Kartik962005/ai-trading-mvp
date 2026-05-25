@@ -10,6 +10,7 @@ import re
 import math
 import numpy as np
 import time
+import os
 from datetime import datetime, timedelta
 
 # ── In-memory analysis cache ──────────────────────────────────────────────────
@@ -20,9 +21,11 @@ ANALYSIS_TTL = 3600
 try:
     from app.core.supabase_client import supabase as _sb
     _SUPABASE_OK = True
+    _SUPABASE_WRITES_OK = bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 except Exception:
     _sb = None
     _SUPABASE_OK = False
+    _SUPABASE_WRITES_OK = False
 
 def fetch_news_sentiment(ticker: str):
     try:
@@ -392,7 +395,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
 
     # ── Save to Supabase cache ─────────────────────────────────────────────────
-    if _SUPABASE_OK and _sb:
+    if _SUPABASE_OK and _sb and _SUPABASE_WRITES_OK:
         try:
             import json as _json
             _sb.table("analysis_cache").upsert({

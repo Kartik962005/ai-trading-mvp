@@ -2,11 +2,13 @@ import requests
 import yfinance as yf
 import pandas as pd
 import time
+import os
 
 # ── Safe Supabase import ───────────────────────────────────────────────────────
 try:
     from app.core.supabase_client import supabase
     SUPABASE_OK = supabase is not None
+    SUPABASE_WRITES_OK = bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
     if SUPABASE_OK:
         print("[Supabase] connected")
     else:
@@ -15,6 +17,7 @@ except Exception as e:
     print(f"[Supabase] not available: {e}. Running without DB cache.")
     supabase = None
     SUPABASE_OK = False
+    SUPABASE_WRITES_OK = False
 
 # ── In-memory caches (fast, lost on restart) ──────────────────────────────────
 _hist_cache: dict = {}
@@ -27,6 +30,11 @@ QUOTE_TTL = 15     # 15 seconds
 CHART_TTL = 3600
 FUNDAMENTALS_TTL = 3600 * 6
 NSE_QUOTE_TTL = 3600
+YAHOO_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 def _clean_scalar(value):
@@ -58,6 +66,103 @@ def _first_non_null(*values):
 
 def _nse_symbol_from_ticker(ticker: str):
     return ticker.upper().replace(".NS", "").replace(".BO", "")
+
+
+def _range_for_days(days: int):
+    if days <= 5:
+        return "5d"
+    if days <= 31:
+        return "1mo"
+    if days <= 93:
+        return "3mo"
+    if days <= 186:
+        return "6mo"
+    if days <= 370:
+        return "1y"
+    if days <= 740:
+        return "2y"
+    if days <= 1850:
+        return "5y"
+    if days <= 3700:
+        return "10y"
+    return "max"
+
+
+def _normalize_ohlcv_frame(df: pd.DataFrame):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+
+    clean = df.copy()
+    if isinstance(clean.columns, pd.MultiIndex):
+        clean.columns = clean.columns.get_level_values(0)
+    clean.columns = [str(c).lower() for c in clean.columns]
+
+    date_col = "datetime" if "datetime" in clean.columns else "date"
+    clean = clean.rename(columns={date_col: "date"})
+    required_cols = ["date", "open", "high", "low", "close", "volume"]
+    if any(col not in clean.columns for col in required_cols):
+        return pd.DataFrame(columns=required_cols)
+    clean = clean[required_cols].copy()
+    clean["date"] = pd.to_datetime(clean["date"], errors="coerce")
+    for col in ["open", "high", "low", "close", "volume"]:
+        clean[col] = pd.to_numeric(clean[col], errors="coerce")
+    clean["volume"] = clean["volume"].fillna(0)
+    clean = clean.dropna(subset=["date", "open", "high", "low", "close"])
+    clean = clean.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+    return clean.reset_index(drop=True)
+
+
+def _fetch_yahoo_chart_data(ticker: str, range_key: str = "1y", interval: str = "1d"):
+    last_error = None
+    params = {
+        "range": range_key,
+        "interval": interval,
+        "includePrePost": "false",
+        "events": "div,splits",
+    }
+
+    for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
+        url = f"https://{host}/v8/finance/chart/{ticker}"
+        try:
+            response = requests.get(url, params=params, headers=YAHOO_HEADERS, timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+            chart = payload.get("chart", {})
+            error = chart.get("error")
+            if error:
+                raise ValueError(error.get("description") or str(error))
+
+            result = (chart.get("result") or [None])[0]
+            if not result or not result.get("timestamp"):
+                raise ValueError(f"No Yahoo chart timestamps for ticker '{ticker}'.")
+
+            quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+            timestamps = result["timestamp"]
+            row_count = len(timestamps)
+
+            def values_for(name: str, default=None):
+                values = list(quote.get(name) or [])
+                if len(values) < row_count:
+                    values.extend([default] * (row_count - len(values)))
+                return values[:row_count]
+
+            rows = {
+                "date": pd.to_datetime(timestamps, unit="s", utc=True).tz_convert(None),
+                "open": values_for("open"),
+                "high": values_for("high"),
+                "low": values_for("low"),
+                "close": values_for("close"),
+                "volume": values_for("volume", 0),
+            }
+            df = _normalize_ohlcv_frame(pd.DataFrame(rows))
+            if df.empty:
+                raise ValueError(f"No valid Yahoo chart rows for ticker '{ticker}'.")
+            return df
+        except Exception as exc:
+            last_error = exc
+            print(f"[YahooChart] {host} failed for {ticker} ({range_key}/{interval}): {exc}")
+
+    raise ValueError(f"Yahoo chart data unavailable for '{ticker}': {last_error}")
 
 
 def get_nse_quote_data(ticker: str):
@@ -310,21 +415,18 @@ def get_chart_data(ticker: str, range_key: str = "1y"):
     }
     period, interval = options.get(range_key, options["1y"])
 
-    if range_key in {"1y", "1m", "1mo"}:
-        df = get_historical_data(ticker, days=365)
-        if range_key in {"1m", "1mo"}:
-            df = df.tail(31).copy()
-    else:
-        raw = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
-        if raw is None or len(raw) == 0:
-            raise ValueError(f"No chart data found for ticker '{ticker}'.")
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = raw.columns.get_level_values(0)
-        raw.reset_index(inplace=True)
-        raw.columns = [str(c).lower() for c in raw.columns]
-        date_col = "datetime" if "datetime" in raw.columns else "date"
-        df = raw[[date_col, "open", "high", "low", "close", "volume"]].copy()
-        df = df.rename(columns={date_col: "date"}).dropna()
+    try:
+        df = _fetch_yahoo_chart_data(ticker, period, interval)
+    except Exception as exc:
+        print(f"[Chart] Direct Yahoo chart failed for {ticker}: {exc}")
+        if range_key in {"1y", "1m", "1mo"}:
+            df = get_historical_data(ticker, days=365)
+            if range_key in {"1m", "1mo"}:
+                df = df.tail(31).copy()
+        else:
+            raw = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+            raw = _normalize_ohlcv_frame(raw.reset_index() if raw is not None else raw)
+            df = raw
 
     if df.empty:
         raise ValueError(f"No valid chart data for ticker '{ticker}'.")
@@ -403,26 +505,23 @@ def get_historical_data(ticker: str, days: int = 365):
         except Exception as e:
             print(f"[Cache] Supabase read failed for {ticker}: {e}")
 
-    # ── Layer 3: yfinance download ─────────────────────────────────────────────
-    print(f"[Download] Fetching {ticker} from yfinance...")
-    raw = yf.download(ticker, period=f"{days}d", progress=False, auto_adjust=True)
-
-    if raw is None or len(raw) == 0:
-        raise ValueError(f"No data found for ticker '{ticker}'. It may be delisted or invalid.")
-
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-
-    raw.reset_index(inplace=True)
-    raw.columns = [str(c).lower() for c in raw.columns]
-    df = raw[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
-    df = df.dropna()
+    # Layer 3: direct Yahoo chart API, with yfinance only as a final fallback.
+    try:
+        print(f"[Download] Fetching {ticker} from Yahoo chart API...")
+        df = _fetch_yahoo_chart_data(ticker, range_key=_range_for_days(days), interval="1d")
+        if days and len(df) > days:
+            df = df.tail(days).copy()
+    except Exception as direct_error:
+        print(f"[Download] Yahoo chart API failed for {ticker}: {direct_error}")
+        print(f"[Download] Fetching {ticker} from yfinance fallback...")
+        raw = yf.download(ticker, period=f"{days}d", progress=False, auto_adjust=True)
+        df = _normalize_ohlcv_frame(raw.reset_index() if raw is not None else raw)
 
     if len(df) == 0:
         raise ValueError(f"No valid OHLCV data for ticker '{ticker}'.")
 
     # ── Save to Supabase ───────────────────────────────────────────────────────
-    if SUPABASE_OK and supabase:
+    if SUPABASE_OK and supabase and SUPABASE_WRITES_OK:
         try:
             records = []
             for _, row in df.iterrows():
