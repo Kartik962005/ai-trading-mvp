@@ -30,69 +30,172 @@ except Exception:
 def fetch_news_sentiment(ticker: str):
     try:
         base_ticker = ticker.split('.')[0]
-        company_name = base_ticker
+        raw_name = base_ticker
         try:
             info = yf.Ticker(ticker).fast_info
-            company_name = getattr(info, "short_name", None) or company_name
+            raw_name = getattr(info, "short_name", None) or raw_name
         except Exception:
             try:
-                company_name = yf.Ticker(ticker).info.get("shortName") or yf.Ticker(ticker).info.get("longName") or company_name
+                raw_name = yf.Ticker(ticker).info.get("shortName") or yf.Ticker(ticker).info.get("longName") or raw_name
             except Exception:
                 pass
 
-        search_query = urllib.parse.quote(f'"{company_name}" OR "{base_ticker}" stock company results earnings market')
-        url = f"https://news.google.com/rss/search?q={search_query}&hl=en-US&gl=US&ceid=US:en"
-        
+        # Strip generic corporate suffixes to get a clean, searchable name
+        SUFFIX_PATTERN = r'\b(limited|ltd|corp|corporation|inc|plc|pvt|llc|group|holdings?|industries|services|finance|financial|company|co)\b'
+        clean_name = re.sub(SUFFIX_PATTERN, '', raw_name, flags=re.IGNORECASE).strip()
+        clean_name = re.sub(r'\s+', ' ', clean_name).strip()
+        # Use cleaned name if meaningful, otherwise fall back to base ticker
+        search_name = clean_name if len(clean_name) > 3 else base_ticker
+
+        # Build query: specific company + news-relevant keywords, exclude data sites
+        search_query = urllib.parse.quote(
+            f'"{search_name}" (earnings OR results OR profit OR revenue OR growth OR '
+            f'acquisition OR merger OR raises OR cuts OR dividend OR stake OR fund OR '
+            f'investor OR quarter OR outlook OR guidance OR expansion) '
+            f'-site:tradingview.com -site:simplywall.st -site:stockanalysis.com '
+            f'-site:macrotrends.net -site:screener.in -site:trendlyne.com '
+            f'-site:tickertape.in -site:meyka.com'
+        )
+        url = f"https://news.google.com/rss/search?q={search_query}&hl=en-IN&gl=IN&ceid=IN:en"
+
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req)
+        response = urllib.request.urlopen(req, timeout=8)
         xml_data = response.read()
-        
+
         root = ET.fromstring(xml_data)
         items = root.findall('.//item')
-        
+
         headlines = []
         total_polarity = 0
-        spam_patterns = [
-            r'share latest news',
-            r'share news today',
-            r'buy or sell',
-            r'should you buy',
-            r'buy.*sell.*hold',
-            r'target price',
-            r'price target',
+
+        # Non-news publishers — data sites, auto-generated tickers, official IR pages
+        GENERIC_WORDS = {'the','and','of','ltd','limited','corp','corporation','inc',
+                         'plc','pvt','llc','bank','group','holdings','company','co',
+                         'india','industries','services','finance','financial'}
+        data_only_sources = {
+            'tradingview', 'simplywall.st', 'stockanalysis', 'macrotrends',
+            'wisesheets', 'tickertape', 'screener.in', 'trendlyne', 'meyka',
+            'chartmill', 'finviz', 'nseindia', 'bseindia',
+        }
+        # Patterns that indicate data pages or auto-generated noise
+        junk_patterns = [
+            r'financial statements?',
+            r'stock price and chart',
+            r'(live |today.s )?share price',
+            r'balance sheet',
+            r'income statement',
+            r'cash flow',
+            r'historical (data|price)',
+            r'(live |real.?time )(price|quote)',
+            r'charting by',
+            r'stock (rises?|falls?|drops?|jumps?|gains?|slides?|surges?|climbs?) \d',
+            r'\d+\.?\d*% (up|down|gain|loss)',
+            r'intraday[:\s]',
+            r'pre.?market (margins|spotlight)',
             r'multibagger',
             r'penny stock',
             r'top stocks? to buy',
-            r'watch these stocks',
+            r'price target',
+            r'careers?( at| -)',
+            r'job (vacancy|opening|listing)',
+            r'personal banking',
+            r'netbanking',
+            r'fasttag|fastag',
+            r'privacy policy',
+            r'raise (dispute|complaint)',
         ]
+        # Only match if a distinctive company term appears in the title
         required_terms = {
             term.lower()
-            for term in re.split(r'[^A-Za-z0-9]+', f"{company_name} {base_ticker}")
-            if len(term) > 2
+            for term in re.split(r'[^A-Za-z0-9]+', f"{search_name} {base_ticker}")
+            if len(term) > 2 and term.lower() not in GENERIC_WORDS
         }
-        
+        # Add prefix abbreviations: "sbi" from SBIN, "hdfc" from HDFCBANK, "icici" from ICICIBANK
+        for _n in (3, 4, 5):
+            if len(base_ticker) > _n:
+                required_terms.add(base_ticker[:_n].lower())
+
+        def _title_matches(lower_title: str) -> bool:
+            return any(
+                re.search(r'\b' + re.escape(t) + r'\b', lower_title)
+                for t in required_terms
+            )
+
         for item in items:
-            title_element = item.find('title')
-            if title_element is not None and title_element.text:
-                raw_title = html.unescape(title_element.text).strip()
-                parts = raw_title.rsplit(' - ', 1)
-                clean_title = parts[0].strip()
-                source = parts[1].strip() if len(parts) > 1 else "Google News"
-                clean_lower = clean_title.lower()
-                if (
-                    '|' in clean_title
-                    or any(re.search(p, clean_lower) for p in spam_patterns)
-                    or not any(term in clean_lower for term in required_terms)
-                    or len(clean_title) < 28
-                ):
-                    continue
-                display_title = f"{clean_title} — {source}"
-                if display_title not in headlines:
-                    headlines.append(display_title)
-                    total_polarity += TextBlob(clean_title).sentiment.polarity
-            if len(headlines) == 5: break
-                
-        if not headlines: return {"score": 0, "label": "Neutral", "headlines": ["No verified news detected."]}
+            title_el = item.find('title')
+            if title_el is None or not title_el.text:
+                continue
+            raw_title = html.unescape(title_el.text).strip()
+            parts = raw_title.rsplit(' - ', 1)
+            clean_title = parts[0].strip()
+            source = parts[1].strip() if len(parts) > 1 else "News"
+            clean_lower = clean_title.lower()
+            source_lower = source.lower()
+
+            # Skip data-only publishers
+            if any(ds in source_lower for ds in data_only_sources):
+                continue
+            # Skip junk title patterns
+            if any(re.search(p, clean_lower) for p in junk_patterns):
+                continue
+            # Skip if no distinctive company term in title
+            if required_terms and not _title_matches(clean_lower):
+                continue
+            # Skip too-short, pipe-separated, or all-caps ticker-only titles
+            if len(clean_title) < 40 or '|' in clean_title:
+                continue
+
+            display_title = f"{clean_title} — {source}"
+            if display_title not in headlines:
+                headlines.append(display_title)
+                total_polarity += TextBlob(clean_title).sentiment.polarity
+            if len(headlines) == 5:
+                break
+
+        # Fallback: broader search when primary returned fewer than 3 headlines
+        if len(headlines) < 3:
+            try:
+                fb_parts = f'({search_name} OR {base_ticker})' if search_name != base_ticker else base_ticker
+                fb_q = urllib.parse.quote(
+                    f'{fb_parts} '
+                    f'-site:tradingview.com -site:simplywall.st -site:stockanalysis.com '
+                    f'-site:macrotrends.net -site:screener.in -site:trendlyne.com '
+                    f'-site:tickertape.in -site:meyka.com'
+                )
+                fb_url = f"https://news.google.com/rss/search?q={fb_q}&hl=en-IN&gl=IN&ceid=IN:en"
+                req2 = urllib.request.Request(fb_url, headers={'User-Agent': 'Mozilla/5.0'})
+                resp2 = urllib.request.urlopen(req2, timeout=8)
+                root2 = ET.fromstring(resp2.read())
+                seen = set(headlines)
+                for item2 in root2.findall('.//item'):
+                    title_el2 = item2.find('title')
+                    if title_el2 is None or not title_el2.text:
+                        continue
+                    raw2 = html.unescape(title_el2.text).strip()
+                    parts2 = raw2.rsplit(' - ', 1)
+                    ct2 = parts2[0].strip()
+                    src2 = parts2[1].strip() if len(parts2) > 1 else "News"
+                    lower2 = ct2.lower()
+                    if any(ds in src2.lower() for ds in data_only_sources):
+                        continue
+                    if any(re.search(p, lower2) for p in junk_patterns):
+                        continue
+                    if required_terms and not _title_matches(lower2):
+                        continue
+                    if len(ct2) < 35 or '|' in ct2:
+                        continue
+                    disp2 = f"{ct2} — {src2}"
+                    if disp2 not in seen:
+                        headlines.append(disp2)
+                        seen.add(disp2)
+                        total_polarity += TextBlob(ct2).sentiment.polarity
+                    if len(headlines) == 5:
+                        break
+            except Exception:
+                pass
+
+        if not headlines:
+            return {"score": 0, "label": "Neutral", "headlines": ["No recent news found for this stock."]}
         avg_polarity = total_polarity / len(headlines)
         label = "Bullish" if avg_polarity > 0.05 else "Bearish" if avg_polarity < -0.05 else "Neutral"
         return {"score": round(avg_polarity, 2), "label": label, "headlines": headlines}
@@ -288,6 +391,9 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         return _analysis_cache[ticker]['result']
 
     # ── Supabase cache check ───────────────────────────────────────────────────
+    # Sources that indicate stale/low-quality cached news — bust the cache if found
+    _STALE_NEWS_SOURCES = {'meyka', 'tradingview', 'simplywall.st', 'stockanalysis', 'macrotrends'}
+
     if _SUPABASE_OK and _sb:
         try:
             import json as _json
@@ -298,9 +404,17 @@ def run_analysis(df: pd.DataFrame, ticker: str):
                 age = (datetime.now(updated.tzinfo) - updated).total_seconds()
                 if age < ANALYSIS_TTL:
                     result = _json.loads(row['result']) if isinstance(row['result'], str) else row['result']
-                    _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
-                    print(f"[Cache] Analysis Supabase hit for {ticker}")
-                    return result
+                    # Invalidate if cached news contains blocked low-quality sources
+                    headlines = result.get('sentiment', {}).get('headlines', [])
+                    has_stale_news = any(
+                        any(src in h.lower() for src in _STALE_NEWS_SOURCES)
+                        for h in headlines
+                    )
+                    if not has_stale_news:
+                        _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+                        print(f"[Cache] Analysis Supabase hit for {ticker}")
+                        return result
+                    print(f"[Cache] Stale news detected for {ticker}, re-running analysis")
         except Exception as e:
             print(f"[Cache] Analysis Supabase read failed: {e}")
     df = df.dropna(subset=['close', 'high', 'low', 'volume'])

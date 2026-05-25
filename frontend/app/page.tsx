@@ -904,12 +904,7 @@ const MarketAssetCard = ({
   return (
     <div
       data-market-card={stock.ticker}
-      onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest('button, a')) return;
-        onPreview(stock);
-      }}
-      onClick={() => onPreview(stock)}
-      className={`relative w-full min-h-[164px] cursor-pointer p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
+      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
         border-slate-200/80 hover:border-cyan-200`}
     >
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
@@ -1882,60 +1877,81 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
             <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Computing signal matrix...</span>
           </div>
         ) : (
-          <div className={`overflow-hidden transition-all duration-300 ${showAllStrategies ? 'max-h-[2200px] opacity-100' : 'max-h-0 opacity-0'}`}>
-            <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
             {topStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
-              // Using #4ade80 for strong buy (green) and #f87171 for weak/sell (red)
               const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
+              // Rank 0,1 always visible. Rank 2 = blurred sneak peek. Rank 3+ hidden until expanded.
+              const isSneak = !showAllStrategies && rank === 2;
+              const isHidden = !showAllStrategies && rank > 2;
+              if (isHidden) return null;
               return (
-                <div
-                  key={s.id}
-                  className={`strategy-row relative rounded-2xl p-4 transition-all duration-200 ${
-                    isBestFit
-                      ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
-                      : 'bg-black/30 border border-white/5 hover:border-white/20'
-                  }`}
-                >
-                  <div className="flex items-start gap-4">
-
-                    {/* Rank number */}
-                    <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
-                      isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
-                    }`}>
-                      {String(rank + 1).padStart(2, '0')}
-                    </div>
-
-                    {/* Main content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                        <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
-                          {s.name}
-                        </span>
-                        {isBestFit && (
-                          <span className="text-[8px] bg-cyan-400 text-black px-2 py-0.5 rounded-full font-black uppercase tracking-widest">
-                            ★ Best Fit Strategy
-                          </span>
-                        )}
+                <div key={s.id}>
+                  {/* Sneak-peek wrapper: blur + bottom fade + no interaction */}
+                  <div className={isSneak ? 'relative' : ''}>
+                    <div
+                      className={`strategy-row relative rounded-2xl p-4 transition-all duration-200 ${
+                        isBestFit
+                          ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
+                          : 'bg-black/30 border border-white/5'
+                      } ${isSneak ? 'blur-[3px] opacity-60 pointer-events-none select-none' : ''}`}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
+                          isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
+                        }`}>
+                          {String(rank + 1).padStart(2, '0')}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                            <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
+                              {s.name}
+                            </span>
+                            {isBestFit && (
+                              <span className="text-[8px] bg-cyan-400 text-black px-2 py-0.5 rounded-full font-black uppercase tracking-widest">
+                                ★ Best Fit Strategy
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
+                        </div>
+                        <div className="shrink-0 flex flex-col items-end gap-1.5">
+                          <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>{s.score}</span>
+                          <div className="w-16 strategy-bar bg-white/10">
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
+                          </div>
+                          <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
                     </div>
-
-                    {/* Score */}
-                    <div className="shrink-0 flex flex-col items-end gap-1.5">
-                      <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>
-                        {s.score}
-                      </span>
-                      <div className="w-16 strategy-bar bg-white/10">
-                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
-                      </div>
-                      <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
-                    </div>
+                    {/* Bottom fade over the sneak-peek card */}
+                    {isSneak && (
+                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl pointer-events-none" />
+                    )}
                   </div>
+                  {/* Expand / collapse button — shown after sneak-peek card */}
+                  {rank === 2 && topStrategies.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllStrategies(prev => !prev)}
+                      className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10 bg-white/5 text-zinc-400 hover:bg-cyan-500/10 hover:border-cyan-400/40 hover:text-cyan-400 transition-all text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']"
+                    >
+                      {showAllStrategies ? (
+                        <>
+                          <span className="rotate-180 inline-block">⌄</span>
+                          Show less
+                        </>
+                      ) : (
+                        <>
+                          <span>⌄</span>
+                          Show {topStrategies.length - 2} more strategies
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               );
             })}
-            </div>
           </div>
         )}
       </div>
@@ -1967,8 +1983,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                     {read.label}
                   </span>
                 </div>
-                <p className="stock-news-note mt-3 text-xs leading-6 text-zinc-400 font-['JetBrains_Mono']">{read.note}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   {source && (
                     <span className="text-[9px] text-cyan-400/80 font-['JetBrains_Mono'] uppercase tracking-widest">
                       {source}
@@ -3659,6 +3674,8 @@ function HomeContent() {
                         Indicators
                       </button>
                       {showIndicatorMenu && (
+                        <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowIndicatorMenu(false)} />
                         <div className="absolute right-0 top-12 z-50 w-[min(86vw,420px)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.28)]">
                           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                             <div className="text-lg font-black font-['Space_Grotesk']">Indicators</div>
@@ -3702,6 +3719,7 @@ function HomeContent() {
                             })}
                           </div>
                         </div>
+                        </>
                       )}
                     </div>
                     {analysis && !analysis.error && (
