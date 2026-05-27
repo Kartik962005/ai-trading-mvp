@@ -178,6 +178,20 @@ type IndicatorPanelData = {
   series: IndicatorPoint[];
 };
 
+type AlertRecord = {
+  id: string;
+  ticker: string;
+  prompt: string;
+  rule?: { description?: string };
+  channels?: string[];
+  status: 'active' | 'paused';
+  whatsapp?: string | null;
+  email?: string | null;
+  last_checked_at?: string | null;
+  last_triggered_at?: string | null;
+  created_at?: string | null;
+};
+
 const INDICATOR_NAMES = [
   '52 Week High/Low',
   'Accelerator Oscillator',
@@ -1166,7 +1180,23 @@ const GlobalNewsPanel = () => {
 };
 
 // ─── DETAILED FISO PANEL ──────────────────────────────────────────────────────
-const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: any; currency: string; ticker: string; chartData: any }) => {
+const FisoDetailPanel = ({
+  analysis,
+  currency,
+  ticker,
+  chartData,
+  user,
+  getAccessToken,
+  onRequireAuth,
+}: {
+  analysis: any;
+  currency: string;
+  ticker: string;
+  chartData: any;
+  user: any;
+  getAccessToken: () => Promise<string | null>;
+  onRequireAuth: () => void;
+}) => {
   const analysisView = getAnalysisPresentation(analysis);
   if (!analysisView) return null;
 
@@ -1200,6 +1230,174 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
   const [aiResult, setAiResult] = useState<any>(null);
   const [isAiRunning, setIsAiRunning] = useState(false);
   const [aiLoaderSummary, setAiLoaderSummary] = useState('');
+  const [alertPrompt, setAlertPrompt] = useState('');
+  const [alertWhatsapp, setAlertWhatsapp] = useState('');
+  const [alertChannels, setAlertChannels] = useState<string[]>(['email']);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertError, setAlertError] = useState('');
+  const [isSavingAlert, setIsSavingAlert] = useState(false);
+  const [stockAlerts, setStockAlerts] = useState<AlertRecord[]>([]);
+  const [isLoadingAlerts, setIsLoadingAlerts] = useState(false);
+
+  const fetchAlertAuthHeaders = async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Please sign in before creating alerts.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+  };
+
+  const loadStockAlerts = async () => {
+    if (!user || !ticker) {
+      setStockAlerts([]);
+      return;
+    }
+    setIsLoadingAlerts(true);
+    try {
+      const headers = await fetchAlertAuthHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/alerts`, { headers, cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not load alerts.');
+      setStockAlerts((data.alerts ?? []).filter((alert: AlertRecord) => alert.ticker === ticker.toUpperCase()));
+    } catch (err: any) {
+      setAlertError(err.message || 'Could not load alerts.');
+    } finally {
+      setIsLoadingAlerts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStockAlerts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, ticker]);
+
+  const toggleAlertChannel = (channel: string) => {
+    setAlertChannels(previous => {
+      if (previous.includes(channel)) {
+        const next = previous.filter(item => item !== channel);
+        return next.length ? next : ['email'];
+      }
+      return [...previous, channel];
+    });
+  };
+
+  const saveAlert = async () => {
+    setAlertError('');
+    setAlertMessage('');
+    if (!user) {
+      onRequireAuth();
+      setAlertError('Sign in first so the alert can be saved to your account.');
+      return;
+    }
+    const prompt = alertPrompt.trim() || aiPrompt.trim();
+    if (!prompt) {
+      setAlertError('Type an alert condition first.');
+      return;
+    }
+    if (alertChannels.includes('whatsapp') && !alertWhatsapp.trim()) {
+      setAlertError('Enter WhatsApp number with country code, like +919876543210.');
+      return;
+    }
+    setIsSavingAlert(true);
+    try {
+      const headers = await fetchAlertAuthHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/alerts`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ticker,
+          prompt,
+          channels: alertChannels,
+          email: user.email,
+          whatsapp: alertWhatsapp.trim() || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not create alert.');
+      setAlertPrompt('');
+      const notifications = Array.isArray(data.initial_check?.notifications) ? data.initial_check.notifications : [];
+      const sent = notifications.filter((item: any) => item?.status === 'sent').map((item: any) => item.provider).join(', ');
+      const failed = notifications.filter((item: any) => item?.status !== 'sent');
+      if (failed.length > 0) {
+        setAlertError(failed.map((item: any) => `${item.provider}: ${item.reason || item.error || item.response || 'failed'}`).join(' | '));
+      }
+      setAlertMessage(
+        sent
+          ? `Alert saved and sent by ${sent}: ${data.alert?.rule?.description || prompt}`
+          : `Alert saved: ${data.alert?.rule?.description || prompt}`
+      );
+      await loadStockAlerts();
+    } catch (err: any) {
+      setAlertError(err.message || 'Could not create alert.');
+    } finally {
+      setIsSavingAlert(false);
+    }
+  };
+
+  const updateSavedAlert = async (alertId: string, status: 'active' | 'paused') => {
+    setAlertError('');
+    try {
+      const headers = await fetchAlertAuthHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/alerts/${alertId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not update alert.');
+      await loadStockAlerts();
+    } catch (err: any) {
+      setAlertError(err.message || 'Could not update alert.');
+    }
+  };
+
+  const deleteSavedAlert = async (alertId: string) => {
+    setAlertError('');
+    try {
+      const headers = await fetchAlertAuthHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/alerts/${alertId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not delete alert.');
+      await loadStockAlerts();
+    } catch (err: any) {
+      setAlertError(err.message || 'Could not delete alert.');
+    }
+  };
+
+  const testSavedAlert = async (alertId: string) => {
+    setAlertError('');
+    setAlertMessage('');
+    try {
+      const headers = await fetchAlertAuthHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/alerts/${alertId}/test`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not test alert.');
+      const evaluation = data.evaluation;
+      const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+      const sent = notifications.filter((item: any) => item?.status === 'sent').map((item: any) => item.provider).join(', ');
+      const failed = notifications.filter((item: any) => item?.status !== 'sent');
+      if (failed.length > 0) {
+        setAlertError(failed.map((item: any) => `${item.provider}: ${item.reason || item.error || item.response || 'failed'}`).join(' | '));
+      }
+      setAlertMessage(
+        sent
+          ? `Test sent by ${sent}. Condition ${evaluation?.triggered ? 'is true' : 'was checked'}: ${evaluation?.current_value ?? 'n/a'} vs ${evaluation?.target_value ?? 'n/a'}`
+          : `Condition ${evaluation?.triggered ? 'is true' : 'was checked'}: ${evaluation?.current_value ?? 'n/a'} vs ${evaluation?.target_value ?? 'n/a'}`
+      );
+      await loadStockAlerts();
+    } catch (err: any) {
+      setAlertError(err.message || 'Could not test alert.');
+    }
+  };
 
   const handleAiSearch = async () => {
     if (!aiPrompt || !ticker) return;
@@ -1483,6 +1681,126 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
               {example}
             </button>
           ))}
+        </div>
+
+        <div className="relative mt-5 rounded-2xl border border-emerald-300/25 bg-emerald-950/25 p-4">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300 font-['Space_Grotesk']">
+                AI Alerts
+              </h4>
+              <p className="mt-1 text-[11px] text-emerald-50/70 font-['JetBrains_Mono']">
+                {user ? user.email : 'Sign in to save alerts'}
+              </p>
+            </div>
+            {isLoadingAlerts && (
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-['JetBrains_Mono']">
+                Loading
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <input
+              value={alertPrompt}
+              onChange={event => setAlertPrompt(event.target.value)}
+              placeholder="Alert me when RSI crosses above 70"
+              className="h-12 rounded-xl border border-emerald-200 bg-white px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300/30 font-['JetBrains_Mono']"
+            />
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label className="flex h-11 items-center gap-2 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs font-bold uppercase tracking-widest text-emerald-50 font-['Space_Grotesk']">
+                  <input
+                    type="checkbox"
+                    checked={alertChannels.includes('email')}
+                    onChange={() => toggleAlertChannel('email')}
+                    className="h-4 w-4 accent-emerald-400"
+                  />
+                  Email
+                </label>
+                <label className="flex h-11 items-center gap-2 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs font-bold uppercase tracking-widest text-emerald-50 font-['Space_Grotesk']">
+                  <input
+                    type="checkbox"
+                    checked={alertChannels.includes('whatsapp')}
+                    onChange={() => toggleAlertChannel('whatsapp')}
+                    className="h-4 w-4 accent-emerald-400"
+                  />
+                  WhatsApp
+                </label>
+                <input
+                  value={alertWhatsapp}
+                  onChange={event => setAlertWhatsapp(event.target.value)}
+                  placeholder="+919876543210"
+                  disabled={!alertChannels.includes('whatsapp')}
+                  className="h-11 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs text-emerald-50 outline-none transition placeholder:text-emerald-100/30 disabled:opacity-40 focus:border-emerald-300 font-['JetBrains_Mono']"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={saveAlert}
+                disabled={isSavingAlert || (!alertPrompt.trim() && !aiPrompt.trim())}
+                className="h-11 rounded-xl border border-emerald-200 bg-emerald-400 px-5 text-[10px] font-black uppercase tracking-widest text-slate-950 transition hover:bg-emerald-300 disabled:opacity-40 font-['Space_Grotesk']"
+              >
+                {isSavingAlert ? 'Saving' : 'Create Alert'}
+              </button>
+            </div>
+          </div>
+
+          {alertError && (
+            <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 font-['JetBrains_Mono']">
+              {alertError}
+            </div>
+          )}
+          {alertMessage && (
+            <div className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100 font-['JetBrains_Mono']">
+              {alertMessage}
+            </div>
+          )}
+
+          {stockAlerts.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              {stockAlerts.map(alert => (
+                <div key={alert.id} className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-300 font-['Space_Grotesk']">
+                        {alert.status} · {(alert.channels ?? []).join(' + ') || 'email'}
+                      </div>
+                      <div className="mt-1 text-sm font-bold text-white font-['Space_Grotesk']">
+                        {alert.rule?.description || alert.prompt}
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-400 font-['JetBrains_Mono']">
+                        Last checked: {alert.last_checked_at ? new Date(alert.last_checked_at).toLocaleString() : 'Pending'}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => testSavedAlert(alert.id)}
+                        className="rounded-lg border border-cyan-300/25 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-cyan-100 transition hover:bg-cyan-300/10 font-['Space_Grotesk']"
+                      >
+                        Test
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSavedAlert(alert.id, alert.status === 'active' ? 'paused' : 'active')}
+                        className="rounded-lg border border-amber-300/25 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-amber-100 transition hover:bg-amber-300/10 font-['Space_Grotesk']"
+                      >
+                        {alert.status === 'active' ? 'Pause' : 'Resume'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSavedAlert(alert.id)}
+                        className="rounded-lg border border-red-300/25 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-red-100 transition hover:bg-red-300/10 font-['Space_Grotesk']"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* AI loading */}
@@ -2572,6 +2890,13 @@ function HomeContent() {
     await sb.auth.signOut();
     setUser(null);
     setShowProfileMenu(false);
+  };
+
+  const getAccessToken = async () => {
+    if (!supabaseAvailable) return null;
+    const sb = await getSupabaseClient();
+    const result = await sb.auth.getSession();
+    return result?.data?.session?.access_token ?? null;
   };
 
   const applyUrlState = (search: string) => {
@@ -3869,7 +4194,15 @@ function HomeContent() {
                   isLoading={fundamentalsLoading && !fundamentals}
                 />
               ) : analysis && !analysis.error ? (
-                <FisoDetailPanel analysis={analysis} currency={currency} ticker={ticker} chartData={chartData} />
+                <FisoDetailPanel
+                  analysis={analysis}
+                  currency={currency}
+                  ticker={ticker}
+                  chartData={chartData}
+                  user={user}
+                  getAccessToken={getAccessToken}
+                  onRequireAuth={() => setShowAuthModal(true)}
+                />
               ) : !analysis && (
                 <div className="flex items-center justify-center py-16">
                   <div className="flex flex-col items-center gap-4">

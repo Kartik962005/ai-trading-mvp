@@ -48,6 +48,17 @@ from app.services.data_service import get_latest_quote, get_historical_data, get
 from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
 from app.services.stock_ai_service import run_stock_ai_search
+from app.services.alert_service import (
+    check_active_alerts,
+    check_alert,
+    create_alert,
+    delete_alert,
+    evaluate_alert,
+    get_user_from_authorization,
+    list_alerts,
+    notify_alert,
+    update_alert_status,
+)
 from app.strategies.engine import run_analysis, evaluate_strategies, fetch_global_market_news
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
@@ -66,6 +77,24 @@ def warm_index_quotes():
                 print(f"[Warmup] index quote failed for {ticker}: {exc}")
 
     Thread(target=warm, daemon=True).start()
+
+
+@app.on_event("startup")
+async def start_alert_checker():
+    if os.getenv("ALERT_CHECKER_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+        return
+
+    async def loop():
+        await asyncio.sleep(8)
+        interval = max(60, int(os.getenv("ALERT_CHECK_INTERVAL_SECONDS", "900")))
+        while True:
+            try:
+                check_active_alerts(limit=int(os.getenv("ALERT_CHECK_BATCH_SIZE", "100")))
+            except Exception as exc:
+                print(f"[Alerts] scheduled check failed: {exc}")
+            await asyncio.sleep(interval)
+
+    asyncio.create_task(loop())
 
 
 def analyze_ticker_sync(ticker: str):
@@ -209,6 +238,18 @@ class StockAiRequest(BaseModel):
     stocks: list[ScreenerStock] = []
 
 
+class AlertCreateRequest(BaseModel):
+    ticker: str
+    prompt: str
+    channels: list[str] = ["email"]
+    email: str | None = None
+    whatsapp: str | None = None
+
+
+class AlertStatusRequest(BaseModel):
+    status: str
+
+
 @app.post("/api/v1/screener/search")
 @limiter.limit("6/minute")
 async def screener_search(request: Request, body: ScreenerRequest):
@@ -246,6 +287,99 @@ async def stock_ai_search(request: Request, body: StockAiRequest):
         return run_stock_ai_search(body.prompt, body.current_ticker, stocks)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/alerts")
+@limiter.limit("60/minute")
+async def get_alerts(request: Request):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"alerts": list_alerts(user["id"])}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/alerts")
+@limiter.limit("20/minute")
+async def post_alert(request: Request, body: AlertCreateRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        alert = create_alert(
+            user=user,
+            ticker=body.ticker,
+            prompt=body.prompt,
+            channels=body.channels,
+            email=body.email,
+            whatsapp=body.whatsapp,
+        )
+        initial_check = check_alert(alert, send_notifications=True)
+        return {"alert": alert, "initial_check": initial_check}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/v1/alerts/{alert_id}")
+@limiter.limit("30/minute")
+async def patch_alert(request: Request, alert_id: str, body: AlertStatusRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"alert": update_alert_status(user["id"], alert_id, body.status)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/alerts/{alert_id}")
+@limiter.limit("30/minute")
+async def remove_alert(request: Request, alert_id: str):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return delete_alert(user["id"], alert_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/alerts/{alert_id}/test")
+@limiter.limit("10/minute")
+async def test_alert(request: Request, alert_id: str):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        alerts = [alert for alert in list_alerts(user["id"]) if alert.get("id") == alert_id]
+        if not alerts:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        evaluation = evaluate_alert(alerts[0])
+        notifications = notify_alert(alerts[0], evaluation)
+        return {
+            "alert_id": alert_id,
+            "evaluation": evaluation,
+            "notifications": notifications,
+            "test_sent": True,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/alerts/check-now")
+@limiter.limit("2/minute")
+async def check_alerts_now(request: Request):
+    admin_key = os.getenv("ALERT_ADMIN_KEY")
+    if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
+        raise HTTPException(status_code=403, detail="Invalid alert admin key")
+    try:
+        return check_active_alerts(limit=int(os.getenv("ALERT_CHECK_BATCH_SIZE", "100")))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
