@@ -66,6 +66,7 @@ def fetch_news_sentiment(ticker: str):
         items = root.findall('.//item')
 
         headlines = []
+        stories = []
         total_polarity = 0
 
         # Non-news publishers — data sites, auto-generated tickers, official IR pages
@@ -96,6 +97,9 @@ def fetch_news_sentiment(ticker: str):
             r'penny stock',
             r'top stocks? to buy',
             r'price target',
+            r'outlook for (the )?week',
+            r'weekly outlook',
+            r'technical outlook',
             r'careers?( at| -)',
             r'job (vacancy|opening|listing)',
             r'personal banking',
@@ -132,6 +136,7 @@ def fetch_news_sentiment(ticker: str):
             title_el = item.find('title')
             if title_el is None or not title_el.text:
                 continue
+            link_el = item.find('link')
             raw_title = html.unescape(title_el.text).strip()
             parts = raw_title.rsplit(' - ', 1)
             clean_title = parts[0].strip()
@@ -158,6 +163,11 @@ def fetch_news_sentiment(ticker: str):
             display_title = f"{clean_title} — {source}"
             if display_title not in headlines:
                 headlines.append(display_title)
+                stories.append({
+                    "title": clean_title,
+                    "source": source,
+                    "url": link_el.text.strip() if link_el is not None and link_el.text else None,
+                })
                 total_polarity += TextBlob(clean_title).sentiment.polarity
             if len(headlines) == 5:
                 break
@@ -181,6 +191,7 @@ def fetch_news_sentiment(ticker: str):
                     title_el2 = item2.find('title')
                     if title_el2 is None or not title_el2.text:
                         continue
+                    link_el2 = item2.find('link')
                     raw2 = html.unescape(title_el2.text).strip()
                     parts2 = raw2.rsplit(' - ', 1)
                     ct2 = parts2[0].strip()
@@ -199,6 +210,11 @@ def fetch_news_sentiment(ticker: str):
                     disp2 = f"{ct2} — {src2}"
                     if disp2 not in seen:
                         headlines.append(disp2)
+                        stories.append({
+                            "title": ct2,
+                            "source": src2,
+                            "url": link_el2.text.strip() if link_el2 is not None and link_el2.text else None,
+                        })
                         seen.add(disp2)
                         total_polarity += TextBlob(ct2).sentiment.polarity
                     if len(headlines) == 5:
@@ -207,12 +223,12 @@ def fetch_news_sentiment(ticker: str):
                 pass
 
         if not headlines:
-            return {"score": 0, "label": "Neutral", "headlines": ["No recent news found for this stock."]}
+            return {"score": 0, "label": "Neutral", "headlines": ["No recent news found for this stock."], "stories": []}
         avg_polarity = total_polarity / len(headlines)
         label = "Bullish" if avg_polarity > 0.05 else "Bearish" if avg_polarity < -0.05 else "Neutral"
-        return {"score": round(avg_polarity, 2), "label": label, "headlines": headlines}
+        return {"score": round(avg_polarity, 2), "label": label, "headlines": headlines, "stories": stories}
     except Exception:
-        return {"score": 0, "label": "Neutral", "headlines": ["Live news feed unavailable."]}
+        return {"score": 0, "label": "Neutral", "headlines": ["Live news feed unavailable."], "stories": []}
 
 def fetch_global_market_news():
     try:
@@ -229,12 +245,16 @@ def fetch_global_market_news():
             r'penny stock',
             r'price target',
             r'buy or sell',
+            r'outlook for (the )?week',
+            r'weekly outlook',
+            r'technical outlook',
         ]
 
         for item in root.findall('.//item'):
             title_element = item.find('title')
             if title_element is None or not title_element.text:
                 continue
+            link_element = item.find('link')
             raw_title = html.unescape(title_element.text).strip()
             parts = raw_title.rsplit(' - ', 1)
             title = parts[0].strip()
@@ -243,13 +263,17 @@ def fetch_global_market_news():
             if any(re.search(pattern, lower) for pattern in spam_patterns) or len(title) < 30:
                 continue
             if title not in [story["title"] for story in stories]:
-                stories.append({"title": title, "source": source})
+                stories.append({
+                    "title": title,
+                    "source": source,
+                    "url": link_element.text.strip() if link_element is not None and link_element.text else None,
+                })
             if len(stories) == 5:
                 break
 
-        return {"stories": stories or [{"title": "Global market news feed is temporarily unavailable.", "source": "Bullseye"}]}
+        return {"stories": stories or [{"title": "Global market news feed is temporarily unavailable.", "source": "Bullseye", "url": None}]}
     except Exception:
-        return {"stories": [{"title": "Global market news feed is temporarily unavailable.", "source": "Bullseye"}]}
+        return {"stories": [{"title": "Global market news feed is temporarily unavailable.", "source": "Bullseye", "url": None}]}
 
 def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     evals = {}

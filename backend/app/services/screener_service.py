@@ -28,6 +28,9 @@ def _hash_number(value: str, mod: int, offset: int = 0) -> int:
 def _normalize_prompt(prompt: str) -> str:
     clean = prompt.lower()
     replacements = {
+        "listbanking": "list banking",
+        "showbanking": "show banking",
+        "bankingsector": "banking sector",
         "consective": "consecutive",
         "consectue": "consecutive",
         "consecutive dyas": "consecutive days",
@@ -37,6 +40,8 @@ def _normalize_prompt(prompt: str) -> str:
         "greather": "greater",
         "grater": "greater",
         "higer": "higher",
+        "geenral": "general",
+        "questipons": "questions",
     }
     for wrong, right in replacements.items():
         clean = clean.replace(wrong, right)
@@ -78,7 +83,21 @@ def _parse_rules(prompt: str) -> dict[str, Any]:
     )
 
     near_high = bool(re.search(r"\b(52\s*week|yearly|one year).{0,30}\b(high|breakout)\b|\bnew high\b", clean))
-    oversold = bool("oversold" in clean or re.search(r"\brsi\s*(?:<|below|under)\s*30\b", clean))
+    rsi_condition = _extract_indicator_condition(clean, ["rsi", "relative strength index"])
+    mfi_condition = _extract_indicator_condition(clean, ["mfi", "money flow index"])
+    oversold = bool("oversold" in clean or (rsi_condition and rsi_condition["operator"] in {"<", "<="} and rsi_condition["value"] <= 35))
+
+    requested_metrics = []
+    if "rsi" in clean or "relative strength index" in clean or oversold:
+        requested_metrics.append("rsi14")
+    if "mfi" in clean or "money flow index" in clean:
+        requested_metrics.append("mfi14")
+    if re.search(r"\b(sma|simple moving average|dma|moving average)\b", clean):
+        requested_metrics.extend(["sma20", "sma50"])
+    if re.search(r"\b(ema|exponential moving average)\b", clean):
+        requested_metrics.append("ema20")
+    if near_high or "52" in clean:
+        requested_metrics.extend(["high52Week", "priceVs52WeekHighPct"])
 
     rules = {
         "prompt": clean,
@@ -88,9 +107,51 @@ def _parse_rules(prompt: str) -> dict[str, Any]:
         "volume_above_average": volume_above_average,
         "near_high": near_high,
         "oversold": oversold,
+        "rsi_condition": rsi_condition,
+        "mfi_condition": mfi_condition,
+        "requested_metrics": list(dict.fromkeys(requested_metrics)),
     }
-    rules["recognized"] = bool(direction or volume_compare_previous_week or volume_above_average or near_high or oversold)
+    rules["recognized"] = bool(
+        direction
+        or volume_compare_previous_week
+        or volume_above_average
+        or near_high
+        or oversold
+        or rsi_condition
+        or mfi_condition
+        or requested_metrics
+    )
     return rules
+
+
+def _extract_indicator_condition(prompt: str, names: list[str]) -> dict[str, Any] | None:
+    name_pattern = "|".join(re.escape(name) for name in names)
+    operator_words = {
+        "below": "<",
+        "under": "<",
+        "less than": "<",
+        "lower than": "<",
+        "above": ">",
+        "over": ">",
+        "greater than": ">",
+        "more than": ">",
+        "at least": ">=",
+        "minimum": ">=",
+        "max": "<=",
+        "maximum": "<=",
+    }
+    operator_pattern = r"<=|>=|<|>|=|below|under|less than|lower than|above|over|greater than|more than|at least|minimum|max|maximum"
+    patterns = [
+        rf"\b(?:{name_pattern})\b(?:\s+level|\s+score|\s+value)?\s*(?:is|are|of|at)?\s*({operator_pattern})\s*(-?\d+(?:\.\d+)?)",
+        rf"\b(?:{name_pattern})\b.{0,24}?({operator_pattern})\s*(-?\d+(?:\.\d+)?)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, prompt)
+        if not match:
+            continue
+        operator = operator_words.get(match.group(1), match.group(1))
+        return {"operator": operator, "value": float(match.group(2))}
+    return None
 
 
 def _ticker_frame(download: pd.DataFrame, ticker: str) -> pd.DataFrame:
@@ -165,6 +226,23 @@ def _technical_metrics(frame: pd.DataFrame, days: int | None) -> dict[str, Any]:
 
     first_recent_close = float(recent["close"].iloc[0]) if len(recent) else float(latest["close"])
     latest_close = float(latest["close"])
+    close = frame["close"].astype(float)
+    high = frame["high"].astype(float)
+    low = frame["low"].astype(float)
+    volume = frame["volume"].astype(float)
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, pd.NA)
+    rsi = 100 - (100 / (1 + rs))
+    typical_price = (high + low + close) / 3
+    money_flow = typical_price * volume
+    positive_flow = money_flow.where(typical_price.diff() > 0, 0).rolling(14).sum()
+    negative_flow = money_flow.where(typical_price.diff() < 0, 0).rolling(14).sum()
+    money_ratio = positive_flow / negative_flow.replace(0, pd.NA)
+    mfi = 100 - (100 / (1 + money_ratio))
+    high_52_week = _clean_number(high.tail(252).max())
+    low_52_week = _clean_number(low.tail(252).min())
     return {
         "latest_close": latest_close,
         "previous_close": float(previous["close"]),
@@ -174,8 +252,14 @@ def _technical_metrics(frame: pd.DataFrame, days: int | None) -> dict[str, Any]:
         "previous_week_volume_avg": _clean_number(previous_week_volume),
         "volume_ratio_vs_previous_week": _clean_number(recent_volume / previous_week_volume if previous_week_volume else 0),
         "recent_return_pct": _clean_number(((latest_close - first_recent_close) / first_recent_close) * 100 if first_recent_close else 0),
-        "high_52_week": _clean_number(frame["high"].tail(252).max()),
-        "low_52_week": _clean_number(frame["low"].tail(252).min()),
+        "high_52_week": high_52_week,
+        "low_52_week": low_52_week,
+        "price_vs_52_week_high_pct": _clean_number(((latest_close - high_52_week) / high_52_week) * 100 if high_52_week else 0),
+        "rsi14": _clean_number(rsi.dropna().iloc[-1] if len(rsi.dropna()) else None, 50),
+        "mfi14": _clean_number(mfi.dropna().iloc[-1] if len(mfi.dropna()) else None, 50),
+        "sma20": _clean_number(close.tail(20).mean()),
+        "sma50": _clean_number(close.tail(50).mean()),
+        "ema20": _clean_number(close.ewm(span=20, adjust=False).mean().iloc[-1]),
     }
 
 
@@ -196,20 +280,36 @@ def _passes_volume(frame: pd.DataFrame, rules: dict[str, Any], days: int | None)
 
 def _passes_extra_rules(frame: pd.DataFrame, rules: dict[str, Any]) -> bool:
     latest_close = float(frame["close"].iloc[-1])
+    metrics = None
     if rules["near_high"]:
         high_52_week = float(frame["high"].tail(252).max())
         if high_52_week <= 0 or latest_close < high_52_week * 0.9:
             return False
-    if rules["oversold"]:
-        delta = frame["close"].diff()
-        gain = delta.clip(lower=0).rolling(14).mean()
-        loss = (-delta.clip(upper=0)).rolling(14).mean()
-        rs = gain / loss.replace(0, pd.NA)
-        rsi = 100 - (100 / (1 + rs))
-        latest_rsi = rsi.dropna().iloc[-1] if len(rsi.dropna()) else 50
-        if latest_rsi >= 30:
+    if rules["oversold"] or rules.get("rsi_condition") or rules.get("mfi_condition"):
+        metrics = _technical_metrics(frame, rules.get("consecutive_days"))
+    if rules["oversold"] and not _compare_metric(metrics["rsi14"], "<", 30):
+        return False
+    if rules.get("rsi_condition"):
+        condition = rules["rsi_condition"]
+        if not _compare_metric(metrics["rsi14"], condition["operator"], condition["value"]):
+            return False
+    if rules.get("mfi_condition"):
+        condition = rules["mfi_condition"]
+        if not _compare_metric(metrics["mfi14"], condition["operator"], condition["value"]):
             return False
     return True
+
+
+def _compare_metric(value: float, operator: str, target: float) -> bool:
+    if operator == ">":
+        return value > target
+    if operator == ">=":
+        return value >= target
+    if operator == "<":
+        return value < target
+    if operator == "<=":
+        return value <= target
+    return value == target
 
 
 def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
@@ -226,7 +326,7 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
     if not tickers:
         return {"rows": [], "matchedRules": [], "explanation": "No tickers were supplied.", "source": "No screener run"}
 
-    period = "1y" if rules["near_high"] or rules["oversold"] else "45d"
+    period = "1y" if rules["near_high"] or rules["oversold"] or rules["requested_metrics"] else "45d"
     download = _download_ohlcv(tickers, period)
 
     matched_rows = []
@@ -283,6 +383,15 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
                 "previousWeekVolumeAvg": metrics["previous_week_volume_avg"],
                 "volumeRatioVsPreviousWeek": metrics["volume_ratio_vs_previous_week"],
                 "recentReturnPct": metrics["recent_return_pct"],
+                "rsi14": metrics["rsi14"],
+                "mfi14": metrics["mfi14"],
+                "sma20": metrics["sma20"],
+                "sma50": metrics["sma50"],
+                "ema20": metrics["ema20"],
+                "high52Week": metrics["high_52_week"],
+                "low52Week": metrics["low_52_week"],
+                "priceVs52WeekHighPct": metrics["price_vs_52_week_high_pct"],
+                "requestedMetrics": rules["requested_metrics"],
             },
         })
 
@@ -297,6 +406,14 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
         labels.append("latest close within 10% of the 52-week high")
     if rules["oversold"]:
         labels.append("RSI below 30")
+    elif rules.get("rsi_condition"):
+        condition = rules["rsi_condition"]
+        labels.append(f"RSI {condition['operator']} {condition['value']:g}")
+    if rules.get("mfi_condition"):
+        condition = rules["mfi_condition"]
+        labels.append(f"MFI {condition['operator']} {condition['value']:g}")
+    elif "mfi14" in rules["requested_metrics"]:
+        labels.append("MFI column requested")
 
     matched_rows.sort(
         key=lambda row: (

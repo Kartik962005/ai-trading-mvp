@@ -15,6 +15,11 @@ const fetcher = async (url: string) => {
   return data;
 };
 const CACHE_TTL = 1000 * 60 * 60 * 6;
+type NewsStory = {
+  title: string;
+  source?: string;
+  url?: string | null;
+};
 type MarketScope = 'INDIA' | 'US';
 type DashboardView = 'overview' | 'details';
 type ChartRange = '1d' | '1w' | '1mo' | '1y' | 'max';
@@ -571,6 +576,11 @@ function splitNewsHeadline(headline: string) {
   };
 }
 
+function storyFromHeadline(headline: string): NewsStory {
+  const { title, source } = splitNewsHeadline(headline);
+  return { title, source };
+}
+
 function buildMarketNewsRead(title: string) {
   const lower = title.toLowerCase();
   if (/\b(rate|inflation|fed|rbi|bond|yield|oil|dollar)\b/.test(lower)) {
@@ -1116,12 +1126,12 @@ const StockPreviewModal = ({
 };
 
 const GlobalNewsPanel = () => {
-  const { data } = useSWR<{ stories?: Array<{ title: string; source: string }> }>('/api/v1/global-news', fetcher, {
+  const { data } = useSWR<{ stories?: NewsStory[] }>('/api/v1/global-news', fetcher, {
     refreshInterval: 1000 * 60 * 10,
     revalidateOnFocus: false,
   });
   const stories = data?.stories?.length ? data.stories : [
-    { title: 'Loading global market news and macro context...', source: 'Bullseye' },
+    { title: 'Loading global market news and macro context...', source: 'Bullseye', url: null },
   ];
 
   return (
@@ -1139,8 +1149,15 @@ const GlobalNewsPanel = () => {
         {stories.slice(0, 5).map((story, index) => (
           <article key={`${story.title}-${index}`} className="global-news-card rounded-2xl border border-white/10 bg-slate-950/70 p-4 transition-colors hover:border-cyan-300/35">
             <div className="global-news-source text-[9px] font-black uppercase tracking-widest text-cyan-300 font-['JetBrains_Mono']">{story.source}</div>
-            <h3 className="global-news-title mt-2 text-sm font-black leading-5 text-white font-['Space_Grotesk']">{story.title}</h3>
+            {story.url ? (
+              <a href={story.url} target="_blank" rel="noreferrer" className="global-news-title mt-2 block text-sm font-black leading-5 text-white transition hover:text-cyan-200 font-['Space_Grotesk']">
+                {story.title}
+              </a>
+            ) : (
+              <h3 className="global-news-title mt-2 text-sm font-black leading-5 text-white font-['Space_Grotesk']">{story.title}</h3>
+            )}
             <p className="global-news-copy mt-3 text-[11px] leading-5 text-slate-300 font-['JetBrains_Mono']">{buildMarketNewsRead(story.title)}</p>
+            {story.url && <div className="mt-3 text-[9px] font-black uppercase tracking-widest text-cyan-200/80 font-['JetBrains_Mono']">Open source</div>}
           </article>
         ))}
       </div>
@@ -1259,11 +1276,11 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
   const [showAllStrategies, setShowAllStrategies] = useState(false);
   const showInlineStrategyToggle = false;
   const visibleStrategies = showAllStrategies ? topStrategies : topStrategies.slice(0, 3);
-  const stockNewsHeadlines = (analysis?.sentiment?.headlines?.length
-    ? analysis.sentiment.headlines
-    : ['No verified stock-specific news found yet.']
-  ).filter((headline: string) => isEnglishNewsTitle(splitNewsHeadline(headline).title));
-  const visibleStockNews = stockNewsHeadlines.length ? stockNewsHeadlines : ['No English stock-specific news found yet.'];
+  const stockNewsStories: NewsStory[] = analysis?.sentiment?.stories?.length
+    ? analysis.sentiment.stories
+    : (analysis?.sentiment?.headlines?.length ? analysis.sentiment.headlines : ['No verified stock-specific news found yet.']).map(storyFromHeadline);
+  const visibleStockNews = stockNewsStories.filter(story => isEnglishNewsTitle(story.title));
+  const visibleStockStories = visibleStockNews.length ? visibleStockNews : [{ title: 'No English stock-specific news found yet.', source: 'Bullseye', url: null }];
 
   return (
     <div className="flex flex-col gap-6">
@@ -1978,12 +1995,18 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         </div>
 
         <ul className="grid gap-3 md:grid-cols-2">
-          {visibleStockNews.map((h: string, i: number) => {
-            const { title, source } = splitNewsHeadline(h);
+          {visibleStockStories.map((story, i: number) => {
+            const { title, source, url } = story;
             return (
               <li key={`${title}-${i}`} className="stock-news-card rounded-2xl border border-white/10 bg-white/[0.03] p-4 leading-relaxed transition-all hover:border-cyan-400/40 hover:bg-white/[0.06]">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <span className="stock-news-title block text-sm font-black text-zinc-100 transition-colors">{title}</span>
+                  {url ? (
+                    <a href={url} target="_blank" rel="noreferrer" className="stock-news-title block text-sm font-black text-zinc-100 transition-colors hover:text-cyan-300">
+                      {title}
+                    </a>
+                  ) : (
+                    <span className="stock-news-title block text-sm font-black text-zinc-100 transition-colors">{title}</span>
+                  )}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {source && (
@@ -1991,7 +2014,13 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                       {source}
                     </span>
                   )}
+                  {url && (
+                    <span className="rounded-full border border-cyan-400/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-cyan-300 font-['JetBrains_Mono']">
+                      Open news
+                    </span>
+                  )}
                 </div>
+                <p className="mt-3 text-[11px] leading-5 text-zinc-400 font-['JetBrains_Mono']">{buildMarketNewsRead(title)}</p>
               </li>
             );
           })}
@@ -3390,7 +3419,7 @@ function HomeContent() {
             onClick={() => setShowProfileMenu(false)}
             className="force-light-text inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-slate-900 bg-slate-950 px-3 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition-all hover:border-cyan-500 hover:bg-cyan-600 sm:h-12 sm:rounded-2xl sm:px-5 sm:text-xs sm:tracking-[0.2em]"
           >
-            Screens
+            Screener
           </Link>
 
           {/* Account menu */}

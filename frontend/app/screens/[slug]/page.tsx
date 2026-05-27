@@ -2,63 +2,10 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo, useState, type CSSProperties } from 'react';
-import { ALL_SCREENS, buildCustomQueryResult, getRowsForScreen, getScreenBySlug, type ScreenMetricRow } from '../screen-data';
+import { useMemo, useState } from 'react';
+import { ALL_SCREENS, buildCustomQueryResult, getRowsForScreen, getScreenBySlug } from '../screen-data';
+import ScreenMetricTable from '../ScreenMetricTable';
 import StockSearch from '../StockSearch';
-
-function ResultsTable({ rows }: { rows: ScreenMetricRow[] }) {
-  const [tableZoom, setTableZoom] = useState(0.82);
-  const changeZoom = (delta: number) => setTableZoom(current => Math.min(1.15, Math.max(0.55, Number((current + delta).toFixed(2)))));
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Table zoom</div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => changeZoom(-0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom out">-</button>
-          <button type="button" onClick={() => setTableZoom(0.82)} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:border-cyan-300">{Math.round(tableZoom * 100)}%</button>
-          <button type="button" onClick={() => changeZoom(0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom in">+</button>
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-left" style={{ zoom: tableZoom } as CSSProperties}>
-          <thead className="bg-slate-950 text-white">
-            <tr>
-              {['S.No.', 'Name', 'CMP Rs.', 'P/E', 'Mar Cap Rs.Cr.', 'Div Yld %', 'Qtr Sales Cr.', 'Qtr Profit Var %', 'Sales Qtr Var %', 'ROCE %', 'Avg PAT 10Yrs', 'Score'].map(label => (
-                <th key={label} className="px-4 py-3 text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']">{label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={row.stock.ticker} className="border-t border-slate-100 odd:bg-white even:bg-slate-50/70 hover:bg-cyan-50/70">
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-500">{index + 1}.</td>
-                <td className="px-4 py-3">
-                  <Link href={`/?ticker=${encodeURIComponent(row.stock.ticker)}`} className="font-['Space_Grotesk'] text-sm font-bold text-cyan-700 hover:text-cyan-500">
-                    {row.stock.name}
-                  </Link>
-                  <div className="mt-1 max-w-[260px] text-[10px] leading-relaxed text-slate-500">{row.reason}</div>
-                </td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.cmp.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.pe.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.marketCapCr.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.divYield.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.qtrSalesCr.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${row.qtrProfitVar >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{row.qtrProfitVar.toFixed(2)}</td>
-                <td className={`px-4 py-3 text-xs font-bold font-['JetBrains_Mono'] ${row.qtrSalesVar >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{row.qtrSalesVar.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.roce.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono']">{row.avgPat10Yrs.toFixed(0)}</td>
-                <td className="px-4 py-3">
-                  <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-700">{row.score}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 export default function ScreenDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -148,7 +95,7 @@ export default function ScreenDetailPage() {
             </div>
           </div>
 
-          <ResultsTable rows={rows} />
+          <ScreenMetricTable rows={rows} query={query} title={activeTitle} />
 
           <section className="grid grid-cols-1 gap-4 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl sm:rounded-3xl sm:p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div>

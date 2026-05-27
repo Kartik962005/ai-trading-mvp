@@ -10,7 +10,7 @@ from app.services.screener_service import screen_stocks
 INTENTS = {"CUSTOM_FILTER", "PRE_DEFINED_SCREENER", "STOCK_INFO", "SECTOR_FILTER", "GENERAL_CHAT"}
 
 SECTOR_RULES: list[tuple[str, list[str]]] = [
-    ("Banks", ["bank", "sbi", "hdfc", "icici", "axis", "kotak", "indusind", "federal", "canara", "pnb"]),
+    ("Banks", ["bank", "banks", "banking", "lender", "lenders", "sbi", "hdfc", "icici", "axis", "kotak", "indusind", "federal", "canara", "pnb"]),
     ("Finance", ["finance", "finserv", "credit", "capital", "housing", "muthoot", "bajaj", "rec", "pfc"]),
     ("Capital Markets", ["bse", "mcx", "cdsl", "cams", "angel", "amc", "securities"]),
     ("IT - Services", ["tcs", "infosys", "wipro", "hcl", "tech", "software", "systems", "coforge", "persistent", "mphasis"]),
@@ -36,7 +36,19 @@ SECTOR_RULES: list[tuple[str, list[str]]] = [
 
 
 def _normalize(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    clean = value.lower()
+    replacements = {
+        "listbanking": "list banking",
+        "showbanking": "show banking",
+        "bankingsector": "banking sector",
+        "screenbanking": "screen banking",
+        "geenral": "general",
+        "questipons": "questions",
+        "pycode": "python code",
+    }
+    for wrong, right in replacements.items():
+        clean = clean.replace(wrong, right)
+    return re.sub(r"[^a-z0-9]+", " ", clean).strip()
 
 
 def _slugify(value: str) -> str:
@@ -135,6 +147,10 @@ def _find_sector(prompt: str, supplied_sectors: list[dict[str, Any]] | list[str]
         normalized = _normalize(sector)
         if normalized and (normalized in clean or normalized.split()[0] in clean and "sector" in clean):
             return sector
+    if re.search(r"\b(sector|industry|stocks?|companies|list|show|screen)\b", clean):
+        for sector, words in SECTOR_RULES:
+            if any(re.search(rf"\b{re.escape(word)}\b", clean) or word in clean for word in words):
+                return sector
     return None
 
 
@@ -150,8 +166,20 @@ def _extract_custom_params(prompt: str) -> dict[str, Any]:
         params["direction"] = "down"
     if "volume" in clean:
         params["volume"] = "compare_previous_week" if "week" in clean else "above_average"
-    if "rsi" in clean or "oversold" in clean:
-        params["rsi"] = "below_30"
+    rsi_match = re.search(r"\brsi\b.{0,24}?(<|<=|>|>=|=|below|under|above|over|greater than|less than)\s*(\d+(?:\.\d+)?)", clean)
+    if rsi_match:
+        params["rsi"] = {"operator": rsi_match.group(1), "value": float(rsi_match.group(2))}
+    elif "rsi" in clean or "oversold" in clean:
+        params["rsi"] = "below_30" if "oversold" in clean or "below" in clean or "under" in clean or "<" in clean else "requested"
+    mfi_match = re.search(r"\bmfi\b.{0,24}?(<|<=|>|>=|=|below|under|above|over|greater than|less than)\s*(\d+(?:\.\d+)?)", clean)
+    if mfi_match:
+        params["mfi"] = {"operator": mfi_match.group(1), "value": float(mfi_match.group(2))}
+    elif "mfi" in clean or "money flow index" in clean:
+        params["mfi"] = "requested"
+    if re.search(r"\b(sql|select\b|where\b|order by\b|python|pandas|code|pycode)\b", clean):
+        params["query_language"] = "sql_or_python"
+    if re.search(r"\b(backtest|strategy|buy when|sell when|crossover|entry|exit)\b", clean):
+        params["strategy_or_backtest"] = True
     if "52" in clean or "new high" in clean:
         params["near_high"] = True
     if re.search(r"\b(undervalued|cheap|value|valuation|low\s+pe|low\s+p/e)\b", clean):
@@ -260,7 +288,7 @@ def _heuristic_router(prompt: str, stocks: list[dict[str, Any]], screeners: list
     elif stock and re.search(r"\b(price|metric|details?|about|show|lookup|analysis|data)\b", lower):
         intent = "STOCK_INFO"
         message = f"Fetching the latest available Bullseye data for {stock.get('symbol')}."
-    elif params:
+    elif params and not (params.get("query_language") and not any(key in params for key in ["rsi", "mfi", "near_high", "valuation", "roce", "roe", "debt", "dividend", "growth"])):
         intent = "CUSTOM_FILTER"
         message = (
             "Filtering local fundamentals and quality metrics."
@@ -272,7 +300,7 @@ def _heuristic_router(prompt: str, stocks: list[dict[str, Any]], screeners: list
         message = f"Loading stocks from the {sector} sector."
     else:
         intent = "GENERAL_CHAT"
-        message = "I can route stock screens, sectors, technical filters, and ticker lookups from this search bar."
+        message = _general_market_answer(prompt)
 
     return {
         "intent": intent,
@@ -356,6 +384,8 @@ def _sanitize_router(router: dict[str, Any], prompt: str, stocks: list[dict[str,
     intent = str(router.get("intent") or fallback["intent"]).upper()
     if intent not in INTENTS:
         intent = fallback["intent"]
+    if fallback["intent"] in {"SECTOR_FILTER", "CUSTOM_FILTER", "STOCK_INFO", "PRE_DEFINED_SCREENER"} and intent == "GENERAL_CHAT":
+        intent = fallback["intent"]
 
     screener_name = router.get("screener_name") or fallback.get("screener_name")
     stock_symbol = router.get("stock_symbol") or fallback.get("stock_symbol")
@@ -364,6 +394,8 @@ def _sanitize_router(router: dict[str, Any], prompt: str, stocks: list[dict[str,
     if not isinstance(params, dict):
         params = fallback["custom_query_parameters"]
     message = str(router.get("ai_response_message") or fallback["ai_response_message"]).strip()
+    if intent == "GENERAL_CHAT":
+        message = _general_market_answer(prompt)
 
     return {
         "intent": intent,
@@ -455,3 +487,28 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
         "explanation": router["ai_response_message"],
         "source": "Groq JSON router",
     }
+
+
+def _general_market_answer(prompt: str) -> str:
+    clean = _normalize(prompt)
+    if re.search(r"\b(sql|select|where|order by)\b", clean):
+        return (
+            "You can type SQL-style filters here, for example: "
+            "SELECT * FROM stocks WHERE roe > 18 AND debt_to_equity < 1 ORDER BY market_cap DESC. "
+            "The screener supports common fundamentals such as P/E, market cap, ROE, ROCE, growth, debt, dividend yield, Piotroski, RSI, MFI, and volume rules."
+        )
+    if re.search(r"\b(python|pandas|code)\b", clean):
+        return (
+            "For Python-style strategy ideas, describe the rule in plain English: "
+            "Backtest RSI crosses above 30 and sell above 70, or Show stocks where MFI is below 20. "
+            "The site routes screening prompts to this page and deeper strategy backtests to the stock AI/backtest tools."
+        )
+    if re.search(r"\b(backtest|strategy|entry|exit|buy when|sell when|crossover)\b", clean):
+        return (
+            "For strategy work, include a ticker or universe plus entry and exit rules. "
+            "Examples: Backtest RELIANCE buy when RSI crosses above 30 sell above 70, or Find NSE stocks with RSI below 30 and volume above average."
+        )
+    return (
+        "Ask for a sector list, a stock lookup, a SQL-style fundamentals filter, or a technical screen. "
+        "Examples: list banking sector stocks, RSI below 30, MFI below 20, low debt high ROE stocks, or SELECT * FROM stocks WHERE roce > 20."
+    )
