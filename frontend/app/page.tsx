@@ -1742,9 +1742,9 @@ const FisoDetailPanel = ({
                   onChange={event => setAlertWhatsapp(event.target.value)}
                   inputMode="numeric"
                   maxLength={10}
-                  placeholder="9876543210"
+                  placeholder="Enter mobile number here"
                   disabled={!alertChannels.includes('whatsapp')}
-                  className="h-11 rounded-xl border border-emerald-300/35 bg-white px-3 text-xs font-black text-slate-950 outline-none transition placeholder:text-slate-400 disabled:bg-slate-900/50 disabled:text-slate-400 disabled:opacity-60 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-300/20 font-['JetBrains_Mono']"
+                  className="h-11 rounded-xl border border-emerald-300/35 bg-slate-950/85 px-3 text-xs font-black text-white caret-emerald-300 outline-none transition placeholder:text-emerald-100/45 disabled:bg-slate-950/35 disabled:text-slate-500 disabled:opacity-60 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-300/40 font-['JetBrains_Mono']"
                 />
               </div>
               <button
