@@ -121,6 +121,13 @@ def fetch_news_sentiment(ticker: str):
                 for t in required_terms
             )
 
+        def _is_english_title(title: str) -> bool:
+            letters = re.findall(r'[^\W\d_]', title, flags=re.UNICODE)
+            if not letters:
+                return True
+            english_letters = re.findall(r'[A-Za-z]', title)
+            return len(english_letters) / len(letters) >= 0.85
+
         for item in items:
             title_el = item.find('title')
             if title_el is None or not title_el.text:
@@ -132,6 +139,9 @@ def fetch_news_sentiment(ticker: str):
             clean_lower = clean_title.lower()
             source_lower = source.lower()
 
+            # Keep stock pages English-only, even when Google News mixes local-language results.
+            if not _is_english_title(clean_title):
+                continue
             # Skip data-only publishers
             if any(ds in source_lower for ds in data_only_sources):
                 continue
@@ -176,6 +186,8 @@ def fetch_news_sentiment(ticker: str):
                     ct2 = parts2[0].strip()
                     src2 = parts2[1].strip() if len(parts2) > 1 else "News"
                     lower2 = ct2.lower()
+                    if not _is_english_title(ct2):
+                        continue
                     if any(ds in src2.lower() for ds in data_only_sources):
                         continue
                     if any(re.search(p, lower2) for p in junk_patterns):

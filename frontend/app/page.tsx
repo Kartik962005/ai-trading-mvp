@@ -555,31 +555,19 @@ function buildPreviewChartPath(chartData: any, width = 720, height = 190) {
     .join(' ');
 }
 
-function buildNewsRead(title: string, verdict?: string) {
-  const lower = title.toLowerCase();
-  const isPositive = /\b(gain|jump|surge|rally|beat|upgrade|growth|profit|record|strong|wins|expands|raises)\b/.test(lower);
-  const isNegative = /\b(fall|drop|slide|concern|miss|downgrade|loss|weak|risk|probe|lawsuit|cuts|pressure|debt)\b/.test(lower);
-  const isSell = /sell|bear/i.test(verdict ?? '');
-  const isBuy = /buy|bull/i.test(verdict ?? '');
+function isEnglishNewsTitle(title: string) {
+  const normalized = title.normalize('NFKD');
+  const letters = normalized.match(/\p{L}/gu) ?? [];
+  if (!letters.length) return true;
+  const englishLetters = normalized.match(/[A-Za-z]/g) ?? [];
+  return englishLetters.length / letters.length >= 0.85;
+}
 
-  if ((isBuy && isPositive) || (isSell && isNegative)) {
-    return {
-      label: 'Supports model call',
-      className: 'border-cyan-300/40 bg-cyan-50 text-cyan-700',
-      note: 'This item lines up with the current model direction, so it adds supporting context to the technical read.',
-    };
-  }
-  if ((isBuy && isNegative) || (isSell && isPositive)) {
-    return {
-      label: 'Watch conflict',
-      className: 'border-amber-300/50 bg-amber-50 text-amber-700',
-      note: 'This item conflicts with the model direction, so price confirmation matters before trusting the setup.',
-    };
-  }
+function splitNewsHeadline(headline: string) {
+  const parts = String(headline).split(/\s(?:—|â€”)\s/);
   return {
-    label: 'Context',
-    className: 'border-slate-200 bg-slate-50 text-slate-600',
-    note: 'This is relevant background news; the final call still comes from price action, risk levels, and FISO scoring.',
+    title: parts[0]?.trim() || String(headline),
+    source: parts.slice(1).join(' - ').trim(),
   };
 }
 
@@ -1269,6 +1257,13 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
 
   const topStrategies = normalizeStrategyEvals(analysis?.strategy_evals).slice(0, 10);
   const [showAllStrategies, setShowAllStrategies] = useState(false);
+  const showInlineStrategyToggle = false;
+  const visibleStrategies = showAllStrategies ? topStrategies : topStrategies.slice(0, 3);
+  const stockNewsHeadlines = (analysis?.sentiment?.headlines?.length
+    ? analysis.sentiment.headlines
+    : ['No verified stock-specific news found yet.']
+  ).filter((headline: string) => isEnglishNewsTitle(splitNewsHeadline(headline).title));
+  const visibleStockNews = stockNewsHeadlines.length ? stockNewsHeadlines : ['No English stock-specific news found yet.'];
 
   return (
     <div className="flex flex-col gap-6">
@@ -1277,10 +1272,10 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* Verdict card */}
-        <div className={`lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-6 flex flex-col justify-between ${accentBg} ${accentGlow} ${isBull ? 'verdict-glow-bull' : (!isBull && !isHold) ? 'verdict-glow-bear' : ''}`}>
+        <div className={`min-w-0 lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-5 sm:p-6 flex flex-col justify-between ${accentBg} ${accentGlow} ${isBull ? 'verdict-glow-bull' : (!isBull && !isHold) ? 'verdict-glow-bear' : ''}`}>
           <div>
             <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Algorithm Verdict</span>
-            <div className={`text-5xl font-black uppercase tracking-tighter font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysisView.displayVerdict}</div>
+            <div className={`break-words text-4xl font-black uppercase leading-none tracking-normal sm:text-5xl font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysisView.displayVerdict}</div>
           </div>
           <div>
             <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Trade Setup</span>
@@ -1328,7 +1323,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
         {/* Price targets */}
         <div className="lg:col-span-6 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Predictive Price Vectors</span>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4">
             <div className="metric-card-hover bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4 hover:border-cyan-400/40 hover:bg-cyan-500/8 transition-all">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry Price</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysisView.entry?.toLocaleString()}</span>
@@ -1367,7 +1362,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                 <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
                   <span className="text-green-400 text-xs font-bold">T</span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="text-xs font-bold text-white block">Target Date</span>
                   <span className="text-[10px] text-zinc-500">{analysis.target_date}</span>
                 </div>
@@ -1878,13 +1873,11 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {topStrategies.map((s: any, rank: number) => {
+            {visibleStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
               const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
               // Rank 0,1 always visible. Rank 2 = blurred sneak peek. Rank 3+ hidden until expanded.
               const isSneak = !showAllStrategies && rank === 2;
-              const isHidden = !showAllStrategies && rank > 2;
-              if (isHidden) return null;
               return (
                 <div key={s.id}>
                   {/* Sneak-peek wrapper: blur + bottom fade + no interaction */}
@@ -1930,7 +1923,7 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                     )}
                   </div>
                   {/* Expand / collapse button — shown after sneak-peek card */}
-                  {rank === 2 && topStrategies.length > 2 && (
+                  {showInlineStrategyToggle && rank === 2 && topStrategies.length > 2 && (
                     <button
                       type="button"
                       onClick={() => setShowAllStrategies(prev => !prev)}
@@ -1952,36 +1945,45 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                 </div>
               );
             })}
+            {topStrategies.length > 2 && (
+              <button
+                type="button"
+                onClick={() => setShowAllStrategies(prev => !prev)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10 bg-white/5 text-zinc-400 hover:bg-cyan-500/10 hover:border-cyan-400/40 hover:text-cyan-400 transition-all text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']"
+              >
+                {showAllStrategies ? (
+                  <>
+                    <span className="rotate-180 inline-block">v</span>
+                    Show less
+                  </>
+                ) : (
+                  <>
+                    <span>v</span>
+                    Show {topStrategies.length - 2} more strategies
+                  </>
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {/* ── Section 5: Global NLP Feed (LAST) ── */}
       <div className="stock-news-panel bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
-        <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-4">
+        <div className="flex items-center mb-5 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse inline-block"></span>
             <span className="stock-news-heading text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Stock News</span>
           </div>
-          <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border font-['JetBrains_Mono']
-            ${analysis?.sentiment?.label === 'Bullish' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' :
-              analysis?.sentiment?.label === 'Bearish' ? 'bg-red-500/10 text-red-400 border-red-500/30' :
-              'bg-white/5 text-zinc-400 border-white/10'}`}>
-            {analysis?.sentiment?.label || 'ANALYZING'} [{analysis?.sentiment?.score || 0}]
-          </span>
         </div>
 
         <ul className="grid gap-3 md:grid-cols-2">
-          {(analysis?.sentiment?.headlines?.length ? analysis.sentiment.headlines : ['No verified stock-specific news found yet.']).map((h: string, i: number) => {
-            const [title, source] = h.split(' — ');
-            const read = buildNewsRead(title, analysisView?.displayVerdict);
+          {visibleStockNews.map((h: string, i: number) => {
+            const { title, source } = splitNewsHeadline(h);
             return (
               <li key={`${title}-${i}`} className="stock-news-card rounded-2xl border border-white/10 bg-white/[0.03] p-4 leading-relaxed transition-all hover:border-cyan-400/40 hover:bg-white/[0.06]">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <span className="stock-news-title block text-sm font-black text-zinc-100 transition-colors">{title}</span>
-                  <span className={`shrink-0 rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-widest ${read.className}`}>
-                    {read.label}
-                  </span>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {source && (
@@ -1989,9 +1991,6 @@ const FisoDetailPanel = ({ analysis, currency, ticker, chartData }: { analysis: 
                       {source}
                     </span>
                   )}
-                  <span className="stock-news-meta text-[9px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">
-                    Checked against {analysisView?.displayVerdict ?? 'model'} view
-                  </span>
                 </div>
               </li>
             );
@@ -2109,6 +2108,67 @@ const FundamentalsTable = ({
         </div>
       )}
     </div>
+  );
+};
+
+const FundamentalsSnapshotCard = ({
+  stock,
+  currency,
+  fundamentals,
+  quote,
+  isLoading,
+}: {
+  stock?: typeof STOCKS[number] | null;
+  currency: string;
+  fundamentals?: { summary?: Record<string, unknown> } | null;
+  quote?: QuoteSnapshot | null;
+  isLoading: boolean;
+}) => {
+  const summary = fundamentals?.summary ?? {};
+  const currentPrice = quote?.price ?? summary.current_price;
+  const marketCapUnit = typeof summary.market_cap_unit === 'string' ? summary.market_cap_unit : undefined;
+  const highLow = summary.high_52_week && summary.low_52_week
+    ? `${formatCurrencyNumber(summary.high_52_week, currency, 2)} / ${formatCurrencyNumber(summary.low_52_week, currency, 2)}`
+    : '-';
+  const items = [
+    { label: 'Market Cap', value: formatMarketCap(summary.market_cap, marketCapUnit, currency) },
+    { label: 'Current Price', value: formatCurrencyNumber(currentPrice, currency, 2) },
+    { label: 'High / Low', value: highLow },
+    { label: 'Stock P/E', value: formatRatioValue(summary.trailing_pe) },
+    { label: 'Book Value', value: formatCurrencyNumber(summary.book_value, currency, 2) },
+    { label: 'Dividend Yield', value: formatRatioValue(summary.dividend_yield, 'percent') },
+    { label: 'ROE', value: formatRatioValue(summary.return_on_equity, 'percent') },
+    { label: 'Face Value', value: formatFaceValue(stock, summary.face_value) },
+  ];
+
+  return (
+    <aside className="order-1 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_22px_70px_rgba(15,23,42,0.12)] sm:p-5 xl:order-2">
+      <div className="mb-4 flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 font-['Space_Grotesk']">Key Fundamentals</div>
+          <h2 className="mt-1 truncate text-lg font-black text-slate-950 font-['Space_Grotesk']">{stock?.name || stock?.symbol || 'Stock'}</h2>
+        </div>
+        {quote?.change_percent !== undefined && (
+          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black font-['JetBrains_Mono'] ${quote.change_percent >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+            {quote.change_percent >= 0 ? '+' : ''}{quote.change_percent.toFixed(2)}%
+          </span>
+        )}
+      </div>
+      {isLoading && !fundamentals ? (
+        <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 text-center text-xs font-bold uppercase tracking-widest text-slate-400 font-['JetBrains_Mono']">
+          Loading fundamentals
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {items.map(item => (
+            <div key={item.label} className="min-w-0 rounded-2xl bg-slate-50 px-3 py-3">
+              <div className="text-[10px] font-semibold text-slate-500">{item.label}</div>
+              <div className="mt-1 truncate text-sm font-black text-slate-950 font-['JetBrains_Mono']" title={item.value}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
   );
 };
 
@@ -2573,7 +2633,7 @@ function HomeContent() {
     revalidateOnMount: !cachedAnalysis,
   });
   const { data: fundamentals, isLoading: fundamentalsLoading } = useSWR(
-    ticker && dashboardView === 'details' && canOpenDetailedAnalysis ? `/api/v1/fundamentals/${ticker}` : null,
+    ticker && canOpenDetailedAnalysis ? `/api/v1/fundamentals/${ticker}` : null,
     fetcher,
     {
       fallbackData: cachedFundamentals,
@@ -3036,12 +3096,6 @@ function HomeContent() {
         .bullseye-light .stock-news-title {
           color: #0f172a !important;
         }
-        .bullseye-light .stock-news-note {
-          color: #475569 !important;
-        }
-        .bullseye-light .stock-news-meta {
-          color: #64748b !important;
-        }
         .bullseye-light input {
           background: rgba(255,255,255,0.92) !important;
           color: #0f172a !important;
@@ -3276,7 +3330,7 @@ function HomeContent() {
         </div>
       )}
 
-      <div className="bullseye-light min-h-screen text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
+      <div className="bullseye-light min-h-screen overflow-x-hidden text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
 
         {/* BACKGROUND */}
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
@@ -3443,7 +3497,7 @@ function HomeContent() {
         </nav>
 
         {/* MAIN */}
-        <main className="relative z-10 flex-1 w-full max-w-[1600px] mx-auto p-3 sm:p-6 lg:p-8 flex flex-col gap-6">
+        <main className="relative z-10 flex-1 w-full min-w-0 max-w-[1600px] mx-auto p-3 sm:p-6 lg:p-8 flex flex-col gap-6">
 
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
@@ -3579,7 +3633,7 @@ function HomeContent() {
 
           {/* ── VIEW 2: STOCK DASHBOARD ── */}
           {ticker && (
-            <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 w-full flex flex-col gap-6">
+            <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 w-full min-w-0 flex flex-col gap-6">
 
               {/* Header */}
               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-5 gap-3 relative">
@@ -3589,7 +3643,7 @@ function HomeContent() {
                     className="text-zinc-400 font-bold uppercase text-[10px] hover:text-cyan-400 transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 hover:bg-cyan-500/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10 hover:border-cyan-400/30">
                     ← Overview
                   </button>
-                  <h1 className="font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-tighter font-['Space_Grotesk'] drop-shadow-[0_2px_20px_rgba(6,182,212,0.2)]">{ticker}</h1>
+                  <h1 className="break-words font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-normal font-['Space_Grotesk'] drop-shadow-[0_2px_20px_rgba(6,182,212,0.2)]">{ticker}</h1>
                   {selectedStock?.name && (
                     <div className="mt-2 text-sm text-zinc-400 font-['JetBrains_Mono'] tracking-wide">{selectedStock.name}</div>
                   )}
@@ -3633,14 +3687,22 @@ function HomeContent() {
                 </div>
               </div>
 
-              {/* Chart */}
-              <div className="relative rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_22px_70px_rgba(15,23,42,0.14)] sm:p-5">
+              {/* Chart + fundamentals snapshot */}
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-start">
+              <FundamentalsSnapshotCard
+                stock={selectedStock}
+                currency={currency}
+                fundamentals={fundamentals}
+                quote={quote}
+                isLoading={fundamentalsLoading}
+              />
+              <div className="relative order-2 min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_22px_70px_rgba(15,23,42,0.14)] sm:p-5 xl:order-1">
                 <div className="flex items-center justify-between gap-3 mb-4 border-b border-slate-200 pb-3 flex-wrap">
                   <span className="font-bold text-xs text-slate-500 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2 shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
                     Chart Geometry
                   </span>
-                  <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+                  <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:gap-3">
                     <div className="chart-controls-pill flex items-center gap-1 rounded-full border border-slate-200 bg-white/80 p-1">
                       {([
                         ['1d',  '1D'],
@@ -3723,7 +3785,7 @@ function HomeContent() {
                       )}
                     </div>
                     {analysis && !analysis.error && (
-                      <span className={`text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] shrink-0 ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
+                      <span className={`hidden text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] shrink-0 sm:inline ${accentColor}`}>{dashboardAnalysisView?.displayVerdict}</span>
                     )}
                   </div>
                 </div>
@@ -3765,6 +3827,7 @@ function HomeContent() {
                     Select an indicator to add a professional study pane below the stock chart.
                   </div>
                 )}
+              </div>
               </div>
 
               {/* FISO Analysis + all sections in order */}
