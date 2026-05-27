@@ -1284,6 +1284,14 @@ const FisoDetailPanel = ({
     });
   };
 
+  const normalizeIndianWhatsapp = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
+    if (value.trim().startsWith('+')) return value.trim();
+    return digits ? `+91${digits}` : '';
+  };
+
   const saveAlert = async () => {
     setAlertError('');
     setAlertMessage('');
@@ -1297,8 +1305,10 @@ const FisoDetailPanel = ({
       setAlertError('Type an alert condition first.');
       return;
     }
-    if (alertChannels.includes('whatsapp') && !alertWhatsapp.trim()) {
-      setAlertError('Enter WhatsApp number with country code, like +919876543210.');
+    const whatsappNumber = normalizeIndianWhatsapp(alertWhatsapp);
+    const whatsappDigits = whatsappNumber.replace(/\D/g, '');
+    if (alertChannels.includes('whatsapp') && whatsappDigits.length !== 12) {
+      setAlertError('Enter a 10 digit Indian WhatsApp number. The app will add +91 automatically.');
       return;
     }
     setIsSavingAlert(true);
@@ -1312,7 +1322,7 @@ const FisoDetailPanel = ({
           prompt,
           channels: alertChannels,
           email: user.email,
-          whatsapp: alertWhatsapp.trim() || null,
+          whatsapp: alertChannels.includes('whatsapp') ? whatsappNumber : null,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -1730,9 +1740,11 @@ const FisoDetailPanel = ({
                 <input
                   value={alertWhatsapp}
                   onChange={event => setAlertWhatsapp(event.target.value)}
-                  placeholder="+919876543210"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="9876543210"
                   disabled={!alertChannels.includes('whatsapp')}
-                  className="h-11 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs text-emerald-50 outline-none transition placeholder:text-emerald-100/30 disabled:opacity-40 focus:border-emerald-300 font-['JetBrains_Mono']"
+                  className="h-11 rounded-xl border border-emerald-300/35 bg-white px-3 text-xs font-black text-slate-950 outline-none transition placeholder:text-slate-400 disabled:bg-slate-900/50 disabled:text-slate-400 disabled:opacity-60 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-300/20 font-['JetBrains_Mono']"
                 />
               </div>
               <button
