@@ -45,12 +45,12 @@ type SmartSearchResponse = {
 };
 
 const examples = [
-  'Stocks that gained last 4 consecutive days and whose average volume is above last week average',
-  'Near 52 week high with unusual volume',
-  'Oversold stocks with RSI below 30',
-  'Show me the Magic Formula screen',
-  'List banking sector stocks',
-  'What is the price of HDFCBANK?',
+  'Small cap stocks with maximum gain in the last 1 week',
+  'Stocks with today volume more than 2 times 10 day average volume',
+  'Oversold stocks with RSI below 30 and volume higher than last week average',
+  'Stocks trading above 20 DMA, 50 DMA, and 200 DMA',
+  'Stocks near 52 week high with strong weekly gain',
+  'Stocks with price breakout, volume breakout, and RSI above 60',
 ];
 
 function candidateStocksForPrompt(prompt: string) {
@@ -106,12 +106,24 @@ function inferRequestedColumns(rows: ScreenMetricRow[], query: string) {
   if (/\b(sma|dma|moving average)\b/.test(lower)) {
     requested.add('sma20');
     requested.add('sma50');
+    if (/\b200\b|long term|long-term/.test(lower)) requested.add('sma200');
   }
   if (/\b(ema|exponential moving average)\b/.test(lower)) requested.add('ema20');
   if (/\b(52 week|near high|new high)\b/.test(lower)) {
     requested.add('high52Week');
     requested.add('priceVs52WeekHighPct');
   }
+  if (/\b(today|intraday|gap up|gap down)\b/.test(lower)) requested.add('todayReturnPct');
+  if (/\b(1 week|one week|7 days|last week|weekly)\b/.test(lower)) requested.add('return1wPct');
+  if (/\b(1 month|one month|monthly|last month)\b/.test(lower)) requested.add('return1mPct');
+  if (/\b(3 months|three months|quarter|3-month)\b/.test(lower)) requested.add('return3mPct');
+  if (/\b(6 months|six months|doubled|double)\b/.test(lower)) requested.add('return6mPct');
+  if (/\b(1 year|one year|ytd)\b/.test(lower)) requested.add('return1yPct');
+  if (/\b(volume|delivery|liquid)\b/.test(lower)) {
+    requested.add('latestVolume');
+    requested.add('volumeRatio20');
+  }
+  if (/\b(atr|volatility)\b/.test(lower)) requested.add('atr14');
   return requested;
 }
 
@@ -139,12 +151,22 @@ function technicalFallback(row: ScreenMetricRow, index: number, metricId: string
   }
   if (metricId === 'sma20') return Number((row.cmp * (0.94 + ((hash % 12) / 100))).toFixed(2));
   if (metricId === 'sma50') return Number((row.cmp * (0.9 + ((hash % 16) / 100))).toFixed(2));
+  if (metricId === 'sma200') return Number((row.cmp * (0.82 + ((hash % 28) / 100))).toFixed(2));
   if (metricId === 'ema20') return Number((row.cmp * (0.95 + ((hash % 10) / 100))).toFixed(2));
   if (metricId === 'high52Week') return Number((row.cmp * (1.05 + ((hash % 22) / 100))).toFixed(2));
   if (metricId === 'priceVs52WeekHighPct') {
     const high: number | undefined = row.technical?.high52Week ?? technicalFallback(row, index, 'high52Week', query);
     return typeof high === 'number' && high > 0 ? Number((((row.cmp - high) / high) * 100).toFixed(2)) : undefined;
   }
+  if (metricId === 'todayReturnPct') return Number((((hash % 1200) / 100) - 6).toFixed(2));
+  if (metricId === 'return1wPct') return Number((((hash % 1800) / 100) - 4).toFixed(2));
+  if (metricId === 'return1mPct') return Number((((hash % 3200) / 100) - 8).toFixed(2));
+  if (metricId === 'return3mPct') return Number((((hash % 5200) / 100) - 12).toFixed(2));
+  if (metricId === 'return6mPct') return Number((((hash % 8200) / 100) - 16).toFixed(2));
+  if (metricId === 'return1yPct') return Number((((hash % 12000) / 100) - 20).toFixed(2));
+  if (metricId === 'latestVolume') return 100000 + (hash % 5000000);
+  if (metricId === 'volumeRatio20') return Number((0.5 + ((hash % 350) / 100)).toFixed(2));
+  if (metricId === 'atr14') return Number((row.cmp * (0.01 + ((hash % 4) / 100))).toFixed(2));
   return undefined;
 }
 
@@ -164,9 +186,19 @@ function MetricTable({ rows, query, title }: { rows: ScreenMetricRow[]; query: s
       mfi14: { id: 'mfi14', label: 'MFI 14', removable: true, value: (row, index) => technicalValue(row, index, 'mfi14', query) },
       sma20: { id: 'sma20', label: 'SMA 20', removable: true, value: (row, index) => technicalValue(row, index, 'sma20', query) },
       sma50: { id: 'sma50', label: 'SMA 50', removable: true, value: (row, index) => technicalValue(row, index, 'sma50', query) },
+      sma200: { id: 'sma200', label: 'SMA 200', removable: true, value: (row, index) => technicalValue(row, index, 'sma200', query) },
       ema20: { id: 'ema20', label: 'EMA 20', removable: true, value: (row, index) => technicalValue(row, index, 'ema20', query) },
       high52Week: { id: 'high52Week', label: '52W High', removable: true, value: (row, index) => technicalValue(row, index, 'high52Week', query) },
       priceVs52WeekHighPct: { id: 'priceVs52WeekHighPct', label: 'Vs 52W High %', removable: true, value: (row, index) => technicalValue(row, index, 'priceVs52WeekHighPct', query) },
+      todayReturnPct: { id: 'todayReturnPct', label: 'Today %', removable: true, value: (row, index) => technicalValue(row, index, 'todayReturnPct', query) },
+      return1wPct: { id: 'return1wPct', label: '1W %', removable: true, value: (row, index) => technicalValue(row, index, 'return1wPct', query) },
+      return1mPct: { id: 'return1mPct', label: '1M %', removable: true, value: (row, index) => technicalValue(row, index, 'return1mPct', query) },
+      return3mPct: { id: 'return3mPct', label: '3M %', removable: true, value: (row, index) => technicalValue(row, index, 'return3mPct', query) },
+      return6mPct: { id: 'return6mPct', label: '6M %', removable: true, value: (row, index) => technicalValue(row, index, 'return6mPct', query) },
+      return1yPct: { id: 'return1yPct', label: '1Y %', removable: true, value: (row, index) => technicalValue(row, index, 'return1yPct', query) },
+      latestVolume: { id: 'latestVolume', label: 'Volume', removable: true, value: (row, index) => technicalValue(row, index, 'latestVolume', query) },
+      volumeRatio20: { id: 'volumeRatio20', label: 'Vol/20D', removable: true, value: (row, index) => technicalValue(row, index, 'volumeRatio20', query) },
+      atr14: { id: 'atr14', label: 'ATR 14', removable: true, value: (row, index) => technicalValue(row, index, 'atr14', query) },
     };
     const activeTechnicalColumns = [...inferRequestedColumns(rows, query)]
       .map(id => technicalColumns[id])

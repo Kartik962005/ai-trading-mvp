@@ -29,30 +29,28 @@ SMTP_PASSWORD=your-app-password
 ALERT_FROM_EMAIL=your-email@gmail.com
 ```
 
-## 3. WhatsApp provider
+## 3. Daily email watchlist
 
-For free testing, use Twilio WhatsApp Sandbox. Each test user must join your sandbox from WhatsApp first.
-
-```env
-WHATSAPP_PROVIDER=twilio
-TWILIO_ACCOUNT_SID=ACxxxxxxxxx
-TWILIO_AUTH_TOKEN=xxxxxxxxx
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-```
-
-For production, use Meta WhatsApp Cloud API. Business-initiated alert messages usually need an approved template.
+The backend can email a daily next-trading-day watchlist at 6 PM IST and a same-day result review at 4 PM IST.
 
 ```env
-WHATSAPP_PROVIDER=meta
-META_WHATSAPP_TOKEN=xxxxxxxxx
-META_WHATSAPP_PHONE_NUMBER_ID=123456789
-META_WHATSAPP_TEMPLATE_NAME=stock_alert
-META_WHATSAPP_TEMPLATE_LANGUAGE=en_US
+DAILY_UPDATES_ENABLED=true
+DAILY_STOCK_UNIVERSE_LIMIT=80
+DAILY_MIN_AVG_TURNOVER=150000000
+DAILY_MIN_CONFIDENCE=62
 ```
 
-## 4. Alert checker
+Signed-in users can turn daily emails on or off in the app. For a fixed admin/test recipient list, use:
 
-The FastAPI backend checks active alerts automatically.
+```env
+DAILY_REPORT_EMAILS=you@example.com,team@example.com
+```
+
+Run `backend/daily_trade_updates.sql` in Supabase before enabling user subscriptions.
+
+## 4. Alert checker and scheduled reports
+
+The FastAPI backend checks active alerts automatically. It also runs daily trade reports when `DAILY_UPDATES_ENABLED=true`.
 
 ```env
 ALERT_CHECKER_ENABLED=true
@@ -66,6 +64,8 @@ You can also trigger checks manually:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/alerts/check-now -H "x-alert-admin-key: choose-a-secret-key"
+curl -X POST http://localhost:8000/api/v1/daily-updates/run-review -H "x-alert-admin-key: choose-a-secret-key"
+curl -X POST http://localhost:8000/api/v1/daily-updates/run-forecast -H "x-alert-admin-key: choose-a-secret-key"
 ```
 
 ## Supported first-version prompts

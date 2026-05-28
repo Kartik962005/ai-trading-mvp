@@ -185,12 +185,353 @@ type AlertRecord = {
   rule?: { description?: string };
   channels?: string[];
   status: 'active' | 'paused';
-  whatsapp?: string | null;
   email?: string | null;
   last_checked_at?: string | null;
   last_triggered_at?: string | null;
   created_at?: string | null;
 };
+
+type NotificationPreference = {
+  email?: string | null;
+  daily_stock_email_enabled: boolean;
+  market: 'NSE' | 'BSE' | 'US';
+  risk_level: 'Conservative' | 'Balanced' | 'Aggressive';
+  email_time: string;
+  signal_type: 'Next-day swing' | 'Intraday' | 'Both';
+  consent_version?: string | null;
+  consent_accepted_at?: string | null;
+  unsubscribed_at?: string | null;
+};
+
+type DailySignalRecord = {
+  id?: string;
+  symbol: string;
+  direction: 'BUY' | 'SELL';
+  entry_low: number;
+  entry_high: number;
+  target_price: number;
+  stop_loss: number;
+  confidence: number;
+  risk_reward: number;
+  explanation_json?: { reasons?: string[] };
+};
+
+const DEFAULT_NOTIFICATION_PREFERENCE: NotificationPreference = {
+  email: null,
+  daily_stock_email_enabled: false,
+  market: 'NSE',
+  risk_level: 'Balanced',
+  email_time: '18:00',
+  signal_type: 'Next-day swing',
+  consent_version: null,
+  consent_accepted_at: null,
+  unsubscribed_at: null,
+};
+
+function normalizeNotificationTimeValue(value?: string | null) {
+  if (!value) return DEFAULT_NOTIFICATION_PREFERENCE.email_time;
+  const match = value.match(/^(\d{2}):(\d{2})/);
+  if (match) return `${match[1]}:${match[2]}`;
+  return DEFAULT_NOTIFICATION_PREFERENCE.email_time;
+}
+
+function getFriendlyErrorMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : fallback;
+  try {
+    const parsed = JSON.parse(message);
+    if (parsed?.message) return String(parsed.message);
+  } catch {}
+  return message || fallback;
+}
+
+function getMinimumNotificationTime(market: NotificationPreference['market']) {
+  return market === 'US' ? '16:30' : '16:00';
+}
+
+function isNotificationTimeValid(market: NotificationPreference['market'], value?: string | null) {
+  const normalized = normalizeNotificationTimeValue(value);
+  return normalized >= getMinimumNotificationTime(market);
+}
+
+function getSafeNotificationTime(market: NotificationPreference['market'], value?: string | null) {
+  const normalized = normalizeNotificationTimeValue(value);
+  return isNotificationTimeValid(market, normalized) ? normalized : DEFAULT_NOTIFICATION_PREFERENCE.email_time;
+}
+
+function NotificationSettingsModal({
+  open,
+  userEmail,
+  preference,
+  previewSignals,
+  isSaving,
+  error,
+  message,
+  showConsent,
+  onClose,
+  onChange,
+  onSave,
+  onSendNow,
+  onToggle,
+  onConfirmConsent,
+  onCancelConsent,
+}: {
+  open: boolean;
+  userEmail?: string | null;
+  preference: NotificationPreference;
+  previewSignals: DailySignalRecord[];
+  isSaving: boolean;
+  error: string;
+  message: string;
+  showConsent: boolean;
+  onClose: () => void;
+  onChange: (patch: Partial<NotificationPreference>) => void;
+  onSave: () => void;
+  onSendNow: () => void;
+  onToggle: (enabled: boolean) => void;
+  onConfirmConsent: () => void;
+  onCancelConsent: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[70] bg-slate-950/75 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[71] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
+        <div
+          className="my-4 w-full max-w-3xl max-h-[calc(100vh-2rem)] overflow-y-auto rounded-3xl border border-white/10 bg-slate-950 text-white shadow-[0_28px_90px_rgba(15,23,42,0.5)]"
+          onKeyDown={event => {
+            if (
+              showConsent ||
+              event.key !== 'Enter' ||
+              event.shiftKey ||
+              event.ctrlKey ||
+              event.altKey ||
+              event.metaKey ||
+              event.target instanceof HTMLButtonElement ||
+              event.target instanceof HTMLSelectElement
+            ) {
+              return;
+            }
+            event.preventDefault();
+            onSendNow();
+          }}
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-300 font-['Space_Grotesk']">Logged-in Alerts</div>
+              <h2 className="mt-2 text-2xl font-black font-['Space_Grotesk']">Daily 10 Stock Signals Email</h2>
+              <p className="mt-2 text-sm text-slate-400 font-['JetBrains_Mono']">
+                {userEmail || 'Your signed-in account'} can receive a model-ranked 10-stock email for the next trading day after the Indian market closes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-10 w-10 rounded-2xl border border-white/10 text-slate-400 transition hover:border-cyan-300/40 hover:text-white"
+              aria-label="Close notification settings"
+            >
+              X
+            </button>
+          </div>
+
+          <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="space-y-5">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={onSendNow}
+                  disabled={isSaving}
+                  className="flex min-h-[116px] flex-col justify-between rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-4 text-left transition hover:border-emerald-300/45 hover:bg-emerald-400/14 disabled:opacity-60"
+                >
+                  <div>
+                    <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
+                      Send Instantly Now
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
+                      Send the next trading day&apos;s ranked 10-stock email to your signed-in account right now.
+                    </div>
+                  </div>
+                  <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300 font-['Space_Grotesk']">
+                    {isSaving ? 'Sending...' : 'Send Now'}
+                  </div>
+                </button>
+
+                <label className="flex min-h-[116px] items-center justify-between rounded-2xl border border-cyan-300/25 bg-cyan-400/5 px-4 py-4">
+                  <div>
+                    <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
+                      Daily Automatic Alert
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-400 font-['JetBrains_Mono']">
+                      Turn this on once and Bullseye will automatically email your next-trading-day top 10 signals on each trading day.
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={preference.daily_stock_email_enabled}
+                    onChange={event => onToggle(event.target.checked)}
+                    disabled={isSaving}
+                    className="h-5 w-5 accent-cyan-400"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Market</span>
+                  <select
+                    value={preference.market}
+                    onChange={event => onChange({ market: event.target.value as NotificationPreference['market'] })}
+                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                  >
+                    <option value="NSE">NSE</option>
+                    <option value="BSE">BSE</option>
+                    <option value="US">US</option>
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Risk Level</span>
+                  <select
+                    value={preference.risk_level}
+                    onChange={event => onChange({ risk_level: event.target.value as NotificationPreference['risk_level'] })}
+                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                  >
+                    <option value="Conservative">Conservative</option>
+                    <option value="Balanced">Balanced</option>
+                    <option value="Aggressive">Aggressive</option>
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Preferred Email Time</span>
+                  <input
+                    type="time"
+                    value={preference.email_time}
+                    onChange={event => onChange({ email_time: event.target.value })}
+                    min={getMinimumNotificationTime(preference.market)}
+                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Signal Type</span>
+                  <select
+                    value={preference.signal_type}
+                    onChange={event => onChange({ signal_type: event.target.value as NotificationPreference['signal_type'] })}
+                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                  >
+                    <option value="Next-day swing">Next-day swing</option>
+                    <option value="Intraday">Intraday</option>
+                    <option value="Both">Both</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300 font-['Space_Grotesk']">Delivery Rules</div>
+                <div className="mt-2 text-[11px] leading-6 text-slate-300 font-['JetBrains_Mono']">
+                  Your preferred time must be after the Indian market closes. When this is enabled, Bullseye will generate and send next-trading-day ranked signals automatically on trading days.
+                </div>
+              </div>
+
+              {error && (
+                <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-xs text-red-200 font-['JetBrains_Mono']">
+                  {error}
+                </div>
+              )}
+              {message && (
+                <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-100 font-['JetBrains_Mono']">
+                  {message}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={isSaving}
+                  className="force-light-text rounded-2xl bg-cyan-400 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50 font-['Space_Grotesk']"
+                >
+                  {isSaving ? 'Saving...' : 'Save Settings'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:border-cyan-300/40 hover:bg-cyan-400/10 font-['Space_Grotesk']"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300 font-['Space_Grotesk']">Email Preview</div>
+              <div className="mt-2 text-[11px] text-slate-400 font-['JetBrains_Mono']">
+                Up to 10 stocks for the next trading day are sent. Fewer are sent when fewer names pass the quality filters.
+              </div>
+              <div className="mt-4 space-y-3">
+                {previewSignals.length > 0 ? previewSignals.slice(0, 4).map(signal => (
+                  <div key={signal.symbol} className="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-black text-white font-['Space_Grotesk']">{signal.symbol}</div>
+                      <div className={`text-[10px] font-black uppercase tracking-[0.18em] font-['Space_Grotesk'] ${signal.direction === 'BUY' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        {signal.direction}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
+                      Entry {signal.entry_low.toFixed(2)}-{signal.entry_high.toFixed(2)} | Target {signal.target_price.toFixed(2)} | Stop Loss {signal.stop_loss.toFixed(2)}
+                    </div>
+                    <div className="mt-2 text-[10px] text-slate-400 font-['JetBrains_Mono']">
+                      {(signal.explanation_json?.reasons ?? []).slice(0, 2).join(' | ') || 'Model-ranked technical setup'}
+                    </div>
+                  </div>
+                )) : (
+                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-[11px] text-slate-400 font-['JetBrains_Mono']">
+                    The latest next-trading-day signal preview will appear here after the prediction engine runs.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showConsent && (
+        <>
+          <div className="fixed inset-0 z-[72] bg-slate-950/80" />
+          <div className="fixed inset-0 z-[73] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
+            <div className="my-4 w-full max-w-lg rounded-3xl border border-white/10 bg-slate-950 p-5 text-white shadow-[0_28px_90px_rgba(15,23,42,0.5)] sm:p-6">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300 font-['Space_Grotesk']">Consent Required</div>
+              <h3 className="mt-3 text-2xl font-black font-['Space_Grotesk']">Before turning this on</h3>
+              <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300 font-['JetBrains_Mono']">
+                <p>Signals are model-generated analysis.</p>
+                <p>Returns are not guaranteed.</p>
+                <p>Past performance does not guarantee future results.</p>
+                <p>You can disable or unsubscribe at any time.</p>
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={onConfirmConsent}
+                  className="force-light-text rounded-2xl bg-cyan-400 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-950 transition hover:bg-cyan-300 font-['Space_Grotesk']"
+                >
+                  I Understand, Enable
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancelConsent}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:border-cyan-300/40 font-['Space_Grotesk']"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
 const INDICATOR_NAMES = [
   '52 Week High/Low',
@@ -1231,8 +1572,6 @@ const FisoDetailPanel = ({
   const [isAiRunning, setIsAiRunning] = useState(false);
   const [aiLoaderSummary, setAiLoaderSummary] = useState('');
   const [alertPrompt, setAlertPrompt] = useState('');
-  const [alertWhatsapp, setAlertWhatsapp] = useState('');
-  const [alertChannels, setAlertChannels] = useState<string[]>(['email']);
   const [alertMessage, setAlertMessage] = useState('');
   const [alertError, setAlertError] = useState('');
   const [isSavingAlert, setIsSavingAlert] = useState(false);
@@ -1274,24 +1613,6 @@ const FisoDetailPanel = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, ticker]);
 
-  const toggleAlertChannel = (channel: string) => {
-    setAlertChannels(previous => {
-      if (previous.includes(channel)) {
-        const next = previous.filter(item => item !== channel);
-        return next.length ? next : ['email'];
-      }
-      return [...previous, channel];
-    });
-  };
-
-  const normalizeIndianWhatsapp = (value: string) => {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length === 10) return `+91${digits}`;
-    if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
-    if (value.trim().startsWith('+')) return value.trim();
-    return digits ? `+91${digits}` : '';
-  };
-
   const saveAlert = async () => {
     setAlertError('');
     setAlertMessage('');
@@ -1305,12 +1626,6 @@ const FisoDetailPanel = ({
       setAlertError('Type an alert condition first.');
       return;
     }
-    const whatsappNumber = normalizeIndianWhatsapp(alertWhatsapp);
-    const whatsappDigits = whatsappNumber.replace(/\D/g, '');
-    if (alertChannels.includes('whatsapp') && whatsappDigits.length !== 12) {
-      setAlertError('Enter a 10 digit Indian WhatsApp number. The app will add +91 automatically.');
-      return;
-    }
     setIsSavingAlert(true);
     try {
       const headers = await fetchAlertAuthHeaders();
@@ -1320,9 +1635,8 @@ const FisoDetailPanel = ({
         body: JSON.stringify({
           ticker,
           prompt,
-          channels: alertChannels,
+          channels: ['email'],
           email: user.email,
-          whatsapp: alertChannels.includes('whatsapp') ? whatsappNumber : null,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -1718,34 +2032,16 @@ const FisoDetailPanel = ({
               className="h-12 rounded-xl border border-emerald-200 bg-white px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300/30 font-['JetBrains_Mono']"
             />
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3">
                 <label className="flex h-11 items-center gap-2 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs font-bold uppercase tracking-widest text-emerald-50 font-['Space_Grotesk']">
                   <input
                     type="checkbox"
-                    checked={alertChannels.includes('email')}
-                    onChange={() => toggleAlertChannel('email')}
+                    checked
+                    readOnly
                     className="h-4 w-4 accent-emerald-400"
                   />
-                  Email
+                  Email alert
                 </label>
-                <label className="flex h-11 items-center gap-2 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs font-bold uppercase tracking-widest text-emerald-50 font-['Space_Grotesk']">
-                  <input
-                    type="checkbox"
-                    checked={alertChannels.includes('whatsapp')}
-                    onChange={() => toggleAlertChannel('whatsapp')}
-                    className="h-4 w-4 accent-emerald-400"
-                  />
-                  WhatsApp
-                </label>
-                <input
-                  value={alertWhatsapp}
-                  onChange={event => setAlertWhatsapp(event.target.value)}
-                  inputMode="numeric"
-                  maxLength={10}
-                  placeholder="Enter mobile number here"
-                  disabled={!alertChannels.includes('whatsapp')}
-                  className="h-11 rounded-xl border border-emerald-300/35 bg-slate-950/85 px-3 text-xs font-black text-white caret-emerald-300 outline-none transition placeholder:text-emerald-100/45 disabled:bg-slate-950/35 disabled:text-slate-500 disabled:opacity-60 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-300/40 font-['JetBrains_Mono']"
-                />
               </div>
               <button
                 type="button"
@@ -2732,12 +3028,21 @@ function HomeContent() {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showNotificationConsent, setShowNotificationConsent] = useState(false);
+  const [notificationPreference, setNotificationPreference] = useState<NotificationPreference>(DEFAULT_NOTIFICATION_PREFERENCE);
+  const [notificationError, setNotificationError] = useState('');
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [dailySignalPreview, setDailySignalPreview] = useState<DailySignalRecord[]>([]);
   const [authPromptDismissed, setAuthPromptDismissed] = useState(false);
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
   const [cachedFundamentals, setCachedFundamentals] = useState<any>(undefined);
   const [showWelcome, setShowWelcome] = useState(false);
   const [welcomeName, setWelcomeName] = useState('');
+  const notificationConsentVersion = process.env.NEXT_PUBLIC_NOTIFICATION_CONSENT_VERSION || '2026-05-29';
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const supabaseRef = useRef<any>(null);
   const selectedStock = ticker ? STOCKS.find(s => s.ticker === ticker) ?? null : null;
@@ -2902,6 +3207,10 @@ function HomeContent() {
     await sb.auth.signOut();
     setUser(null);
     setShowProfileMenu(false);
+    setShowNotificationSettings(false);
+    setShowNotificationConsent(false);
+    setNotificationPreference(DEFAULT_NOTIFICATION_PREFERENCE);
+    setDailySignalPreview([]);
   };
 
   const getAccessToken = async () => {
@@ -2909,6 +3218,303 @@ function HomeContent() {
     const sb = await getSupabaseClient();
     const result = await sb.auth.getSession();
     return result?.data?.session?.access_token ?? null;
+  };
+
+  const getNotificationHeaders = async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Please sign in before changing notification settings.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+  };
+
+  const loadDailySignalPreview = async (nextPreference?: NotificationPreference) => {
+    const activePreference = nextPreference || notificationPreference;
+    try {
+      const params = new URLSearchParams({
+        market: activePreference.market,
+        risk_level: activePreference.risk_level,
+        signal_type: activePreference.signal_type,
+      });
+      const response = await fetch(`${BACKEND}/api/v1/signals/today?${params.toString()}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not load signal preview.');
+      setDailySignalPreview(Array.isArray(data.signals) ? data.signals : []);
+    } catch {
+      setDailySignalPreview([]);
+    }
+  };
+
+  const loadNotificationPreference = async () => {
+    if (!user) {
+      setNotificationPreference(DEFAULT_NOTIFICATION_PREFERENCE);
+      setDailySignalPreview([]);
+      return;
+    }
+    setNotificationLoading(true);
+    setNotificationError('');
+    try {
+      const headers = await getNotificationHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/notification-preferences`, { headers, cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not load notification settings.');
+      const nextPreference = {
+        ...DEFAULT_NOTIFICATION_PREFERENCE,
+        ...data.preference,
+        email_time: getSafeNotificationTime(
+          (data.preference?.market as NotificationPreference['market']) || DEFAULT_NOTIFICATION_PREFERENCE.market,
+          data.preference?.email_time,
+        ),
+      } as NotificationPreference;
+      setNotificationPreference(nextPreference);
+      await loadDailySignalPreview(nextPreference);
+    } catch (err: any) {
+      setNotificationError(getFriendlyErrorMessage(err, 'Could not load notification settings.'));
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotificationPreference();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!notificationMessage) return;
+    const timer = window.setTimeout(() => {
+      setNotificationMessage('');
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [notificationMessage]);
+
+  const patchNotificationPreference = (patch: Partial<NotificationPreference>) => {
+    setNotificationPreference(current => {
+      const next = { ...current, ...patch };
+      if (patch.market && !isNotificationTimeValid(patch.market, next.email_time)) {
+        next.email_time = getSafeNotificationTime(patch.market, next.email_time);
+      }
+      if (patch.email_time) {
+        next.email_time = normalizeNotificationTimeValue(patch.email_time);
+      }
+      return next;
+    });
+  };
+
+  const saveNotificationPreference = async (payload?: Partial<NotificationPreference>) => {
+    if (!user) {
+      setNotificationError('Sign in first to save daily stock email settings.');
+      setShowAuthModal(true);
+      return;
+    }
+    setNotificationSaving(true);
+    setNotificationError('');
+    setNotificationMessage('');
+    try {
+      const market = (payload?.market || notificationPreference.market) as NotificationPreference['market'];
+      const rawEmailTime = normalizeNotificationTimeValue(payload?.email_time || notificationPreference.email_time);
+      const emailTime = isNotificationTimeValid(market, rawEmailTime)
+        ? rawEmailTime
+        : getSafeNotificationTime(market, rawEmailTime);
+      const timeWasAdjusted = emailTime !== rawEmailTime;
+      if (timeWasAdjusted) {
+        setNotificationPreference(current => ({ ...current, market, email_time: emailTime }));
+      }
+      const headers = await getNotificationHeaders();
+      const requestBody = {
+        ...notificationPreference,
+        ...payload,
+        email: user.email,
+        market,
+        email_time: emailTime,
+      };
+      const response = await fetch(`${BACKEND}/api/v1/notification-preferences`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not save notification settings.');
+      const nextPreference = {
+        ...DEFAULT_NOTIFICATION_PREFERENCE,
+        ...data.preference,
+        email_time: getSafeNotificationTime(
+          (data.preference?.market as NotificationPreference['market']) || market,
+          data.preference?.email_time,
+        ),
+      } as NotificationPreference;
+      setNotificationPreference(nextPreference);
+      setShowNotificationSettings(false);
+      setShowNotificationConsent(false);
+      setNotificationMessage(
+        timeWasAdjusted
+          ? `Notification settings saved. Time adjusted to ${emailTime} IST.`
+          : 'Notification settings saved for next-trading-day stock emails.'
+      );
+      await loadDailySignalPreview(nextPreference);
+    } catch (err: any) {
+      setNotificationError(getFriendlyErrorMessage(err, 'Could not save notification settings.'));
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
+  const sendNotificationEmailNow = async () => {
+    if (!user) {
+      setNotificationError('Sign in first to send a stock signal email.');
+      setShowAuthModal(true);
+      return;
+    }
+    setNotificationSaving(true);
+    setNotificationError('');
+    setNotificationMessage('');
+    try {
+      const market = notificationPreference.market;
+      const rawEmailTime = normalizeNotificationTimeValue(notificationPreference.email_time);
+      const emailTime = isNotificationTimeValid(market, rawEmailTime)
+        ? rawEmailTime
+        : getSafeNotificationTime(market, rawEmailTime);
+      if (emailTime !== rawEmailTime) {
+        setNotificationPreference(current => ({ ...current, email_time: emailTime }));
+      }
+      const headers = await getNotificationHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/notification-preferences/send-now`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...notificationPreference,
+          email: user.email,
+          email_time: emailTime,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not send the stock signal email right now.');
+      const nextPreference = {
+        ...DEFAULT_NOTIFICATION_PREFERENCE,
+        ...data.preference,
+        email_time: getSafeNotificationTime(
+          (data.preference?.market as NotificationPreference['market']) || market,
+          data.preference?.email_time,
+        ),
+      } as NotificationPreference;
+      setNotificationPreference(nextPreference);
+      setShowNotificationConsent(false);
+      setShowNotificationSettings(false);
+      setNotificationMessage(
+        data.notification?.status === 'sent'
+          ? 'Next-trading-day stock signal email sent.'
+          : `Instant email status: ${data.notification?.status || 'processed'}.`
+      );
+      await loadDailySignalPreview(nextPreference);
+    } catch (err: any) {
+      setNotificationError(getFriendlyErrorMessage(err, 'Could not send the stock signal email right now.'));
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
+  const confirmEnableDailySignals = async () => {
+    if (!user) {
+      setNotificationError('Sign in first to enable daily stock emails.');
+      setShowAuthModal(true);
+      return;
+    }
+    setNotificationSaving(true);
+    setNotificationError('');
+    setNotificationMessage('');
+    try {
+      const market = notificationPreference.market;
+      const rawEmailTime = normalizeNotificationTimeValue(notificationPreference.email_time);
+      const emailTime = isNotificationTimeValid(market, rawEmailTime)
+        ? rawEmailTime
+        : getSafeNotificationTime(market, rawEmailTime);
+      const timeWasAdjusted = emailTime !== rawEmailTime;
+      if (timeWasAdjusted) {
+        setNotificationPreference(current => ({ ...current, email_time: emailTime }));
+      }
+      const headers = await getNotificationHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/notification-preferences/enable-daily-alerts`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...notificationPreference,
+          email: user.email,
+          email_time: emailTime,
+          consent_version: notificationConsentVersion,
+          consent_accepted_at: new Date().toISOString(),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not enable daily stock emails.');
+      const nextPreference = {
+        ...DEFAULT_NOTIFICATION_PREFERENCE,
+        ...data.preference,
+        email_time: getSafeNotificationTime(
+          (data.preference?.market as NotificationPreference['market']) || market,
+          data.preference?.email_time,
+        ),
+      } as NotificationPreference;
+      setNotificationPreference(nextPreference);
+      setShowNotificationConsent(false);
+      setShowNotificationSettings(false);
+      setNotificationMessage(
+        timeWasAdjusted
+          ? `Next-trading-day stock signal emails are on. Time adjusted to ${emailTime} IST.`
+          : 'Next-trading-day stock signal emails are now on.'
+      );
+      await loadDailySignalPreview(nextPreference);
+    } catch (err: any) {
+      setNotificationError(getFriendlyErrorMessage(err, 'Could not enable daily stock emails.'));
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
+  const disableDailySignals = async () => {
+    if (!user) {
+      setNotificationError('Sign in first to update daily stock emails.');
+      setShowAuthModal(true);
+      return;
+    }
+    setNotificationSaving(true);
+    setNotificationError('');
+    setNotificationMessage('');
+    try {
+      const headers = await getNotificationHeaders();
+      const response = await fetch(`${BACKEND}/api/v1/notification-preferences/disable-daily-alerts`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || 'Could not disable daily stock emails.');
+      setNotificationPreference(current => ({
+        ...current,
+        ...data.preference,
+        daily_stock_email_enabled: false,
+      }));
+      setNotificationMessage('Next-trading-day stock signal emails are now off.');
+    } catch (err: any) {
+      setNotificationError(getFriendlyErrorMessage(err, 'Could not disable daily stock emails.'));
+    } finally {
+      setNotificationSaving(false);
+    }
+  };
+
+  const toggleDailySignals = async (enabled: boolean) => {
+    if (!enabled) {
+      await disableDailySignals();
+      return;
+    }
+    const needsConsent = !notificationPreference.consent_accepted_at || notificationPreference.consent_version !== notificationConsentVersion;
+    if (needsConsent) {
+      setShowNotificationSettings(true);
+      setShowNotificationConsent(true);
+      return;
+    }
+    await confirmEnableDailySignals();
   };
 
   const applyUrlState = (search: string) => {
@@ -3828,6 +4434,16 @@ function HomeContent() {
                     </div>
                     <button
                       type="button"
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        setShowNotificationSettings(true);
+                      }}
+                      className="mb-3 w-full rounded-xl border border-cyan-200 bg-cyan-50 py-3 text-xs font-black uppercase tracking-widest text-cyan-700 transition-colors hover:border-cyan-300 hover:bg-cyan-100 font-['Space_Grotesk']"
+                    >
+                      Logged-in Alerts
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleSignOut}
                       className="force-light-text w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest font-['Space_Grotesk'] hover:bg-slate-700 transition-colors"
                     >
@@ -4260,6 +4876,40 @@ function HomeContent() {
       )}
 
       {/* ── AUTH MODAL ── */}
+      {!showNotificationSettings && notificationMessage && (
+        <div className="fixed left-1/2 top-5 z-[85] w-[min(92vw,520px)] -translate-x-1/2 rounded-2xl border border-emerald-300/30 bg-slate-950/96 px-5 py-4 text-center shadow-[0_24px_80px_rgba(15,23,42,0.45)] backdrop-blur-xl">
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300 font-['Space_Grotesk']">
+            Logged-in Alerts
+          </div>
+          <div className="mt-2 text-sm text-emerald-50 font-['JetBrains_Mono']">
+            {notificationMessage}
+          </div>
+        </div>
+      )}
+
+      {user && (
+        <NotificationSettingsModal
+          open={showNotificationSettings}
+          userEmail={user.email}
+          preference={notificationPreference}
+          previewSignals={dailySignalPreview}
+          isSaving={notificationSaving}
+          error={notificationError}
+          message={notificationMessage}
+          showConsent={showNotificationConsent}
+          onClose={() => {
+            setShowNotificationSettings(false);
+            setShowNotificationConsent(false);
+          }}
+          onChange={patch => patchNotificationPreference(patch)}
+          onSave={() => { void saveNotificationPreference(); }}
+          onSendNow={() => { void sendNotificationEmailNow(); }}
+          onToggle={enabled => { void toggleDailySignals(enabled); }}
+          onConfirmConsent={() => { void confirmEnableDailySignals(); }}
+          onCancelConsent={() => setShowNotificationConsent(false)}
+        />
+      )}
+
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_60px_rgba(6,182,212,0.15)]">
@@ -4369,3 +5019,4 @@ export default function Home() {
     </Suspense>
   );
 }
+

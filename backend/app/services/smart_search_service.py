@@ -38,6 +38,13 @@ SECTOR_RULES: list[tuple[str, list[str]]] = [
 def _normalize(value: str) -> str:
     clean = value.lower()
     replacements = {
+        "stockks": "stocks",
+        "stocoks": "stocks",
+        "volumne": "volume",
+        "avrage": "average",
+        "consequtive": "consecutive",
+        "circut": "circuit",
+        "delivry": "delivery",
         "listbanking": "list banking",
         "showbanking": "show banking",
         "bankingsector": "banking sector",
@@ -156,6 +163,7 @@ def _find_sector(prompt: str, supplied_sectors: list[dict[str, Any]] | list[str]
 
 def _extract_custom_params(prompt: str) -> dict[str, Any]:
     clean = prompt.lower()
+    normalized = _normalize(prompt)
     params: dict[str, Any] = {}
     days = re.search(r"(\d{1,2})\s+(?:consecutive\s+)?(?:trading\s+)?(?:days|sessions)", clean)
     if days:
@@ -166,6 +174,18 @@ def _extract_custom_params(prompt: str) -> dict[str, Any]:
         params["direction"] = "down"
     if "volume" in clean:
         params["volume"] = "compare_previous_week" if "week" in clean else "above_average"
+    if re.search(r"\b(today|yesterday|last|past|week|month|months|year|ytd|days|sessions)\b", normalized):
+        params["time_filter"] = True
+    if re.search(r"\b(gain|gained|gainer|return|performance|performing|performer|momentum|up|down|fallen|loser|doubled|positive returns|relative strength|outperform|outperforming|stronger than|falling market)\b", normalized):
+        params["price_action"] = True
+    if re.search(r"\b(penny|micro cap|small cap|mid cap|large cap|market cap)\b", normalized):
+        params["market_cap"] = True
+    if re.search(r"\b(breakout|breakdown|gap up|gap down|upper circuit|lower circuit|52 week|all time high|all time low|support|resistance)\b", normalized):
+        params["price_level"] = True
+    if re.search(r"\b(macd|moving average|sma|ema|dma|bollinger|vwap|atr|adx|supertrend|candlestick|hammer|doji|engulfing|morning star|evening star)\b", normalized):
+        params["technical_pattern"] = True
+    if re.search(r"\b(delivery|fii|dii|promoter|pledge|f&o|futures|open interest|pcr|put call|results|dividend|bonus|split|buyback|board meeting|merger|acquisition|corporate action|news)\b", normalized):
+        params["proxy_or_event_filter"] = True
     rsi_match = re.search(r"\brsi\b.{0,24}?(<|<=|>|>=|=|below|under|above|over|greater than|less than)\s*(\d+(?:\.\d+)?)", clean)
     if rsi_match:
         params["rsi"] = {"operator": rsi_match.group(1), "value": float(rsi_match.group(2))}
@@ -386,6 +406,8 @@ def _sanitize_router(router: dict[str, Any], prompt: str, stocks: list[dict[str,
         intent = fallback["intent"]
     if fallback["intent"] in {"SECTOR_FILTER", "CUSTOM_FILTER", "STOCK_INFO", "PRE_DEFINED_SCREENER"} and intent == "GENERAL_CHAT":
         intent = fallback["intent"]
+    if fallback["intent"] == "CUSTOM_FILTER" and intent == "SECTOR_FILTER":
+        intent = "CUSTOM_FILTER"
 
     screener_name = router.get("screener_name") or fallback.get("screener_name")
     stock_symbol = router.get("stock_symbol") or fallback.get("stock_symbol")
@@ -393,6 +415,8 @@ def _sanitize_router(router: dict[str, Any], prompt: str, stocks: list[dict[str,
     params = router.get("custom_query_parameters")
     if not isinstance(params, dict):
         params = fallback["custom_query_parameters"]
+    elif isinstance(fallback.get("custom_query_parameters"), dict):
+        params = {**fallback["custom_query_parameters"], **params}
     message = str(router.get("ai_response_message") or fallback["ai_response_message"]).strip()
     if intent == "GENERAL_CHAT":
         message = _general_market_answer(prompt)
@@ -405,6 +429,13 @@ def _sanitize_router(router: dict[str, Any], prompt: str, stocks: list[dict[str,
         "custom_query_parameters": params,
         "ai_response_message": message,
     }
+
+
+def _filter_stocks_for_sector(stocks: list[dict[str, Any]], sector: str | None) -> list[dict[str, Any]]:
+    if not sector:
+        return stocks
+    filtered = [stock for stock in stocks if _stock_sector(stock) == sector]
+    return filtered or stocks
 
 
 def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict[str, Any]], sectors: list[dict[str, Any]] | list[str]) -> dict[str, Any]:
@@ -472,11 +503,20 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
         if isinstance(params, dict) and _has_fundamental_filter(prompt, params):
             return _fundamental_filter_rows(prompt, stocks, sectors, router)
 
-        live = screen_stocks(prompt, stocks)
+        sector = _find_sector(str(router.get("sector") or prompt), sectors) or _find_sector(prompt, sectors)
+        router["sector"] = sector
+        scoped_stocks = _filter_stocks_for_sector(stocks, sector)
+        live = screen_stocks(prompt, scoped_stocks)
         if not live.get("rows") and isinstance(params, dict) and router.get("sector"):
-            return _fundamental_filter_rows(prompt, stocks, sectors, router)
+            fallback_rows = _fundamental_filter_rows(prompt, stocks, sectors, router)
+            if fallback_rows.get("rows"):
+                return fallback_rows
         live["router"] = router
-        live["explanation"] = router["ai_response_message"] + " " + str(live.get("explanation", ""))
+        live["explanation"] = (
+            router["ai_response_message"]
+            + (" " + str(live.get("explanation", "")))
+            + (f" Sector scope: {sector}." if sector else "")
+        )
         live["source"] = "Groq JSON router + cached Yahoo Finance OHLCV"
         return live
 

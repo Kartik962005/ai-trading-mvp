@@ -23,15 +23,6 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _clean_phone(value: str | None) -> str | None:
-    if not value:
-        return None
-    cleaned = re.sub(r"[^\d+]", "", value.strip())
-    if cleaned and not cleaned.startswith("+"):
-        cleaned = f"+{cleaned}"
-    return cleaned or None
-
-
 def _supabase_required():
     if not supabase:
         raise ValueError("Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
@@ -160,14 +151,11 @@ def create_alert(
     prompt: str,
     channels: list[str],
     email: str | None = None,
-    whatsapp: str | None = None,
 ) -> dict[str, Any]:
     sb = _supabase_required()
-    clean_channels = [channel for channel in channels if channel in {"email", "whatsapp"}]
+    clean_channels = [channel for channel in channels if channel == "email"]
     if not clean_channels:
         clean_channels = ["email"]
-    if "whatsapp" in clean_channels and not _clean_phone(whatsapp):
-        raise ValueError("WhatsApp alerts need a phone number with country code, like +919876543210.")
 
     rule = compile_alert_rule(prompt, ticker)
     payload = {
@@ -178,7 +166,6 @@ def create_alert(
         "rule": rule,
         "channels": clean_channels,
         "email": email or user.get("email"),
-        "whatsapp": _clean_phone(whatsapp),
         "status": "active",
         "last_checked_at": None,
         "last_triggered_at": None,
@@ -327,14 +314,20 @@ def evaluate_alert(alert: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _send_email(to_email: str, subject: str, text: str) -> dict[str, Any]:
+def _send_email(to_email: str, subject: str, text: str, html: str | None = None) -> dict[str, Any]:
     resend_key = os.getenv("RESEND_API_KEY")
     from_email = os.getenv("ALERT_FROM_EMAIL") or os.getenv("RESEND_FROM_EMAIL")
     if resend_key and from_email:
         response = requests.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={"from": from_email, "to": [to_email], "subject": subject, "text": text},
+            json={
+                "from": from_email,
+                "to": [to_email],
+                "subject": subject,
+                "text": text,
+                **({"html": html} if html else {}),
+            },
             timeout=12,
         )
         if response.ok:
@@ -358,6 +351,8 @@ def _send_email(to_email: str, subject: str, text: str) -> dict[str, Any]:
         msg["From"] = from_email
         msg["To"] = to_email
         msg.set_content(text)
+        if html:
+            msg.add_alternative(html, subtype="html")
         with smtplib.SMTP(smtp_host, int(os.getenv("SMTP_PORT", "587"))) as server:
             server.starttls()
             server.login(smtp_user, smtp_password)
@@ -365,65 +360,6 @@ def _send_email(to_email: str, subject: str, text: str) -> dict[str, Any]:
         return {"provider": "smtp", "status": "sent"}
 
     return {"provider": "none", "status": "skipped", "reason": "Email provider not configured."}
-
-
-def _send_whatsapp(to_phone: str, text: str) -> dict[str, Any]:
-    provider = os.getenv("WHATSAPP_PROVIDER", "twilio").lower()
-    if provider == "meta":
-        token = os.getenv("META_WHATSAPP_TOKEN")
-        phone_number_id = os.getenv("META_WHATSAPP_PHONE_NUMBER_ID")
-        template_name = os.getenv("META_WHATSAPP_TEMPLATE_NAME")
-        language = os.getenv("META_WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
-        if not token or not phone_number_id:
-            return {"provider": "meta", "status": "skipped", "reason": "Meta WhatsApp env vars missing."}
-        payload: dict[str, Any]
-        if template_name:
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": to_phone.replace("+", ""),
-                "type": "template",
-                "template": {
-                    "name": template_name,
-                    "language": {"code": language},
-                    "components": [{"type": "body", "parameters": [{"type": "text", "text": text[:900]}]}],
-                },
-            }
-        else:
-            payload = {"messaging_product": "whatsapp", "to": to_phone.replace("+", ""), "type": "text", "text": {"body": text}}
-        response = requests.post(
-            f"https://graph.facebook.com/v20.0/{phone_number_id}/messages",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=12,
-        )
-        if response.ok:
-            return {"provider": "meta", "status": "sent", "response": response.json()}
-        return {
-            "provider": "meta",
-            "status": "failed",
-            "status_code": response.status_code,
-            "response": response.text[:1000],
-        }
-
-    sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    from_phone = os.getenv("TWILIO_WHATSAPP_FROM")
-    if not sid or not auth_token or not from_phone:
-        return {"provider": "twilio", "status": "skipped", "reason": "Twilio WhatsApp env vars missing."}
-    response = requests.post(
-        f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-        data={"From": from_phone, "To": f"whatsapp:{to_phone}", "Body": text},
-        auth=(sid, auth_token),
-        timeout=12,
-    )
-    if response.ok:
-        return {"provider": "twilio", "status": "sent", "response": response.json()}
-    return {
-        "provider": "twilio",
-        "status": "failed",
-        "status_code": response.status_code,
-        "response": response.text[:1000],
-    }
 
 
 def notify_alert(alert: dict[str, Any], evaluation: dict[str, Any]) -> list[dict[str, Any]]:
@@ -442,11 +378,6 @@ def notify_alert(alert: dict[str, Any], evaluation: dict[str, Any]) -> list[dict
             results.append(_send_email(alert["email"], subject, message))
         except Exception as exc:
             results.append({"provider": "email", "status": "failed", "error": str(exc)})
-    if "whatsapp" in channels and alert.get("whatsapp"):
-        try:
-            results.append(_send_whatsapp(alert["whatsapp"], message))
-        except Exception as exc:
-            results.append({"provider": "whatsapp", "status": "failed", "error": str(exc)})
     return results
 
 

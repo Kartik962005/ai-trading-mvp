@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -8,6 +9,8 @@ from typing import Any
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
 
 load_dotenv()
@@ -59,12 +62,31 @@ from app.services.alert_service import (
     notify_alert,
     update_alert_status,
 )
+from app.services.daily_trade_service import (
+    disable_daily_alerts,
+    enable_daily_alerts,
+    get_admin_status,
+    get_notification_preference,
+    get_daily_update_preference,
+    get_signals_history,
+    get_signals_today,
+    process_scheduled_daily_alerts,
+    run_daily_prediction,
+    run_daily_forecast,
+    run_outcome_tracking,
+    run_daily_review,
+    send_instant_signal_email,
+    unsubscribe_daily_alerts,
+    update_notification_preference,
+    update_daily_update_preference,
+)
 from app.strategies.engine import run_analysis, evaluate_strategies, fetch_global_market_news
 from app.strategies.nlp_backtester import run_custom_backtest
 from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
 
 
 INDEX_TICKERS = ["^NSEI", "^BSESN", "^IXIC", "^GSPC"]
+IST = ZoneInfo("Asia/Kolkata")
 
 
 @app.on_event("startup")
@@ -93,6 +115,31 @@ async def start_alert_checker():
             except Exception as exc:
                 print(f"[Alerts] scheduled check failed: {exc}")
             await asyncio.sleep(interval)
+
+    asyncio.create_task(loop())
+
+
+@app.on_event("startup")
+async def start_daily_trade_updates():
+    if os.getenv("DAILY_UPDATES_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+        return
+
+    async def loop():
+        await asyncio.sleep(20)
+        outcome_tracked_for: str | None = None
+        while True:
+            now = datetime.now(IST)
+            today = now.date().isoformat()
+            is_trading_weekday = now.weekday() < 5
+            try:
+                if is_trading_weekday:
+                    process_scheduled_daily_alerts()
+                    if now.hour >= 16 and outcome_tracked_for != today:
+                        run_outcome_tracking(review_day=now.date())
+                        outcome_tracked_for = today
+            except Exception as exc:
+                print(f"[DailyTrade] scheduled update failed: {exc}")
+            await asyncio.sleep(60)
 
     asyncio.create_task(loop())
 
@@ -243,11 +290,36 @@ class AlertCreateRequest(BaseModel):
     prompt: str
     channels: list[str] = ["email"]
     email: str | None = None
-    whatsapp: str | None = None
 
 
 class AlertStatusRequest(BaseModel):
     status: str
+
+
+class DailyUpdatePreferenceRequest(BaseModel):
+    enabled: bool
+    email: str | None = None
+
+
+class NotificationPreferenceRequest(BaseModel):
+    email: str | None = None
+    daily_stock_email_enabled: bool | None = None
+    market: str | None = None
+    risk_level: str | None = None
+    email_time: str | None = None
+    signal_type: str | None = None
+    consent_version: str | None = None
+    consent_accepted_at: str | None = None
+
+
+class AdminDailyPredictionRequest(BaseModel):
+    market: str | None = None
+    risk_level: str | None = None
+    email_time: str | None = None
+    signal_type: str | None = None
+    target_date: str | None = None
+    send_email: bool = False
+    force: bool = False
 
 
 @app.post("/api/v1/screener/search")
@@ -314,7 +386,6 @@ async def post_alert(request: Request, body: AlertCreateRequest):
             prompt=body.prompt,
             channels=body.channels,
             email=body.email,
-            whatsapp=body.whatsapp,
         )
         initial_check = check_alert(alert, send_notifications=True)
         return {"alert": alert, "initial_check": initial_check}
@@ -380,6 +451,206 @@ async def check_alerts_now(request: Request):
         raise HTTPException(status_code=403, detail="Invalid alert admin key")
     try:
         return check_active_alerts(limit=int(os.getenv("ALERT_CHECK_BATCH_SIZE", "100")))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/daily-updates/preferences")
+@limiter.limit("60/minute")
+async def get_daily_updates_preference(request: Request):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"preference": get_daily_update_preference(user)}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/v1/daily-updates/preferences")
+@limiter.limit("20/minute")
+async def put_daily_updates_preference(request: Request, body: DailyUpdatePreferenceRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        preference = update_daily_update_preference(user, enabled=body.enabled, email=body.email)
+        return {"preference": preference}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/daily-updates/run-review")
+@limiter.limit("2/minute")
+async def run_daily_updates_review(request: Request):
+    admin_key = os.getenv("ALERT_ADMIN_KEY")
+    if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
+        raise HTTPException(status_code=403, detail="Invalid alert admin key")
+    try:
+        return run_daily_review(send_email=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/daily-updates/run-forecast")
+@limiter.limit("2/minute")
+async def run_daily_updates_forecast(request: Request):
+    admin_key = os.getenv("ALERT_ADMIN_KEY")
+    if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
+        raise HTTPException(status_code=403, detail="Invalid alert admin key")
+    try:
+        return run_daily_forecast(send_email=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/notification-preferences")
+@app.get("/api/v1/notification-preferences")
+@limiter.limit("60/minute")
+async def get_notification_preferences(request: Request):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"preference": get_notification_preference(user)}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/notification-preferences")
+@app.put("/api/v1/notification-preferences")
+@limiter.limit("20/minute")
+async def put_notification_preferences(request: Request, body: NotificationPreferenceRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        preference = update_notification_preference(
+            user,
+            body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else body.dict(exclude_none=True),
+        )
+        return {"preference": preference}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notification-preferences/enable-daily-alerts")
+@app.post("/api/v1/notification-preferences/enable-daily-alerts")
+@limiter.limit("20/minute")
+async def post_enable_daily_alerts(request: Request, body: NotificationPreferenceRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        preference = enable_daily_alerts(
+            user,
+            body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else body.dict(exclude_none=True),
+        )
+        return {"preference": preference}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notification-preferences/disable-daily-alerts")
+@app.post("/api/v1/notification-preferences/disable-daily-alerts")
+@limiter.limit("20/minute")
+async def post_disable_daily_alerts(request: Request):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        preference = disable_daily_alerts(user)
+        return {"preference": preference}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notification-preferences/send-now")
+@app.post("/api/v1/notification-preferences/send-now")
+@limiter.limit("10/minute")
+async def post_send_notification_now(request: Request, body: NotificationPreferenceRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        result = send_instant_signal_email(
+            user,
+            body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else body.dict(exclude_none=True),
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/unsubscribe")
+@app.get("/api/v1/unsubscribe")
+@limiter.limit("20/minute")
+async def get_unsubscribe(request: Request, token: str):
+    try:
+        result = unsubscribe_daily_alerts(token)
+        return HTMLResponse(
+            "<html><body style='font-family:Arial,sans-serif;padding:32px'>"
+            "<h1>Daily stock emails turned off</h1>"
+            "<p>You have been unsubscribed successfully. You can re-enable alerts anytime from your Bullseye account settings.</p>"
+            f"<p>User: {result['user_id']}</p>"
+            "</body></html>"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/run-daily-stock-prediction")
+@app.post("/api/v1/admin/run-daily-stock-prediction")
+@limiter.limit("4/minute")
+async def post_run_daily_stock_prediction(request: Request, body: AdminDailyPredictionRequest):
+    admin_key = os.getenv("ALERT_ADMIN_KEY")
+    if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
+        raise HTTPException(status_code=403, detail="Invalid alert admin key")
+    try:
+        return run_daily_prediction(
+            market=body.market or "NSE",
+            risk_level=body.risk_level or "Balanced",
+            signal_type=body.signal_type or "Next-day swing",
+            send_email=body.send_email,
+            force=body.force,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/signals/today")
+@app.get("/api/v1/signals/today")
+@limiter.limit("30/minute")
+async def get_today_signals_endpoint(request: Request, market: str = "NSE", risk_level: str = "Balanced", signal_type: str = "Next-day swing"):
+    try:
+        return get_signals_today(market=market, risk_level=risk_level, signal_type=signal_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/signals/history")
+@app.get("/api/v1/signals/history")
+@limiter.limit("30/minute")
+async def get_signal_history_endpoint(request: Request, limit: int = 20):
+    try:
+        return get_signals_history(limit=max(1, min(limit, 60)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/daily-stock-prediction/status")
+@app.get("/api/v1/admin/daily-stock-prediction/status")
+@limiter.limit("10/minute")
+async def get_daily_stock_prediction_status(request: Request):
+    admin_key = os.getenv("ALERT_ADMIN_KEY")
+    if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
+        raise HTTPException(status_code=403, detail="Invalid alert admin key")
+    try:
+        return get_admin_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
