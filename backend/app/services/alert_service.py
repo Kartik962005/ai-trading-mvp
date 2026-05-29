@@ -400,7 +400,17 @@ def check_alert(alert: dict[str, Any], send_notifications: bool = True) -> dict[
                 can_notify = True
         if send_notifications and can_notify:
             notifications = notify_alert(alert, evaluation)
-            updates["last_triggered_at"] = now
+            sent_ok = any(n.get("status") == "sent" for n in notifications)
+            if not sent_ok:
+                for n in notifications:
+                    print(
+                        f"[Alerts] email send failed for alert {alert['id']} "
+                        f"to {alert.get('email')}: {n}"
+                    )
+            # Only start the cooldown when an email actually went out, so a
+            # transient/config failure doesn't silently block retries for hours.
+            if sent_ok:
+                updates["last_triggered_at"] = now
             sb.table(EVENT_TABLE).insert(
                 {
                     "id": str(uuid4()),
