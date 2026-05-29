@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Swiss Editorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--ink:#16140f;--paper:#f4f2ec;--red:#e1341e;--line:#d9d6cc}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .wrap{max-width:1200px;margin:0 auto;padding:0 48px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:26px 0;border-bottom:1px solid var(--ink)}
+  .brand{font-weight:800;font-size:20px;letter-spacing:.04em}
+  .nav{display:flex;gap:34px;font-size:12.5px;letter-spacing:.14em;text-transform:uppercase}
+  .nav a{color:var(--ink);text-decoration:none}.nav a:hover{color:var(--red)}
+  .meta{display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#6e6a5f}
+  .hero{padding:64px 0 12px}
+  h1{font-size:104px;line-height:.93;font-weight:800;letter-spacing:-.04em;max-width:14ch}
+  h1 .r{color:var(--red)}
+  .lead{display:flex;gap:64px;align-items:flex-end;margin-top:40px;padding-bottom:40px;border-bottom:1px solid var(--ink)}
+  .lead p{font-size:17px;line-height:1.55;max-width:46ch;color:#3b372e}
+  .searchline{flex:1;min-width:320px}
+  .searchline .lbl{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6e6a5f;margin-bottom:10px}
+  .searchline .field{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid var(--ink);padding-bottom:12px}
+  .searchline input{border:none;background:transparent;outline:none;font-family:'JetBrains Mono';font-size:16px;color:var(--ink);width:100%}
+  .searchline input::placeholder{color:#9a958a}
+  .searchline .go{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--red);white-space:nowrap;cursor:pointer}
+  .features{display:grid;grid-template-columns:repeat(4,1fr);margin-top:0}
+  .feat{padding:34px 26px 30px 0;border-right:1px solid var(--line)}
+  .feat:last-child{border-right:none;padding-right:0}
+  .feat .no{font-family:'JetBrains Mono';font-size:13px;color:var(--red);margin-bottom:26px}
+  .feat h3{font-size:19px;font-weight:700;margin-bottom:10px;letter-spacing:-.01em}
+  .feat p{font-size:13.5px;line-height:1.5;color:#6e6a5f}
+  .signals{margin-top:8px;border-top:1px solid var(--ink);padding-top:18px}
+  .sig-h{display:flex;justify-content:space-between;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#6e6a5f;margin-bottom:6px}
+  .srow{display:grid;grid-template-columns:1fr auto auto;gap:40px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+  .srow .nm{font-weight:600;font-size:15px}.srow .nm span{color:#9a958a;font-weight:400;margin-left:10px;font-size:13px}
+  .srow .c{font-family:'JetBrains Mono';font-size:14px}
+  .v{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .buy{color:#1f7a3d}.sell{color:var(--red)}
+  .foot{padding:30px 0;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:#9a958a}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">BULLSEYE<span style="color:var(--red)">.</span></div>
+    <nav class="nav"><a>Markets</a><a>Signals</a><a>Screener</a><a>Pricing</a><a style="color:var(--red)">Sign in</a></nav>
+  </div>
+  <div class="meta"><span>NSE / BSE / US Equities</span><span>600+ Instruments · Updated Every Close</span><span>Est. 2025</span></div>
+
+  <section class="hero">
+    <h1>Search assets,<br>not <span class="r">hope.</span></h1>
+    <div class="lead">
+      <p>A signal engine that ranks tomorrow's setups, prices its own confidence, and shows the reasoning. Backtested leakage-safe — never sugar-coated.</p>
+      <div class="searchline">
+        <div class="lbl">Ask the engine</div>
+        <div class="field"><input placeholder="buy RELIANCE before Friday close?" /><span class="go">Analyze →</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feat"><div class="no">01</div><h3>Daily 10 Signals</h3><p>The evening dispatch — top ranked setups for the next session.</p></div>
+    <div class="feat"><div class="no">02</div><h3>AI Search</h3><p>Plain-English questions in; verdict, entry, target and stop out.</p></div>
+    <div class="feat"><div class="no">03</div><h3>Smart Alerts</h3><p>Name the trigger. We keep watch on the tape for you.</p></div>
+    <div class="feat"><div class="no">04</div><h3>Confidence</h3><p>An honest probability on every call. No false guarantees.</p></div>
+  </section>
+
+  <section class="signals">
+    <div class="sig-h"><span>Live Scan — Selected</span><span>Confidence / Verdict</span></div>
+    <div class="srow"><div class="nm">TATASTEEL<span>Tata Steel</span></div><div class="c">71%</div><div class="v buy">Buy</div></div>
+    <div class="srow"><div class="nm">INFY<span>Infosys</span></div><div class="c">64%</div><div class="v sell">Sell</div></div>
+    <div class="srow"><div class="nm">HDFCBANK<span>HDFC Bank</span></div><div class="c">68%</div><div class="v buy">Buy</div></div>
+  </section>
+
+  <div class="foot">Leakage-safe backtested · Walk-forward validated · Not investment advice</div>
+</div>
+</body>
+</html>

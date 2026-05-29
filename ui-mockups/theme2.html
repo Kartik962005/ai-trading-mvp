@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Aurora Glass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;color:#e9e9ff;background:#0a0a1f;overflow-x:hidden;position:relative}
+  body::before{content:"";position:fixed;inset:-20%;z-index:0;background:
+    radial-gradient(45% 40% at 18% 22%,rgba(99,102,241,.55),transparent 70%),
+    radial-gradient(40% 38% at 82% 18%,rgba(236,72,153,.42),transparent 70%),
+    radial-gradient(50% 45% at 60% 88%,rgba(34,211,238,.40),transparent 70%),
+    radial-gradient(40% 40% at 8% 90%,rgba(168,85,247,.38),transparent 70%);
+    filter:blur(40px);animation:drift 16s ease-in-out infinite alternate}
+  @keyframes drift{to{transform:translate(20px,-18px) scale(1.05)}}
+  .wrap{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:0 32px}
+  .glass{background:rgba(255,255,255,.07);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+  nav{display:flex;align-items:center;justify-content:space-between;margin-top:22px;padding:14px 24px;border-radius:18px}
+  .logo{display:flex;align-items:center;gap:12px;font-weight:800;font-size:21px;letter-spacing:.02em}
+  .ring{width:28px;height:28px;border-radius:50%;background:conic-gradient(from 0deg,#818cf8,#ec4899,#22d3ee,#818cf8);display:grid;place-items:center}
+  .ring::after{content:"";width:11px;height:11px;border-radius:50%;background:#0a0a1f}
+  .navlinks{display:flex;gap:30px;font-size:14px;color:#c7c9f5;font-weight:500}
+  .navlinks span{cursor:pointer}.navlinks span:hover{color:#fff}
+  .btn{padding:11px 22px;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
+  .btn-ghost{color:#dcdcff;border:1px solid rgba(255,255,255,.2)}
+  .btn-grad{background:linear-gradient(90deg,#818cf8,#ec4899);color:#fff;box-shadow:0 8px 24px rgba(129,140,248,.45)}
+  .hero{text-align:center;padding:72px 0 26px}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#c7d2fe;padding:8px 16px;border-radius:30px;margin-bottom:26px}
+  .chip .d{width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 10px #34d399}
+  h1{font-size:72px;line-height:1.02;font-weight:900;letter-spacing:-.03em;color:#fff}
+  h1 .g{background:linear-gradient(90deg,#a5b4fc,#f0abfc,#67e8f9);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin:24px auto 0;max-width:580px;color:#b9bce0;font-size:18px;line-height:1.6}
+  .search{margin:40px auto 0;max-width:680px;display:flex;align-items:center;gap:12px;padding:12px 12px 12px 22px;border-radius:18px}
+  .search input{flex:1;background:transparent;border:none;outline:none;color:#fff;font-size:16px}
+  .search input::placeholder{color:#9fa2cf}
+  .search .go{background:linear-gradient(90deg,#818cf8,#ec4899);color:#fff;padding:13px 26px;border-radius:13px;font-weight:700;font-size:14px;box-shadow:0 8px 20px rgba(236,72,153,.4)}
+  .pills{display:flex;gap:12px;justify-content:center;margin-top:22px}
+  .pill{padding:9px 24px;border-radius:30px;font-size:14px;color:#c7c9f5;border:1px solid rgba(255,255,255,.16)}
+  .pill.on{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.4)}
+  .grid{display:grid;grid-template-columns:1.25fr 1fr;gap:22px;margin-top:62px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{border-radius:20px;padding:24px}
+  .ci{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;margin-bottom:16px;font-size:22px;color:#fff}
+  .c1{background:linear-gradient(135deg,#818cf8,#6366f1)}.c2{background:linear-gradient(135deg,#22d3ee,#0ea5e9)}
+  .c3{background:linear-gradient(135deg,#f472b6,#ec4899)}.c4{background:linear-gradient(135deg,#a78bfa,#8b5cf6)}
+  .card h3{font-size:18px;color:#fff;margin-bottom:8px;font-weight:700}
+  .card p{font-size:13.5px;color:#b9bce0;line-height:1.55}
+  .scan{border-radius:20px;padding:24px}
+  .scan-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+  .scan-h .t{font-size:15px;font-weight:700;color:#fff}
+  .live{font-size:12px;color:#86efac;display:flex;align-items:center;gap:6px}.live::before{content:"";width:7px;height:7px;border-radius:50%;background:#86efac;box-shadow:0 0 10px #86efac;animation:bl 1.4s infinite}
+  @keyframes bl{50%{opacity:.3}}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.08)}.row:last-child{border:none}
+  .sym{font-weight:700;color:#fff;font-size:15px}.nm{font-size:12px;color:#9fa2cf}
+  .verdict{font-size:12px;font-weight:700;padding:5px 12px;border-radius:9px}
+  .buy{background:rgba(52,211,153,.2);color:#86efac}.sell{background:rgba(244,114,182,.2);color:#f9a8d4}
+  .conf{font-weight:700;color:#c4b5fd;font-size:14px}
+  .foot{text-align:center;color:#8a8db5;font-size:13px;padding:48px 0 34px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="glass">
+    <div class="logo"><span class="ring"></span>Bullseye</div>
+    <div class="navlinks"><span>Markets</span><span>Signals</span><span>Screener</span><span>Pricing</span></div>
+    <div style="display:flex;gap:12px"><div class="btn btn-ghost">Sign in</div><div class="btn btn-grad">Get started</div></div>
+  </nav>
+
+  <section class="hero">
+    <span class="chip glass"><span class="d"></span>Tracking 600+ NSE &amp; BSE stocks · updated every close</span>
+    <h1>Trade with a<br><span class="g">clear-eyed</span> edge.</h1>
+    <p class="sub">Bullseye ranks tomorrow's setups, scores its own confidence, and explains every call — calmly, honestly, beautifully.</p>
+    <div class="search glass">
+      <input placeholder="Ask anything — “buy RELIANCE before Friday close?”" />
+      <div class="go">Analyze</div>
+    </div>
+    <div class="pills"><div class="pill on">NSE</div><div class="pill">BSE</div><div class="pill">US</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="cards">
+      <div class="card glass"><div class="ci c1">◎</div><h3>Daily 10 Signals</h3><p>Your top ranked setups, emailed each evening for the next session.</p></div>
+      <div class="card glass"><div class="ci c2">⌕</div><h3>AI Search</h3><p>Plain-English questions in, verdict + entry/target/stop out.</p></div>
+      <div class="card glass"><div class="ci c3">⚡</div><h3>Smart Alerts</h3><p>Describe the trigger; we watch the tape and ping you.</p></div>
+      <div class="card glass"><div class="ci c4">▤</div><h3>Confidence Score</h3><p>An honest probability on every call. No fake guarantees.</p></div>
+    </div>
+    <div class="scan glass">
+      <div class="scan-h"><span class="t">Live Scan</span><span class="live">Live</span></div>
+      <div class="row"><div><div class="sym">TATASTEEL</div><div class="nm">Tata Steel</div></div><svg width="70" height="26"><polyline points="0,20 14,16 28,18 42,8 56,10 70,3" fill="none" stroke="#86efac" stroke-width="2.2"/></svg><span class="conf">71%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">INFY</div><div class="nm">Infosys</div></div><svg width="70" height="26"><polyline points="0,6 14,9 28,7 42,14 56,12 70,20" fill="none" stroke="#f9a8d4" stroke-width="2.2"/></svg><span class="conf">64%</span><span class="verdict sell">SELL</span></div>
+      <div class="row"><div><div class="sym">HDFCBANK</div><div class="nm">HDFC Bank</div></div><svg width="70" height="26"><polyline points="0,18 14,14 28,15 42,9 56,11 70,5" fill="none" stroke="#86efac" stroke-width="2.2"/></svg><span class="conf">68%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">ADANIENT</div><div class="nm">Adani Enterprises</div></div><svg width="70" height="26"><polyline points="0,10 14,8 28,12 42,7 56,9 70,4" fill="none" stroke="#86efac" stroke-width="2.2"/></svg><span class="conf">59%</span><span class="verdict buy">BUY</span></div>
+    </div>
+  </section>
+
+  <div class="foot">Leakage-safe backtested · Walk-forward validated · Not investment advice</div>
+</div>
+</body>
+</html>

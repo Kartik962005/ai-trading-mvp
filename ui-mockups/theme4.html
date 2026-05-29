@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Editorial Gold</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--gold:#d4af37;--gold2:#f4d27a}
+  body{font-family:'Inter',system-ui,sans-serif;color:#e8e6df;background:#0b0b0d;overflow-x:hidden;
+    background-image:radial-gradient(60% 50% at 50% -8%,rgba(212,175,55,.12),transparent 70%)}
+  .wrap{max-width:1200px;margin:0 auto;padding:0 36px}
+  .serif{font-family:'Playfair Display',serif}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .gold{color:var(--gold2)}
+  nav{display:flex;align-items:center;justify-content:space-between;padding:24px 0;border-bottom:1px solid rgba(212,175,55,.22)}
+  .logo{display:flex;align-items:center;gap:12px;font-weight:800;font-size:23px;letter-spacing:.04em}
+  .mk{width:26px;height:26px;border-radius:50%;border:2px solid var(--gold);position:relative}
+  .mk::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--gold)}
+  .navlinks{display:flex;gap:34px;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#a9a496}
+  .navlinks span{cursor:pointer}.navlinks span:hover{color:var(--gold2)}
+  .btn{padding:11px 22px;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}
+  .btn-ghost{color:#cfc9b8;border:1px solid rgba(212,175,55,.4)}
+  .btn-gold{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1a1407;font-weight:700;box-shadow:0 8px 24px rgba(212,175,55,.28)}
+  .hero{padding:62px 0 28px;text-align:center}
+  .kicker{font-size:12px;letter-spacing:.4em;text-transform:uppercase;color:var(--gold);margin-bottom:24px}
+  h1{font-family:'Playfair Display',serif;font-size:80px;line-height:1.02;font-weight:800;color:#f7f4ea;letter-spacing:-.01em}
+  h1 em{font-style:italic;color:var(--gold2)}
+  .sub{margin:24px auto 0;max-width:600px;color:#a9a496;font-size:18px;line-height:1.65}
+  .search{margin:40px auto 0;max-width:680px;display:flex;align-items:center;gap:14px;background:#121214;border:1px solid rgba(212,175,55,.35);border-radius:4px;padding:16px 20px}
+  .search input{flex:1;background:transparent;border:none;outline:none;color:#f0ece1;font-family:'JetBrains Mono';font-size:15px}
+  .search input::placeholder{color:#7d7868}
+  .search .go{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1a1407;padding:11px 24px;border-radius:3px;font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase}
+  .pills{display:flex;gap:0;justify-content:center;margin-top:24px;border:1px solid rgba(212,175,55,.3);border-radius:4px;width:max-content;margin-left:auto;margin-right:auto;overflow:hidden}
+  .pill{padding:9px 26px;font-size:13px;letter-spacing:.16em;color:#a9a496;border-right:1px solid rgba(212,175,55,.2)}
+  .pill:last-child{border:none}
+  .pill.on{background:rgba(212,175,55,.16);color:var(--gold2)}
+  .grid{display:grid;grid-template-columns:1.25fr 1fr;gap:26px;margin-top:64px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(212,175,55,.22);border:1px solid rgba(212,175,55,.22)}
+  .card{background:#0d0d10;padding:26px}
+  .ci{font-size:22px;color:var(--gold2);margin-bottom:14px}
+  .card h3{font-family:'Playfair Display',serif;font-size:20px;color:#f3efe4;margin-bottom:8px;font-weight:700}
+  .card p{font-size:13px;color:#94907f;line-height:1.55}
+  .scan{background:#0d0d10;border:1px solid rgba(212,175,55,.3);padding:26px}
+  .scan-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid rgba(212,175,55,.25)}
+  .scan-h .t{font-family:'Playfair Display',serif;font-size:18px;color:var(--gold2)}
+  .live{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8fbf8f;display:flex;align-items:center;gap:6px}.live::before{content:"";width:6px;height:6px;border-radius:50%;background:#8fbf8f;animation:bl 1.4s infinite}
+  @keyframes bl{50%{opacity:.3}}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(212,175,55,.1)}.row:last-child{border:none}
+  .sym{font-family:'JetBrains Mono';font-weight:700;font-size:14px;color:#f0ece1}.nm{font-size:11px;color:#7d7868}
+  .verdict{font-size:11px;font-weight:700;letter-spacing:.12em;padding:4px 11px;border-radius:3px}
+  .buy{background:rgba(143,191,143,.16);color:#a7d3a7}.sell{background:rgba(201,123,123,.16);color:#dba3a3}
+  .conf{font-family:'JetBrains Mono';font-weight:700;color:var(--gold2);font-size:13px}
+  .foot{text-align:center;color:#6b6757;font-size:12px;letter-spacing:.14em;padding:48px 0 34px;border-top:1px solid rgba(212,175,55,.18);margin-top:46px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <div class="logo"><span class="mk"></span>BULLSEYE</div>
+    <div class="navlinks"><span>Markets</span><span>Signals</span><span>Research</span><span>Pricing</span></div>
+    <div style="display:flex;gap:12px"><div class="btn btn-ghost">Sign in</div><div class="btn btn-gold">Get started</div></div>
+  </nav>
+
+  <section class="hero">
+    <div class="kicker">The discerning trader's terminal</div>
+    <h1>Conviction,<br><em>quantified.</em></h1>
+    <p class="sub">Bullseye ranks tomorrow's setups across 600+ NSE &amp; BSE names, prices its own confidence, and lays bare the reasoning — research-grade, never theatrical.</p>
+    <div class="search">
+      <span class="mono gold">&gt;</span>
+      <input placeholder="Ask anything — buy RELIANCE before Friday close?" />
+      <div class="go">Analyze</div>
+    </div>
+    <div class="pills"><div class="pill on">NSE</div><div class="pill">BSE</div><div class="pill">US</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="cards">
+      <div class="card"><div class="ci">◎</div><h3>Daily 10 Signals</h3><p>The evening dispatch: top ranked setups for the next session.</p></div>
+      <div class="card"><div class="ci">⌕</div><h3>AI Search</h3><p>A question in prose; a verdict with entry, target and stop.</p></div>
+      <div class="card"><div class="ci">⚡</div><h3>Smart Alerts</h3><p>Name the trigger. The terminal keeps the watch for you.</p></div>
+      <div class="card"><div class="ci">▤</div><h3>Confidence Score</h3><p>An honest probability on every call. No false guarantees.</p></div>
+    </div>
+    <div class="scan">
+      <div class="scan-h"><span class="t">Live Scan</span><span class="live">Live</span></div>
+      <div class="row"><div><div class="sym">TATASTEEL</div><div class="nm">Tata Steel</div></div><svg width="64" height="24"><polyline points="0,18 13,15 26,16 38,8 51,9 64,3" fill="none" stroke="#a7d3a7" stroke-width="2"/></svg><span class="conf">71%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">INFY</div><div class="nm">Infosys</div></div><svg width="64" height="24"><polyline points="0,6 13,8 26,7 38,13 51,11 64,18" fill="none" stroke="#dba3a3" stroke-width="2"/></svg><span class="conf">64%</span><span class="verdict sell">SELL</span></div>
+      <div class="row"><div><div class="sym">HDFCBANK</div><div class="nm">HDFC Bank</div></div><svg width="64" height="24"><polyline points="0,16 13,13 26,14 38,8 51,10 64,4" fill="none" stroke="#a7d3a7" stroke-width="2"/></svg><span class="conf">68%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">ADANIENT</div><div class="nm">Adani Enterprises</div></div><svg width="64" height="24"><polyline points="0,10 13,8 26,11 38,6 51,8 64,4" fill="none" stroke="#a7d3a7" stroke-width="2"/></svg><span class="conf">59%</span><span class="verdict buy">BUY</span></div>
+    </div>
+  </section>
+
+  <div class="foot">LEAKAGE-SAFE BACKTESTED · WALK-FORWARD VALIDATED · NOT INVESTMENT ADVICE</div>
+</div>
+</body>
+</html>

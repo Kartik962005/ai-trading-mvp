@@ -105,14 +105,18 @@ def _fetch_with_fallback(sb, ticker: str) -> tuple[str, pd.DataFrame]:
     return ticker, df
 
 
-def load_frames(sb, market: str):
-    """Load usable price frames + index frame for a market. Reusable by sweeps."""
+def load_frames(sb, market: str, symbols: list[str] | None = None, min_bars: int = 120):
+    """Load usable price frames + index frame for a market. Reusable by sweeps.
+
+    symbols: explicit ticker list to load. Defaults to the built-in NSE_UNIVERSE.
+    """
     index_symbol = MARKET_INDEX[market]
+    universe = symbols if symbols is not None else NSE_UNIVERSE
     price_frames: dict[str, pd.DataFrame] = {}
     missing: list[str] = []
-    for ticker in NSE_UNIVERSE:
+    for ticker in universe:
         key, df = _fetch_with_fallback(sb, ticker)
-        if df.empty or len(df) < 120:
+        if df.empty or len(df) < min_bars:
             missing.append(ticker)
             continue
         price_frames[key] = df

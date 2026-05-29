@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Redesign / Makeover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#070b10;--panel:#0c1219;--panel2:#0f1722;--line:#1b2733;
+    --fg:#eef4f8;--mut:#7d8b99;--faint:#566472;
+    --cyan:#22d3ee;--cyan2:#67e8f9;--emer:#34d399;--rose:#fb7185;
+  }
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .gk{font-family:'Space Grotesk',sans-serif}
+  .mn{font-family:'JetBrains Mono',monospace}
+  /* ambient glow, but restrained */
+  .amb{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:radial-gradient(60% 40% at 80% -5%,rgba(34,211,238,.10),transparent 60%),
+               radial-gradient(50% 40% at 0% 10%,rgba(52,211,153,.07),transparent 60%)}
+  .wrap{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:0 32px}
+
+  /* TICKER */
+  .tick{position:relative;z-index:2;border-bottom:1px solid var(--line);background:rgba(0,0,0,.4);backdrop-filter:blur(12px);overflow:hidden}
+  .tick .row{display:flex;gap:46px;padding:11px 32px;white-space:nowrap;animation:scroll 30s linear infinite;font-family:'JetBrains Mono';font-size:12px}
+  @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .ti{display:flex;gap:9px;align-items:center;color:var(--mut)}
+  .ti b{color:var(--fg);font-weight:500;letter-spacing:.04em}
+  .up{color:var(--emer)}.dn{color:var(--rose)}
+
+  /* NAV */
+  nav{position:relative;z-index:2;display:flex;align-items:center;gap:24px;padding:20px 0;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:12px}
+  .mk{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;font-size:14px;color:#04211f;
+    background:linear-gradient(135deg,#a7f3e8,#22d3ee 55%,#34d399);box-shadow:0 6px 20px rgba(34,211,238,.28)}
+  .bname{font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:.14em}
+  .bname .e{color:var(--cyan)}
+  .bsub{font-family:'Space Grotesk';font-size:9px;font-weight:600;letter-spacing:.26em;text-transform:uppercase;color:var(--faint);margin-top:3px}
+  .navsearch{flex:1;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:0 16px;height:46px;max-width:420px;margin:0 auto}
+  .navsearch input{flex:1;background:transparent;border:none;outline:none;color:var(--fg);font-family:'JetBrains Mono';font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  .navsearch input::placeholder{color:var(--faint)}
+  .navlinks{display:flex;gap:26px;font-size:13.5px;color:var(--mut)}
+  .navlinks span{cursor:pointer}.navlinks span:hover{color:var(--fg)}
+  .signin{font-size:13.5px;color:var(--fg);cursor:pointer}
+  .start{font-family:'Space Grotesk';font-weight:600;font-size:13px;letter-spacing:.04em;color:#04211f;background:linear-gradient(135deg,var(--cyan2),var(--cyan) 60%,var(--emer));padding:11px 20px;border-radius:11px;cursor:pointer;box-shadow:0 6px 18px rgba(34,211,238,.25)}
+
+  /* HERO */
+  .hero{padding:68px 0 0;display:grid;grid-template-columns:1.15fr .85fr;gap:54px;align-items:center}
+  .chip{display:inline-flex;align-items:center;gap:9px;font-family:'JetBrains Mono';font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan2);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.22);padding:7px 14px;border-radius:30px}
+  .chip .d{width:6px;height:6px;border-radius:50%;background:var(--emer);box-shadow:0 0 10px var(--emer)}
+  h1{font-family:'Space Grotesk';font-weight:700;font-size:62px;line-height:1.02;letter-spacing:-.02em;margin-top:24px}
+  h1 .g{background:linear-gradient(120deg,#a7f3e8,#22d3ee 45%,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lead{margin-top:22px;max-width:480px;color:var(--mut);font-size:17px;line-height:1.62}
+  .search{margin-top:32px;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:8px 8px 8px 18px;max-width:520px;box-shadow:0 18px 40px rgba(0,0,0,.4)}
+  .search .pr{color:var(--cyan);font-family:'JetBrains Mono';font-weight:700}
+  .search input{flex:1;background:transparent;border:none;outline:none;color:var(--fg);font-family:'JetBrains Mono';font-size:14px}
+  .search input::placeholder{color:var(--faint)}
+  .search .go{font-family:'Space Grotesk';font-weight:600;font-size:13px;letter-spacing:.06em;color:#04211f;background:linear-gradient(135deg,var(--cyan2),var(--cyan) 60%,var(--emer));padding:12px 22px;border-radius:11px}
+  .pills{display:flex;gap:8px;margin-top:18px}
+  .pill{font-family:'JetBrains Mono';font-size:11.5px;letter-spacing:.14em;color:var(--mut);padding:8px 18px;border:1px solid var(--line);border-radius:30px;background:var(--panel)}
+  .pill.on{color:var(--cyan2);border-color:rgba(34,211,238,.4);background:rgba(34,211,238,.08)}
+  .stats{display:flex;gap:34px;margin-top:34px}
+  .stat .n{font-family:'Space Grotesk';font-weight:700;font-size:26px}
+  .stat .l{font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-top:4px}
+
+  /* LIVE SCAN CARD */
+  .scan{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:0 26px 60px rgba(0,0,0,.5)}
+  .scan-h{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .scan-h .t{font-family:'Space Grotesk';font-weight:700;font-size:15px;letter-spacing:.02em}
+  .live{font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--emer);display:flex;align-items:center;gap:7px}
+  .live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--emer);box-shadow:0 0 8px var(--emer);animation:bl 1.4s infinite}
+  @keyframes bl{50%{opacity:.3}}
+  .row{display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:15px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border:none;padding-bottom:2px}
+  .sym{font-family:'Space Grotesk';font-weight:700;font-size:15px}
+  .nm{font-family:'JetBrains Mono';font-size:10.5px;color:var(--faint);margin-top:2px}
+  .conf{font-family:'JetBrains Mono';font-weight:700;font-size:14px;color:var(--cyan2);text-align:right}
+  .conf .cl{display:block;font-size:9px;letter-spacing:.12em;color:var(--faint);font-weight:400;margin-top:2px}
+  .verdict{font-family:'Space Grotesk';font-weight:700;font-size:11px;letter-spacing:.12em;padding:6px 12px;border-radius:8px;text-align:center}
+  .buy{color:var(--emer);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.28)}
+  .sell{color:var(--rose);background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.28)}
+
+  /* FEATURES */
+  .features{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:80px}
+  .feat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px 22px;transition:.2s}
+  .feat:hover{border-color:rgba(34,211,238,.3);transform:translateY(-3px)}
+  .feat .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:19px;color:var(--cyan2);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.18);margin-bottom:16px}
+  .feat h3{font-family:'Space Grotesk';font-weight:600;font-size:16px;margin-bottom:8px}
+  .feat p{font-size:13px;line-height:1.55;color:var(--mut)}
+
+  .foot{margin-top:60px;padding:26px 0 40px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="amb"></div>
+
+<div class="tick">
+  <div class="row">
+    <span class="ti">NIFTY 50 <b>24,768.30</b><span class="up">+0.62%</span></span>
+    <span class="ti">SENSEX <b>81,220.10</b><span class="up">+0.55%</span></span>
+    <span class="ti">BANKNIFTY <b>52,140.85</b><span class="dn">-0.18%</span></span>
+    <span class="ti">RELIANCE <b>2,945.20</b><span class="up">+1.12%</span></span>
+    <span class="ti">TCS <b>4,102.55</b><span class="dn">-0.34%</span></span>
+    <span class="ti">NASDAQ <b>17,890.40</b><span class="up">+0.41%</span></span>
+    <span class="ti">S&amp;P 500 <b>5,602.10</b><span class="up">+0.28%</span></span>
+    <span class="ti">NIFTY 50 <b>24,768.30</b><span class="up">+0.62%</span></span>
+    <span class="ti">SENSEX <b>81,220.10</b><span class="up">+0.55%</span></span>
+    <span class="ti">BANKNIFTY <b>52,140.85</b><span class="dn">-0.18%</span></span>
+    <span class="ti">RELIANCE <b>2,945.20</b><span class="up">+1.12%</span></span>
+    <span class="ti">TCS <b>4,102.55</b><span class="dn">-0.34%</span></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <nav>
+    <div class="brand">
+      <div class="mk">BE</div>
+      <div>
+        <div class="bname">BULLS<span class="e">EYE</span></div>
+        <div class="bsub">AI Market Intelligence</div>
+      </div>
+    </div>
+    <div class="navsearch"><span class="pr mn" style="color:var(--cyan);font-size:12px">⌕</span><input placeholder="SEARCH ASSETS, NOT HOPE." /></div>
+    <div class="navlinks"><span>Markets</span><span>Signals</span><span>Screener</span><span>Pricing</span></div>
+    <span class="signin">Sign in</span>
+    <span class="start">Get started</span>
+  </nav>
+
+  <section class="hero">
+    <div>
+      <span class="chip"><span class="d"></span>Tracking 600+ NSE · BSE · US — updated every close</span>
+      <h1>Search assets,<br><span class="g">not hope.</span></h1>
+      <p class="lead">Bullseye ranks tomorrow's setups, scores its own FISO confidence, and shows the reasoning behind every call — sharp, fast, and honest about the odds.</p>
+      <div class="search">
+        <span class="pr">&gt;</span>
+        <input placeholder="buy RELIANCE before Friday close?" />
+        <span class="go">Analyze</span>
+      </div>
+      <div class="pills"><span class="pill on">NSE</span><span class="pill">BSE</span><span class="pill">US</span></div>
+      <div class="stats">
+        <div class="stat"><div class="n">600+</div><div class="l">Instruments</div></div>
+        <div class="stat"><div class="n">20</div><div class="l">Strategies</div></div>
+        <div class="stat"><div class="n gk" style="color:var(--cyan2)">Daily 10</div><div class="l">Signals email</div></div>
+      </div>
+    </div>
+
+    <div class="scan">
+      <div class="scan-h"><span class="t">Live Scan</span><span class="live">Live</span></div>
+      <div class="row">
+        <div><div class="sym">TATASTEEL</div><div class="nm">Tata Steel</div></div>
+        <div class="conf">71%<span class="cl">FISO</span></div>
+        <div class="verdict buy">BUY</div>
+      </div>
+      <div class="row">
+        <div><div class="sym">INFY</div><div class="nm">Infosys</div></div>
+        <div class="conf">64%<span class="cl">FISO</span></div>
+        <div class="verdict sell">SELL</div>
+      </div>
+      <div class="row">
+        <div><div class="sym">HDFCBANK</div><div class="nm">HDFC Bank</div></div>
+        <div class="conf">68%<span class="cl">FISO</span></div>
+        <div class="verdict buy">BUY</div>
+      </div>
+      <div class="row">
+        <div><div class="sym">ADANIENT</div><div class="nm">Adani Enterprises</div></div>
+        <div class="conf">59%<span class="cl">FISO</span></div>
+        <div class="verdict buy">BUY</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feat"><div class="ic">◎</div><h3>Daily 10 Signals</h3><p>Model-ranked top setups emailed each evening for the next trading session.</p></div>
+    <div class="feat"><div class="ic">⌕</div><h3>AI Search</h3><p>Ask in plain English; get a verdict with entry, target and stop loss.</p></div>
+    <div class="feat"><div class="ic">⚡</div><h3>Smart Alerts</h3><p>Describe a trigger and Bullseye keeps watch on the tape for you.</p></div>
+    <div class="feat"><div class="ic">▤</div><h3>FISO Confidence</h3><p>An honest probability on every call — never a false guarantee.</p></div>
+  </section>
+
+  <div class="foot">
+    <span>Leakage-safe backtested · Walk-forward validated</span>
+    <span>Not investment advice · Not a SEBI-registered advisor</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Vibrant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Poppins',system-ui,sans-serif;color:#1a0b2e;overflow-x:hidden;
+    background:linear-gradient(135deg,#7c3aed 0%,#db2777 48%,#f97316 100%);min-height:100vh}
+  .blob{position:fixed;border-radius:50%;filter:blur(10px);opacity:.5;z-index:0}
+  .b1{width:340px;height:340px;background:#fde047;top:-90px;right:-60px}
+  .b2{width:280px;height:280px;background:#34d399;bottom:-80px;left:-50px;opacity:.4}
+  .wrap{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 32px}
+  nav{display:flex;align-items:center;justify-content:space-between;padding:24px 0}
+  .logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:22px;color:#fff}
+  .mk{width:30px;height:30px;border-radius:50%;background:#fff;display:grid;place-items:center}
+  .mk::after{content:"";width:13px;height:13px;border-radius:50%;background:#db2777}
+  .navlinks{display:flex;gap:30px;font-size:14.5px;color:rgba(255,255,255,.9);font-weight:500}
+  .navlinks span{cursor:pointer}.navlinks span:hover{color:#fff}
+  .btn{padding:12px 24px;border-radius:30px;font-size:14px;font-weight:700;cursor:pointer}
+  .btn-ghost{color:#fff;border:1.5px solid rgba(255,255,255,.5)}
+  .btn-w{background:#fff;color:#7c3aed;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+  .hero{text-align:center;padding:58px 0 22px}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#fff;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);padding:8px 18px;border-radius:30px;margin-bottom:26px;backdrop-filter:blur(6px)}
+  h1{font-size:76px;line-height:.98;font-weight:900;letter-spacing:-.03em;color:#fff;text-shadow:0 6px 30px rgba(0,0,0,.18)}
+  .sub{margin:22px auto 0;max-width:560px;color:rgba(255,255,255,.92);font-size:18px;line-height:1.55;font-weight:400}
+  .search{margin:36px auto 0;max-width:660px;display:flex;align-items:center;gap:10px;background:#fff;border-radius:40px;padding:9px 9px 9px 24px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+  .search input{flex:1;border:none;outline:none;font-size:16px;color:#1a0b2e;font-family:'Poppins'}
+  .search input::placeholder{color:#9b8caf}
+  .search .go{background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff;padding:14px 30px;border-radius:30px;font-weight:700;font-size:14px}
+  .pills{display:flex;gap:10px;justify-content:center;margin-top:22px}
+  .pill{padding:10px 26px;border-radius:30px;font-size:14px;font-weight:600;color:#fff;border:1.5px solid rgba(255,255,255,.4)}
+  .pill.on{background:#fff;color:#db2777;border-color:#fff}
+  .grid{display:grid;grid-template-columns:1.25fr 1fr;gap:22px;margin-top:56px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:#fff;border-radius:26px;padding:26px;box-shadow:0 16px 40px rgba(0,0,0,.16);transition:.2s}
+  .card:hover{transform:translateY(-5px)}
+  .ci{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;margin-bottom:16px;font-size:24px;color:#fff}
+  .c1{background:linear-gradient(135deg,#7c3aed,#a855f7)}.c2{background:linear-gradient(135deg,#0ea5e9,#22d3ee)}
+  .c3{background:linear-gradient(135deg,#f97316,#fbbf24)}.c4{background:linear-gradient(135deg,#10b981,#34d399)}
+  .card h3{font-size:18px;color:#1a0b2e;margin-bottom:7px;font-weight:700}
+  .card p{font-size:13.5px;color:#6b5b7d;line-height:1.5;font-weight:400}
+  .scan{background:#fff;border-radius:26px;padding:26px;box-shadow:0 16px 40px rgba(0,0,0,.16)}
+  .scan-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .scan-h .t{font-size:17px;font-weight:800;color:#1a0b2e}
+  .live{font-size:12px;font-weight:600;color:#10b981;display:flex;align-items:center;gap:6px}.live::before{content:"";width:8px;height:8px;border-radius:50%;background:#10b981;animation:bl 1.4s infinite}
+  @keyframes bl{50%{opacity:.3}}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid #f1ecf7}.row:last-child{border:none}
+  .sym{font-weight:700;font-size:15px;color:#1a0b2e}.nm{font-size:12px;color:#9b8caf}
+  .verdict{font-size:12px;font-weight:700;padding:6px 13px;border-radius:30px}
+  .buy{background:#d1fae5;color:#059669}.sell{background:#ffe4e6;color:#e11d48}
+  .conf{font-weight:800;color:#7c3aed;font-size:15px}
+  .foot{text-align:center;color:rgba(255,255,255,.8);font-size:13px;font-weight:500;padding:46px 0 32px}
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div>
+<div class="wrap">
+  <nav>
+    <div class="logo"><span class="mk"></span>Bullseye</div>
+    <div class="navlinks"><span>Markets</span><span>Signals</span><span>Screener</span><span>Pricing</span></div>
+    <div style="display:flex;gap:10px"><div class="btn btn-ghost">Sign in</div><div class="btn btn-w">Get started</div></div>
+  </nav>
+
+  <section class="hero">
+    <span class="chip">✦ 600+ NSE &amp; BSE stocks · scanned every single close</span>
+    <h1>Make the market<br>make sense.</h1>
+    <p class="sub">Bullseye ranks tomorrow's best setups, scores how sure it is, and shows you exactly why — bright, fast, and refreshingly honest.</p>
+    <div class="search">
+      <input placeholder="Ask anything — “buy RELIANCE before Friday close?”" />
+      <div class="go">Analyze</div>
+    </div>
+    <div class="pills"><div class="pill on">NSE</div><div class="pill">BSE</div><div class="pill">US</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="cards">
+      <div class="card"><div class="ci c1">◎</div><h3>Daily 10 Signals</h3><p>Top ranked setups in your inbox every evening for the next session.</p></div>
+      <div class="card"><div class="ci c2">⌕</div><h3>AI Search</h3><p>Ask in plain English; get verdict, entry, target and stop.</p></div>
+      <div class="card"><div class="ci c3">⚡</div><h3>Smart Alerts</h3><p>Describe the trigger and we watch the tape for you.</p></div>
+      <div class="card"><div class="ci c4">▤</div><h3>Confidence Score</h3><p>An honest probability on every call — no fake guarantees.</p></div>
+    </div>
+    <div class="scan">
+      <div class="scan-h"><span class="t">Live Scan</span><span class="live">Live</span></div>
+      <div class="row"><div><div class="sym">TATASTEEL</div><div class="nm">Tata Steel</div></div><svg width="64" height="24"><polyline points="0,18 13,15 26,16 38,8 51,9 64,3" fill="none" stroke="#059669" stroke-width="2.4"/></svg><span class="conf">71%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">INFY</div><div class="nm">Infosys</div></div><svg width="64" height="24"><polyline points="0,6 13,8 26,7 38,13 51,11 64,18" fill="none" stroke="#e11d48" stroke-width="2.4"/></svg><span class="conf">64%</span><span class="verdict sell">SELL</span></div>
+      <div class="row"><div><div class="sym">HDFCBANK</div><div class="nm">HDFC Bank</div></div><svg width="64" height="24"><polyline points="0,16 13,13 26,14 38,8 51,10 64,4" fill="none" stroke="#059669" stroke-width="2.4"/></svg><span class="conf">68%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">ADANIENT</div><div class="nm">Adani Enterprises</div></div><svg width="64" height="24"><polyline points="0,10 13,8 26,11 38,6 51,8 64,4" fill="none" stroke="#059669" stroke-width="2.4"/></svg><span class="conf">59%</span><span class="verdict buy">BUY</span></div>
+    </div>
+  </section>
+
+  <div class="foot">Leakage-safe backtested · Walk-forward validated · Not investment advice</div>
+</div>
+</body>
+</html>

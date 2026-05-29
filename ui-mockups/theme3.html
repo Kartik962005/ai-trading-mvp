@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Clean Fintech</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;color:#0f172a;background:#ffffff;
+    background-image:radial-gradient(60% 50% at 50% -10%,rgba(79,70,229,.10),transparent 70%);overflow-x:hidden}
+  .wrap{max-width:1200px;margin:0 auto;padding:0 32px}
+  nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+  .logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:21px;color:#0f172a}
+  .ring{width:26px;height:26px;border-radius:50%;border:3px solid #4f46e5;position:relative}
+  .ring::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#4f46e5}
+  .navlinks{display:flex;gap:32px;font-size:14.5px;color:#475569;font-weight:500}
+  .navlinks span{cursor:pointer}.navlinks span:hover{color:#4f46e5}
+  .btn{padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+  .btn-ghost{color:#334155}
+  .btn-i{background:#4f46e5;color:#fff;box-shadow:0 8px 20px rgba(79,70,229,.28)}
+  .hero{text-align:center;padding:64px 0 24px}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#4338ca;background:#eef2ff;border:1px solid #e0e7ff;padding:7px 15px;border-radius:30px;margin-bottom:24px}
+  h1{font-size:70px;line-height:1.04;font-weight:900;letter-spacing:-.035em;color:#0f172a}
+  h1 .g{background:linear-gradient(90deg,#4f46e5,#7c3aed);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin:22px auto 0;max-width:560px;color:#64748b;font-size:18px;line-height:1.6}
+  .search{margin:36px auto 0;max-width:660px;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:10px 10px 10px 20px;box-shadow:0 12px 40px rgba(15,23,42,.08)}
+  .search input{flex:1;border:none;outline:none;font-size:16px;color:#0f172a}
+  .search input::placeholder{color:#94a3b8}
+  .search .go{background:#4f46e5;color:#fff;padding:13px 26px;border-radius:11px;font-weight:600;font-size:14px}
+  .pills{display:flex;gap:10px;justify-content:center;margin-top:20px}
+  .pill{padding:9px 22px;border-radius:30px;font-size:14px;color:#475569;border:1px solid #e2e8f0;background:#fff}
+  .pill.on{background:#4f46e5;color:#fff;border-color:#4f46e5}
+  .grid{display:grid;grid-template-columns:1.25fr 1fr;gap:22px;margin-top:58px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:#fff;border:1px solid #eef0f4;border-radius:18px;padding:24px;box-shadow:0 4px 18px rgba(15,23,42,.05);transition:.2s}
+  .card:hover{box-shadow:0 14px 34px rgba(79,70,229,.14);transform:translateY(-3px)}
+  .ci{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:15px;font-size:20px;color:#fff}
+  .c1{background:#4f46e5}.c2{background:#0ea5e9}.c3{background:#f59e0b}.c4{background:#10b981}
+  .card h3{font-size:17px;color:#0f172a;margin-bottom:7px;font-weight:700}
+  .card p{font-size:13.5px;color:#64748b;line-height:1.55}
+  .scan{background:#0f172a;border-radius:18px;padding:24px;color:#fff;box-shadow:0 18px 44px rgba(15,23,42,.25)}
+  .scan-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .scan-h .t{font-size:15px;font-weight:700}
+  .live{font-size:12px;color:#34d399;display:flex;align-items:center;gap:6px}.live::before{content:"";width:7px;height:7px;border-radius:50%;background:#34d399;animation:bl 1.4s infinite}
+  @keyframes bl{50%{opacity:.3}}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.08)}.row:last-child{border:none}
+  .sym{font-weight:700;font-size:14.5px}.nm{font-size:12px;color:#94a3b8}
+  .verdict{font-size:12px;font-weight:700;padding:5px 11px;border-radius:8px}
+  .buy{background:rgba(16,185,129,.18);color:#34d399}.sell{background:rgba(244,63,94,.18);color:#fb7185}
+  .conf{font-weight:700;color:#a5b4fc;font-size:14px}
+  .foot{text-align:center;color:#94a3b8;font-size:13px;padding:46px 0 32px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <div class="logo"><span class="ring"></span>Bullseye</div>
+    <div class="navlinks"><span>Markets</span><span>Signals</span><span>Screener</span><span>Pricing</span></div>
+    <div style="display:flex;gap:8px"><div class="btn btn-ghost">Sign in</div><div class="btn btn-i">Get started</div></div>
+  </nav>
+
+  <section class="hero">
+    <span class="chip">● Tracking 600+ NSE &amp; BSE stocks · updated every close</span>
+    <h1>The honest way to<br><span class="g">read the market.</span></h1>
+    <p class="sub">Bullseye ranks tomorrow's setups, scores its own confidence, and shows the reasoning — so you act on evidence, not hope.</p>
+    <div class="search">
+      <input placeholder="Ask anything — “buy RELIANCE before Friday close?”" />
+      <div class="go">Analyze</div>
+    </div>
+    <div class="pills"><div class="pill on">NSE</div><div class="pill">BSE</div><div class="pill">US</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="cards">
+      <div class="card"><div class="ci c1">◎</div><h3>Daily 10 Signals</h3><p>Top ranked setups emailed every evening for the next session.</p></div>
+      <div class="card"><div class="ci c2">⌕</div><h3>AI Search</h3><p>Plain-English questions in; verdict, entry, target, stop out.</p></div>
+      <div class="card"><div class="ci c3">⚡</div><h3>Smart Alerts</h3><p>Describe a trigger; we watch the tape and notify you.</p></div>
+      <div class="card"><div class="ci c4">▤</div><h3>Confidence Score</h3><p>An honest probability on every call — no fake guarantees.</p></div>
+    </div>
+    <div class="scan">
+      <div class="scan-h"><span class="t">Live Scan</span><span class="live">Live</span></div>
+      <div class="row"><div><div class="sym">TATASTEEL</div><div class="nm">Tata Steel</div></div><svg width="64" height="24"><polyline points="0,18 13,15 26,16 38,8 51,9 64,3" fill="none" stroke="#34d399" stroke-width="2"/></svg><span class="conf">71%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">INFY</div><div class="nm">Infosys</div></div><svg width="64" height="24"><polyline points="0,6 13,8 26,7 38,13 51,11 64,18" fill="none" stroke="#fb7185" stroke-width="2"/></svg><span class="conf">64%</span><span class="verdict sell">SELL</span></div>
+      <div class="row"><div><div class="sym">HDFCBANK</div><div class="nm">HDFC Bank</div></div><svg width="64" height="24"><polyline points="0,16 13,13 26,14 38,8 51,10 64,4" fill="none" stroke="#34d399" stroke-width="2"/></svg><span class="conf">68%</span><span class="verdict buy">BUY</span></div>
+      <div class="row"><div><div class="sym">ADANIENT</div><div class="nm">Adani Enterprises</div></div><svg width="64" height="24"><polyline points="0,10 13,8 26,11 38,6 51,8 64,4" fill="none" stroke="#34d399" stroke-width="2"/></svg><span class="conf">59%</span><span class="verdict buy">BUY</span></div>
+    </div>
+  </section>
+
+  <div class="foot">Leakage-safe backtested · Walk-forward validated · Not investment advice</div>
+</div>
+</body>
+</html>
