@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Modernised look (design sample)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     DESIGN SAMPLE — same structure, palette & fonts as the live
+     site (dark ticker → nav → market tabs → Live Scan → news →
+     About). Nothing is moved. The only changes are aesthetic:
+     softer layered shadows, smoother radii, hairline borders,
+     hover lifts, gradient-sheen buttons, antialiased text.
+     ============================================================ */
+  :root{
+    --cyan:#06b6d4; --cyan-deep:#0891b2; --cyan-700:#0e7490;
+    --emerald:#10b981; --emerald-deep:#059669;
+    --ink:#0f172a; --slate:#475569; --muted:#64748b; --faint:#94a3b8;
+    --line:rgba(15,23,42,0.08);
+    --glass:rgba(255,255,255,0.82);
+    --sh-sm:0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.06);
+    --sh-md:0 2px 6px rgba(15,23,42,0.05), 0 18px 44px rgba(15,23,42,0.08);
+    --sh-lift:0 6px 14px rgba(8,145,178,0.10), 0 28px 60px rgba(8,145,178,0.16);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    background:
+      radial-gradient(circle at 16% 6%, rgba(6,182,212,0.20), transparent 32%),
+      radial-gradient(circle at 84% 4%, rgba(16,185,129,0.16), transparent 30%),
+      linear-gradient(180deg,#f8fcff 0%,#edf7f8 46%,#ffffff 100%);
+    background-attachment:fixed; min-height:100vh; overflow-x:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',monospace}
+  .disp{font-family:'Space Grotesk',sans-serif}
+  .shell{max-width:1280px;margin:0 auto;padding:0 22px}
+
+  /* ---------- dark ticker tape (unchanged position, slightly refined) ---------- */
+  .tape{
+    background:linear-gradient(90deg,#04141a,#062a30 50%,#04141a);
+    border-bottom:1px solid rgba(255,255,255,0.08);
+    overflow:hidden;padding:11px 0;box-shadow:0 10px 30px rgba(4,20,26,0.22);
+  }
+  .tape-row{display:flex;gap:38px;white-space:nowrap;width:max-content;animation:marquee 34s linear infinite}
+  .tape:hover .tape-row{animation-play-state:paused}
+  .tk{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:.04em;display:inline-flex;gap:8px;color:#cbeef2}
+  .tk .nm{color:#7dd3e0}
+  .up{color:#34d399}.down{color:#fb7185}
+  @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  /* ---------- nav (same 4-part layout) ---------- */
+  nav.bar{
+    position:sticky;top:0;z-index:30;
+    background:rgba(255,255,255,0.72);backdrop-filter:blur(16px);
+    border-bottom:1px solid var(--line);
+    box-shadow:var(--sh-sm);
+  }
+  .nav-grid{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:16px;padding:14px 0}
+  .brand{display:flex;flex-direction:column;cursor:pointer}
+  .brand-top{display:flex;align-items:center;gap:12px}
+  .be{
+    width:44px;height:44px;border-radius:16px;display:grid;place-items:center;
+    background:linear-gradient(135deg,#ffffff,#dffbff 45%,#e4fff3);
+    border:1px solid rgba(6,182,212,0.25);
+    box-shadow:0 14px 34px rgba(8,145,178,0.18), inset 0 1px 0 rgba(255,255,255,0.9);
+    font-family:'Space Grotesk',sans-serif;font-weight:800;color:var(--cyan-700);font-size:15px;
+  }
+  .wordmark{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:26px;letter-spacing:.14em}
+  .wordmark .a{color:#0b1220}.wordmark .b{color:var(--cyan)}
+  .tagline{margin-left:56px;margin-top:5px;font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+  .search{position:relative}
+  .search input{
+    width:100%;height:48px;border-radius:16px;border:1px solid rgba(8,145,178,0.22);
+    background:rgba(255,255,255,0.92);padding:0 18px;
+    font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);
+    box-shadow:inset 0 1px 2px rgba(15,23,42,0.04), 0 10px 30px rgba(15,23,42,0.06);
+    outline:none;transition:border-color .18s ease, box-shadow .18s ease;
+  }
+  .search input::placeholder{color:var(--faint)}
+  .search input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(6,182,212,0.12),0 12px 34px rgba(8,145,178,0.12)}
+  .btn{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase;border:0;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+  .screener{height:48px;padding:0 22px;border-radius:16px;color:#fff;background:#0b1324;box-shadow:0 12px 30px rgba(15,23,42,0.2)}
+  .screener:hover{transform:translateY(-2px);background:var(--cyan-deep);box-shadow:0 16px 38px rgba(8,145,178,0.34)}
+  .avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:#fff;border:1px solid rgba(6,182,212,0.3);color:var(--cyan-700);box-shadow:0 12px 30px rgba(6,182,212,0.16);transition:transform .18s ease,box-shadow .18s ease}
+  .avatar:hover{transform:translateY(-2px);box-shadow:var(--sh-lift)}
+  .avatar svg{width:24px;height:24px}
+
+  /* ---------- main ---------- */
+  main{position:relative;z-index:10;padding:30px 0 10px;display:flex;flex-direction:column;gap:26px}
+
+  /* market tabs (two cards, same spots) */
+  .tabs{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .tab{
+    position:relative;overflow:hidden;border-radius:26px;padding:30px;
+    border:1px solid var(--line);background:var(--glass);backdrop-filter:blur(14px);
+    box-shadow:var(--sh-md);cursor:pointer;text-align:left;
+    transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease;
+  }
+  .tab:hover{transform:translateY(-4px);box-shadow:var(--sh-lift)}
+  .tab.active-in{border-color:rgba(6,182,212,0.4);box-shadow:0 0 0 1px rgba(6,182,212,0.18),var(--sh-lift)}
+  .tab.active-in::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent,var(--cyan),transparent)}
+  .tab.active-us{border-color:rgba(217,70,239,0.4);box-shadow:0 0 0 1px rgba(217,70,239,0.18),var(--sh-lift)}
+  .tab.active-us::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent,#d946ef,transparent)}
+  .flag{font-size:40px;display:block;margin-bottom:14px}
+  .tab.idle .flag{opacity:.4}
+  .tab .label{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.01em}
+  .tab.idle .label{color:var(--faint)}
+  .tab .ex{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-top:8px;color:var(--cyan-deep)}
+  .tab.idle .ex{color:var(--faint)}
+
+  /* Live scan panel */
+  .panel{border-radius:28px;border:1px solid var(--line);background:rgba(255,255,255,0.7);backdrop-filter:blur(14px);box-shadow:var(--sh-md);padding:24px}
+  .panel-top{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:20px}
+  .panel-top h2{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;letter-spacing:.2em;text-transform:uppercase;color:var(--slate)}
+  .panel-top .sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:5px}
+  .chip{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;color:var(--cyan-deep);background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.2);padding:6px 12px;border-radius:999px}
+
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .scard{
+    position:relative;border-radius:20px;border:1px solid var(--line);background:#fff;
+    padding:18px;box-shadow:var(--sh-sm);
+    transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;overflow:hidden;
+  }
+  .scard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,rgba(6,182,212,.6),rgba(16,185,129,.4));opacity:0;transition:opacity .2s ease}
+  .scard:hover{transform:translateY(-4px);box-shadow:var(--sh-lift);border-color:rgba(8,145,178,.25)}
+  .scard:hover::before{opacity:1}
+  .scard-top{display:flex;align-items:center;justify-content:space-between}
+  .scard .sym{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px}
+  .scard .exg{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);background:rgba(15,23,42,0.04);padding:3px 7px;border-radius:6px}
+  .scard .nm{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .scard .price{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:20px;margin-top:14px}
+  .scard .chg{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;margin-top:3px}
+  .spark{margin-top:14px;height:34px;width:100%;display:block}
+  .verdict{margin-top:14px;display:flex;align-items:center;justify-content:space-between}
+  .verdict .v{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px}
+  .v.buy{color:var(--emerald-deep);background:rgba(16,185,129,.12)}
+  .v.hold{color:#b45309;background:rgba(245,158,11,.14)}
+  .v.sell{color:#dc2626;background:rgba(239,68,68,.12)}
+  .conf{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)}
+
+  .pager{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}
+  .pager .pg{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .dots{display:flex;gap:8px}
+  .dots button{width:36px;height:36px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.7);font-family:'JetBrains Mono',monospace;font-weight:800;font-size:12px;color:var(--muted);cursor:pointer;transition:all .18s ease}
+  .dots button:hover{border-color:rgba(6,182,212,.4);color:var(--cyan-deep)}
+  .dots button.on{background:var(--cyan);border-color:var(--cyan);color:#fff;box-shadow:0 8px 20px rgba(6,182,212,.34)}
+
+  /* global news */
+  .news{border-radius:28px;border:1px solid rgba(8,145,178,.18);background:rgba(255,255,255,.78);backdrop-filter:blur(14px);box-shadow:var(--sh-md);padding:24px}
+  .news h2{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--cyan-deep);margin-bottom:18px}
+  .news-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .ncard{border-radius:18px;background:linear-gradient(160deg,#0c1c24,#0a2a30);border:1px solid rgba(148,163,184,.18);padding:18px;box-shadow:0 18px 45px rgba(15,23,42,.14);transition:transform .2s ease,box-shadow .2s ease}
+  .ncard:hover{transform:translateY(-3px);box-shadow:0 26px 60px rgba(8,47,73,.28)}
+  .ncard .src{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#67e8f9}
+  .ncard .t{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;color:#f8fafc;margin-top:8px;line-height:1.35}
+  .ncard .c{font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.55}
+
+  /* about (dark slate section, same spot) */
+  .about{border-radius:28px;border:1px solid rgba(6,182,212,.25);background:linear-gradient(160deg,#071a20,#0a2a30 60%,#06222a);color:#fff;padding:30px;box-shadow:0 28px 90px rgba(8,47,73,.28);display:grid;grid-template-columns:1.05fr .95fr;gap:26px}
+  .about-l{border-radius:22px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);padding:26px;display:flex;flex-direction:column;justify-content:space-between}
+  .about .ey{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:24px;letter-spacing:.1em;text-transform:uppercase;color:#dffcff;text-shadow:0 0 24px rgba(103,232,249,.6)}
+  .about h2{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:30px;line-height:1.15;margin-top:14px;color:#f8fdff}
+  .about p{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:#cbd5e1;margin-top:16px}
+  .tags{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}
+  .tag{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#cffafe;border:1px solid rgba(6,182,212,.25);background:rgba(6,182,212,.1);padding:7px 13px;border-radius:999px}
+  .about-r{display:grid;gap:12px}
+  .frow{border-radius:18px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045);padding:18px;display:flex;gap:14px;transition:transform .2s ease,border-color .2s ease,background .2s ease}
+  .frow:hover{transform:translateY(-3px);border-color:rgba(6,182,212,.3);background:rgba(255,255,255,.08)}
+  .frow .bd{width:11px;height:11px;border-radius:50%;background:#67e8f9;box-shadow:0 0 18px rgba(103,232,249,.7);flex:none;margin-top:5px}
+  .frow .ft{font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#f8fdff}
+  .frow .fc{font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;color:#d8e2f0;margin-top:8px}
+
+  footer{text-align:center;padding:28px 0 46px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em}
+
+  @media(max-width:900px){
+    .nav-grid{grid-template-columns:auto 1fr auto;gap:10px}
+    .tagline{display:none}
+    .tabs{grid-template-columns:1fr 1fr}
+    .cards,.news-grid{grid-template-columns:1fr 1fr}
+    .about{grid-template-columns:1fr}
+  }
+  @media(max-width:620px){
+    .search{grid-column:1 / -1;order:5}
+    .cards,.news-grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+  <!-- DARK TICKER TAPE (top, as on the live site) -->
+  <div class="tape">
+    <div class="tape-row" id="tapeRow">
+      <span class="tk"><span class="nm">NIFTY 50</span> 24,812 <span class="up">▲0.61%</span></span>
+      <span class="tk"><span class="nm">SENSEX</span> 81,440 <span class="up">▲0.54%</span></span>
+      <span class="tk"><span class="nm">BANKNIFTY</span> 52,190 <span class="down">▼0.22%</span></span>
+      <span class="tk"><span class="nm">NIFTY IT</span> 38,905 <span class="up">▲0.18%</span></span>
+      <span class="tk"><span class="nm">INR/USD</span> 83.21 <span class="down">▼0.07%</span></span>
+      <span class="tk"><span class="nm">GOLD</span> 71,840 <span class="up">▲0.42%</span></span>
+      <span class="tk"><span class="nm">CRUDE</span> 6,210 <span class="down">▼0.95%</span></span>
+    </div>
+  </div>
+
+  <!-- NAV -->
+  <nav class="bar">
+    <div class="shell nav-grid">
+      <div class="brand">
+        <div class="brand-top">
+          <span class="be">BE</span>
+          <span class="wordmark"><span class="a">BULLS</span><span class="b">EYE</span></span>
+        </div>
+        <span class="tagline">AI-Powered Market Intelligence</span>
+      </div>
+      <div class="search">
+        <input type="text" placeholder="SEARCH ASSETS, NOT HOPE." />
+      </div>
+      <a href="#" class="btn screener">Screener</a>
+      <span class="avatar" title="Account">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" stroke="currentColor" stroke-width="2"/></svg>
+      </span>
+    </div>
+  </nav>
+
+  <div class="shell">
+    <main>
+      <!-- MARKET TABS -->
+      <section class="tabs">
+        <button class="tab active-in">
+          <span class="flag">🇮🇳</span>
+          <span class="label">India</span>
+          <span class="ex">NSE / BSE</span>
+        </button>
+        <button class="tab idle active-us-off">
+          <span class="flag">🇺🇸</span>
+          <span class="label">US</span>
+          <span class="ex">NASDAQ / NYSE</span>
+        </button>
+      </section>
+
+      <!-- LIVE SCAN PANEL -->
+      <section class="panel">
+        <div class="panel-top">
+          <div>
+            <h2>Live Scan</h2>
+            <div class="sub">Showing 6 of 158 tracked stocks</div>
+          </div>
+          <span class="chip">INDIA</span>
+        </div>
+
+        <div class="cards">
+          <!-- card template repeated -->
+          <article class="scard">
+            <div class="scard-top"><span class="sym">RELIANCE</span><span class="exg">NSE</span></div>
+            <div class="nm">Reliance Industries</div>
+            <div class="price">₹2,940.10</div><div class="chg up">▲ 1.12%</div>
+            <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none"><polyline points="0,28 18,24 34,26 52,18 70,20 88,12 104,14 120,7" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="verdict"><span class="v buy">Buy</span><span class="conf">Conf 78%</span></div>
+          </article>
+
+          <article class="scard">
+            <div class="scard-top"><span class="sym">HDFCBANK</span><span class="exg">NSE</span></div>
+            <div class="nm">HDFC Bank</div>
+            <div class="price">₹1,712.45</div><div class="chg up">▲ 0.44%</div>
+            <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none"><polyline points="0,20 18,22 34,16 52,18 70,14 88,16 104,11 120,12" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="verdict"><span class="v hold">Hold</span><span class="conf">Conf 61%</span></div>
+          </article>
+
+          <article class="scard">
+            <div class="scard-top"><span class="sym">INFY</span><span class="exg">NSE</span></div>
+            <div class="nm">Infosys</div>
+            <div class="price">₹1,486.20</div><div class="chg down">▼ 0.31%</div>
+            <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none"><polyline points="0,12 18,14 34,11 52,17 70,16 88,22 104,21 120,26" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="verdict"><span class="v sell">Sell</span><span class="conf">Conf 57%</span></div>
+          </article>
+
+          <article class="scard">
+            <div class="scard-top"><span class="sym">TCS</span><span class="exg">NSE</span></div>
+            <div class="nm">Tata Consultancy Services</div>
+            <div class="price">₹3,512.60</div><div class="chg down">▼ 0.42%</div>
+            <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none"><polyline points="0,14 18,12 34,16 52,15 70,19 88,17 104,22 120,20" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="verdict"><span class="v hold">Hold</span><span class="conf">Conf 63%</span></div>
+          </article>
+
+          <article class="scard">
+            <div class="scard-top"><span class="sym">SBIN</span><span class="exg">NSE</span></div>
+            <div class="nm">State Bank of India</div>
+            <div class="price">₹812.35</div><div class="chg up">▲ 1.63%</div>
+            <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none"><polyline points="0,26 18,22 34,24 52,16 70,18 88,10 104,12 120,6" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="verdict"><span class="v buy">Buy</span><span class="conf">Conf 81%</span></div>
+          </article>
+
+          <article class="scard">
+            <div class="scard-top"><span class="sym">ITC</span><span class="exg">NSE</span></div>
+            <div class="nm">ITC Ltd</div>
+            <div class="price">₹462.10</div><div class="chg up">▲ 0.82%</div>
+            <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none"><polyline points="0,22 18,20 34,21 52,17 70,18 88,15 104,16 120,12" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="verdict"><span class="v buy">Buy</span><span class="conf">Conf 69%</span></div>
+          </article>
+        </div>
+
+        <div class="pager">
+          <span class="pg">Page 1 / 6</span>
+          <div class="dots">
+            <button class="on">1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- GLOBAL NEWS -->
+      <section class="news">
+        <h2>Global Market News</h2>
+        <div class="news-grid">
+          <article class="ncard">
+            <div class="src">Markets</div>
+            <div class="t">Indices edge higher as IT and banking lead the close</div>
+            <div class="c">Broad-based buying lifted benchmarks into the final hour, with financials extending gains.</div>
+          </article>
+          <article class="ncard">
+            <div class="src">Macro</div>
+            <div class="t">Rupee steadies ahead of key inflation print</div>
+            <div class="c">Currency held in a tight band as traders awaited fresh data later in the week.</div>
+          </article>
+          <article class="ncard">
+            <div class="src">Sectors</div>
+            <div class="t">Logistics names in focus on volume pickup</div>
+            <div class="c">Several mid-cap movers saw above-average turnover through the session.</div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ABOUT -->
+      <section class="about">
+        <div class="about-l">
+          <div>
+            <div class="ey">About Bullseye</div>
+            <h2>A focused market cockpit for scanning, comparing, and validating stock setups.</h2>
+            <p>Chart action, FISO confidence, technical studies, strategy ranking, live quotes, and deeper stock context — brought into a single research flow so you can move quickly across markets and inspect a setup before it earns your attention.</p>
+          </div>
+          <div class="tags">
+            <span class="tag">Live market scan</span>
+            <span class="tag">AI verdict context</span>
+            <span class="tag">Chart-led research</span>
+            <span class="tag">India and US coverage</span>
+          </div>
+        </div>
+        <div class="about-r">
+          <div class="frow"><span class="bd"></span><div><div class="ft">Signal Engine</div><div class="fc">FISO scoring converts trend, momentum, risk, and sentiment inputs into one readable market verdict.</div></div></div>
+          <div class="frow"><span class="bd"></span><div><div class="ft">Technical Workspace</div><div class="fc">Indicator panels sit below the candle chart so momentum, volume, volatility, and trend studies compare without leaving the page.</div></div></div>
+          <div class="frow"><span class="bd"></span><div><div class="ft">Research Flow</div><div class="fc">Paginated cards keep the homepage fast to scan, then detailed dashboards open with price, targets, stop loss, and strategy context.</div></div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer>Design sample · same structure, palette &amp; fonts as live · placeholder data</footer>
+  </div>
+
+  <script>
+    // seamless ticker loop: duplicate the row contents once
+    const row = document.getElementById('tapeRow');
+    row.innerHTML += row.innerHTML;
+  </script>
+</body>
+</html>

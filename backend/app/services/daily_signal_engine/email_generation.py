@@ -10,6 +10,15 @@ def _format_percent(value: float | None, digits: int = 0) -> str:
     return f"{value:.{digits}%}"
 
 
+def _count_phrase(count: int) -> str:
+    """Headline phrase that never over-promises a fixed number of signals."""
+    if count == 0:
+        return "No stock signals passed today's filters"
+    if count == 1:
+        return "1 stock signal (up to 10 daily)"
+    return f"{count} stock signals (up to 10 daily)"
+
+
 def _detail_reason(signal: dict[str, Any]) -> tuple[str, str]:
     explanation = signal.get("explanation_json") or {}
     reasons = explanation.get("reasons") or signal.get("reasons") or []
@@ -128,8 +137,9 @@ def build_signal_email(
         "<div style='max-width:720px;margin:0 auto;background:#111827;border:1px solid #243041;border-radius:22px;overflow:hidden'>"
         "<div style='padding:24px;background:#0f172a;color:#f8fafc'>"
         "<div style='font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#67e8f9;font-weight:700'>Bullseye Signals</div>"
-        f"<h1 style='margin:10px 0 0;font-size:26px;line-height:1.25;color:#f8fafc'>Top {len(signals)} {escape(market)} stock signals for the next trading day</h1>"
-        f"<p style='margin:10px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
+        f"<h1 style='margin:10px 0 0;font-size:26px;line-height:1.25;color:#f8fafc'>{_count_phrase(len(signals))} for the next trading day</h1>"
+        f"<p style='margin:10px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Up to 10 stocks are sent each day &mdash; only the names that clear every quality, liquidity and risk filter are included, so some days have fewer.</p>"
+        f"<p style='margin:8px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Market: {escape(market)} | Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
         "</div>"
         "<div style='padding:16px'>"
         + ("".join(card_rows) if card_rows else "<div style='padding:18px;color:#e2e8f0'>No signals passed the quality filters for the next trading day.</div>")
@@ -143,6 +153,8 @@ def build_signal_email(
 
     text = (
         f"Bullseye {market} next-trading-day stock signals\n"
+        f"{_count_phrase(len(signals))}. Up to 10 stocks are sent each day; only names that clear every "
+        f"quality, liquidity and risk filter are included, so some days have fewer.\n"
         f"Generated on: {signal_date} | Risk level: {risk_level} | Signal type: {signal_type}\n\n"
         + ("\n".join(text_rows) if text_rows else "No signals passed the quality filters for the next trading day.")
         + "\nSignals are model-generated analysis. Returns are not guaranteed. Past performance does not guarantee future results.\n"

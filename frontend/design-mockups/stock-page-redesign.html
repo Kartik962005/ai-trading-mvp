@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bullseye — Stock Page (Redesign Mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#f6f4ef;            /* warm paper */
+    --bg-soft:#efece4;
+    --card:#fffdfa;
+    --ink:#1c1b18;          /* near-black warm */
+    --ink-soft:#6c675e;
+    --line:#e7e2d8;
+    --teal:#2f7d6e;         /* bullish / sage-teal */
+    --teal-soft:#e4f0ec;
+    --clay:#b5503c;         /* bearish */
+    --clay-soft:#f6e6e1;
+    --amber:#c08a2d;
+    --shadow:0 22px 60px rgba(28,27,24,.08);
+    --shadow-sm:0 10px 30px rgba(28,27,24,.06);
+    --radius:22px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Space Grotesk',system-ui,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(47,125,110,.07), transparent 60%),
+      radial-gradient(900px 500px at -5% 110%, rgba(181,80,60,.06), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding:0 0 80px;
+  }
+  .mono{font-family:'JetBrains Mono',monospace}
+  .serif{font-family:'Fraunces',serif}
+  .wrap{max-width:1240px;margin:0 auto;padding:0 28px}
+  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+
+  /* ---- top bar ---- */
+  header.topbar{
+    position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+    background:rgba(246,244,239,.82);border-bottom:1px solid var(--line);
+  }
+  .topbar .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em}
+  .brand .dot{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--teal),#3fa28d);display:grid;place-items:center;color:#fff;font-size:13px;font-weight:800}
+  .navlinks{display:flex;gap:26px;font-size:13px;color:var(--ink-soft)}
+  .navlinks a{color:inherit;text-decoration:none;font-weight:500}
+  .navlinks a.active{color:var(--ink)}
+  .avatar{width:34px;height:34px;border-radius:50%;background:var(--bg-soft);border:1px solid var(--line);display:grid;place-items:center;font-size:12px;font-weight:700}
+
+  /* ---- hero ---- */
+  .hero{padding:34px 0 18px}
+  .hero-top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .ticker-id{display:flex;align-items:center;gap:14px}
+  .logo-badge{width:54px;height:54px;border-radius:16px;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-weight:800;font-size:18px}
+  .ticker-id h1{font-size:30px;font-weight:600;letter-spacing:-.01em}
+  .ticker-id .sub{color:var(--ink-soft);font-size:13px;margin-top:2px}
+  .exch{display:inline-flex;gap:6px;margin-top:8px}
+  .exch span{font-size:10px;font-weight:700;letter-spacing:.08em;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--ink-soft)}
+  .exch span.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .price-now{text-align:right}
+  .price-now .p{font-size:34px;font-weight:700}
+  .price-now .chg{font-size:14px;font-weight:700;color:var(--clay);margin-top:2px}
+
+  /* ---- grid ---- */
+  .grid{display:grid;gap:18px;margin-top:24px}
+  .cols{grid-template-columns:1.15fr .85fr}
+  @media(max-width:980px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:24px}
+  .card.feature{box-shadow:var(--shadow)}
+  .card h3.title{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;margin-bottom:18px}
+
+  /* verdict */
+  .verdict{background:linear-gradient(160deg,var(--teal-soft),#fffdfa 70%);position:relative;overflow:hidden}
+  .verdict::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(47,125,110,.12);filter:blur(8px)}
+  .verdict .big{font-family:'Fraunces',serif;font-size:64px;font-weight:600;color:var(--teal);line-height:1;letter-spacing:-.02em}
+  .verdict .setup{margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
+  .verdict .setup b{display:block;font-size:18px;margin:4px 0 6px}
+  .verdict .setup p{color:var(--ink-soft);font-size:13px;line-height:1.5}
+  .chip{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.04em;padding:6px 12px;border-radius:999px;background:var(--teal);color:#fff}
+
+  /* gauge */
+  .gauge-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 0 4px}
+  .gauge{position:relative;width:200px;height:120px}
+  .gauge svg{width:200px;height:120px;overflow:visible}
+  .gauge .val{position:absolute;left:0;right:0;top:54px;text-align:center}
+  .gauge .val .n{font-family:'JetBrains Mono',monospace;font-size:40px;font-weight:800}
+  .gauge .val .d{font-size:12px;color:var(--ink-soft)}
+  .scale{display:flex;justify-content:space-between;width:200px;margin-top:6px;font-size:10px;letter-spacing:.1em;color:var(--ink-soft);font-weight:600}
+
+  /* vectors */
+  .vectors{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .vec{border:1px solid var(--line);border-radius:16px;padding:16px 18px;background:#fffefb}
+  .vec .lab{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+  .vec .num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:800;margin-top:7px}
+  .vec .note{font-size:11px;margin-top:4px;color:var(--ink-soft)}
+  .vec.up{background:var(--teal-soft)}.vec.up .num{color:var(--teal)}
+  .vec.down{background:var(--clay-soft)}.vec.down .num{color:var(--clay)}
+
+  /* timeline */
+  .tl{display:flex;flex-direction:column;gap:0}
+  .tl-row{display:flex;align-items:center;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}
+  .tl-row:last-child{border-bottom:0}
+  .tl-ic{width:38px;height:38px;border-radius:12px;background:var(--bg-soft);display:grid;place-items:center;font-size:15px;flex-shrink:0}
+  .tl-row .body{flex:1}
+  .tl-row .body b{font-size:14px}
+  .tl-row .body span{display:block;font-size:11px;color:var(--ink-soft);margin-top:2px}
+  .tl-row .end{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:15px}
+  .end.pos{color:var(--teal)}.end.neg{color:var(--clay)}.end.neu{color:var(--ink)}
+
+  /* hit rate */
+  .hit{display:flex;align-items:center;gap:18px;margin-top:18px;padding:16px;border:1px dashed var(--line);border-radius:16px;background:#fffefb}
+  .hit .ring{position:relative;width:64px;height:64px;flex-shrink:0}
+  .hit .ring .c{position:absolute;inset:0;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:15px}
+  .hit .t b{font-size:13px}
+  .hit .t p{font-size:11px;color:var(--ink-soft);margin-top:3px;line-height:1.5;max-width:340px}
+
+  /* strategy list */
+  .strat{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+  .strat:last-child{border-bottom:0}
+  .strat .rk{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);width:26px;font-weight:700}
+  .strat .nm{flex:1}
+  .strat .nm b{font-size:14px}
+  .strat .nm .best{font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--teal);background:var(--teal-soft);padding:3px 7px;border-radius:6px;margin-left:8px}
+  .strat .nm p{font-size:11px;color:var(--ink-soft);margin-top:3px}
+  .strat .sc{text-align:right}
+  .strat .bar{width:120px;height:6px;border-radius:99px;background:var(--bg-soft);overflow:hidden;margin-top:6px}
+  .strat .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--teal),#3fa28d)}
+  .strat .sc .n{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:14px}
+
+  /* mini chart */
+  .chartcard{padding:0;overflow:hidden}
+  .chart-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0}
+  .ranges{display:flex;gap:6px}
+  .ranges button{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;border:1px solid var(--line);background:transparent;color:var(--ink-soft);padding:6px 11px;border-radius:9px;cursor:pointer}
+  .ranges button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+  .disclaimer{margin-top:28px;font-size:11px;color:var(--ink-soft);line-height:1.6;border-top:1px solid var(--line);padding-top:18px}
+  .mockbar{background:var(--ink);color:var(--bg);text-align:center;font-size:12px;letter-spacing:.04em;padding:9px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="mockbar">DESIGN MOCKUP · static sample data · not wired to live backend</div>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="dot">B</span> BULLSEYE</div>
+    <nav class="navlinks">
+      <a href="#" class="active">Overview</a>
+      <a href="#">Screener</a>
+      <a href="#">Watchlist</a>
+      <a href="#">Alerts</a>
+    </nav>
+    <div class="avatar">KG</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-top">
+      <div class="ticker-id">
+        <div class="logo-badge">VE</div>
+        <div>
+          <h1>VEDL <span class="mono" style="font-size:15px;color:var(--ink-soft);font-weight:500">Vedanta Ltd</span></h1>
+          <div class="sub">Metals &amp; Mining · Large Cap</div>
+          <div class="exch"><span class="on">NSE</span><span>BSE</span></div>
+        </div>
+      </div>
+      <div class="price-now">
+        <div class="eyebrow">Live Price</div>
+        <div class="p mono">₹352.60</div>
+        <div class="chg">▼ 0.59% &nbsp;<span style="color:var(--ink-soft);font-weight:500">today</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROW 1: verdict + gauge -->
+  <div class="grid cols">
+    <div class="card feature verdict">
+      <h3 class="title">Algorithm Verdict</h3>
+      <div class="big">BUY</div>
+      <div style="margin-top:14px"><span class="chip">● Calibrated engine · n=0 tracked</span></div>
+      <div class="setup">
+        <span class="eyebrow">Trade Setup</span>
+        <b>Trend breakout · buy-side</b>
+        <p>Target and stop are volatility-scaled (~1 ATR) and aligned with the displayed verdict. Time-to-target estimated from trend strength.</p>
+      </div>
+    </div>
+
+    <div class="card feature">
+      <h3 class="title">FISO Confidence Level</h3>
+      <div class="gauge-wrap">
+        <div class="gauge">
+          <svg viewBox="0 0 200 120">
+            <path d="M14 110 A 86 86 0 0 1 186 110" fill="none" stroke="#e7e2d8" stroke-width="14" stroke-linecap="round"/>
+            <path d="M14 110 A 86 86 0 0 1 186 110" fill="none" stroke="url(#g)" stroke-width="14" stroke-linecap="round"
+                  stroke-dasharray="270" stroke-dashoffset="78"/>
+            <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#b5503c"/><stop offset="0.55" stop-color="#c08a2d"/><stop offset="1" stop-color="#2f7d6e"/>
+            </linearGradient></defs>
+          </svg>
+          <div class="val"><div class="n">71.2</div><div class="d">/ 100</div></div>
+        </div>
+        <div class="scale"><span>SELL</span><span>HOLD</span><span>BUY</span></div>
+      </div>
+      <div class="hit">
+        <div class="ring">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" fill="none" stroke="#e7e2d8" stroke-width="7"/>
+            <circle cx="32" cy="32" r="27" fill="none" stroke="#2f7d6e" stroke-width="7" stroke-linecap="round"
+                    stroke-dasharray="170" stroke-dashoffset="81" transform="rotate(-90 32 32)"/>
+          </svg>
+          <div class="c">52%</div>
+        </div>
+        <div class="t">
+          <b>Historical hit-rate</b>
+          <p>Prior estimate — not enough tracked trades yet for this setup. Past results never guarantee future moves.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 2: price vectors + timeline -->
+  <div class="grid cols">
+    <div class="card">
+      <h3 class="title">Predictive Price Vectors</h3>
+      <div class="vectors">
+        <div class="vec"><div class="lab">Entry Price</div><div class="num">₹458.10</div><div class="note">Current position</div></div>
+        <div class="vec up"><div class="lab">Target Price</div><div class="num">₹469.60</div><div class="note">+2.51% upside target</div></div>
+        <div class="vec down"><div class="lab">Stop Loss</div><div class="num">₹449.82</div><div class="note">−1.81% downside risk</div></div>
+        <div class="vec"><div class="lab">Risk : Reward</div><div class="num">1 : 1.39</div><div class="note">per unit risk</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="title">Trade Timeline</h3>
+      <div class="tl">
+        <div class="tl-row">
+          <div class="tl-ic">⌖</div>
+          <div class="body"><b>Target Date</b><span>Jun 03, 2026</span></div>
+          <div class="end neu">3d</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-ic">⚡</div>
+          <div class="body"><b>Expected Move</b><span>From current price</span></div>
+          <div class="end pos">+2.51%</div>
+        </div>
+        <div class="tl-row">
+          <div class="tl-ic">▲</div>
+          <div class="body"><b>Max Risk</b><span>If stop loss triggered</span></div>
+          <div class="end neg">−1.81%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 3: chart -->
+  <div class="grid">
+    <div class="card feature chartcard">
+      <div class="chart-head">
+        <h3 class="title" style="margin:0">Chart Geometry</h3>
+        <div class="ranges">
+          <button>1D</button><button>1W</button><button class="on">1M</button><button>1Y</button><button>ALL</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 1180 230" preserveAspectRatio="none" style="width:100%;height:230px;display:block">
+        <defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="rgba(47,125,110,.18)"/><stop offset="1" stop-color="rgba(47,125,110,0)"/>
+        </linearGradient></defs>
+        <path d="M0,170 C120,150 180,180 280,150 C380,120 460,140 560,110 C660,80 740,120 840,90 C940,60 1040,80 1180,40 L1180,230 L0,230 Z" fill="url(#fill)"/>
+        <path d="M0,170 C120,150 180,180 280,150 C380,120 460,140 560,110 C660,80 740,120 840,90 C940,60 1040,80 1180,40" fill="none" stroke="#2f7d6e" stroke-width="2.5"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ROW 4: strategies -->
+  <div class="grid">
+    <div class="card">
+      <h3 class="title">Strategy Engine · top signals ranked</h3>
+      <div class="strat">
+        <div class="rk">01</div>
+        <div class="nm"><b>Volatility Expansion</b><span class="best">★ BEST FIT</span><p>Bands are widening sharply — start of a directional move.</p></div>
+        <div class="sc"><div class="n">88</div><div class="bar"><i style="width:88%"></i></div></div>
+      </div>
+      <div class="strat">
+        <div class="rk">02</div>
+        <div class="nm"><b>Relative Strength</b><p>RSI elevated at 60.2 — outperforming the broader market.</p></div>
+        <div class="sc"><div class="n">82</div><div class="bar"><i style="width:82%"></i></div></div>
+      </div>
+      <div class="strat">
+        <div class="rk">03</div>
+        <div class="nm"><b>Supertrend</b><p>Price holding above the trend band on rising volume.</p></div>
+        <div class="sc"><div class="n">76</div><div class="bar"><i style="width:76%"></i></div></div>
+      </div>
+      <div class="strat">
+        <div class="rk">04</div>
+        <div class="nm"><b>Breakout Trading</b><p>Closing near a multi-week resistance flip zone.</p></div>
+        <div class="sc"><div class="n">71</div><div class="bar"><i style="width:71%"></i></div></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="disclaimer">⚠️ Bullseye is an AI-powered predictive tool and is <b>not</b> a SEBI-registered investment advisor. Predictions are for educational and informational purposes only and should not be construed as financial advice. Invest at your own risk.</p>
+</div>
+</body>
+</html>

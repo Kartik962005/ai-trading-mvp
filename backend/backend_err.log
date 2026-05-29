@@ -1,6 +1,10 @@
-INFO:     Started server process [9188]
+INFO:     Will watch for changes in these directories: ['C:\\Users\\karti\\Downloads\\Trade P1\\ai-trading-mvp\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [6300] using WatchFiles
+INFO:     Started server process [30988]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8000): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
+$ZOMATO.NS: possibly delisted; no price data found  (period=320d) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['ZOMATO.NS']: possibly delisted; no price data found  (period=320d) (Yahoo error = "No data found, symbol may be delisted")

@@ -420,6 +420,200 @@ def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     best_id = max(evals.items(), key=lambda x: x[1]['score'])[0]
     return evals, best_id
 
+def _infer_market(ticker: str) -> str:
+    t = (ticker or "").upper()
+    if t.endswith(".NS"):
+        return "NSE"
+    if t.endswith(".BO"):
+        return "BSE"
+    return "US"
+
+
+def _liquidity_score_local(avg_turnover: float) -> float:
+    return min(1.0, max(0.0, avg_turnover / 500_000_000))
+
+
+# ── Setup hit-rate stats (shared with the daily backtested engine) ─────────────
+_setup_stats_cache = {"ts": 0.0, "data": {}}
+SETUP_STATS_TTL = 1800
+
+
+def _setup_outcome_counts(setup_type: str) -> tuple[int, int]:
+    """Return (wins, trades) for a setup type from tracked signal outcomes.
+
+    These come from the SAME outcome-tracking tables the daily email engine
+    writes to, so the stock page reports genuine historical hit-rates rather
+    than fabricated ones. Cached briefly to avoid hitting the DB per request.
+    """
+    now = time.time()
+    if now - _setup_stats_cache["ts"] > SETUP_STATS_TTL:
+        stats: dict = {}
+        if _SUPABASE_OK and _sb:
+            try:
+                sig = _sb.table("stock_signals").select("id,setup_type").order("run_date", desc=True).limit(600).execute()
+                out = _sb.table("signal_outcomes").select("stock_signal_id,outcome").limit(600).execute()
+                setup_by_id = {r["id"]: (r.get("setup_type") or "mixed_setup") for r in (getattr(sig, "data", None) or [])}
+                for o in (getattr(out, "data", None) or []):
+                    s = setup_by_id.get(o.get("stock_signal_id"))
+                    if not s:
+                        continue
+                    d = stats.setdefault(s, {"wins": 0, "trades": 0})
+                    d["trades"] += 1
+                    if o.get("outcome") == "WIN":
+                        d["wins"] += 1
+            except Exception as e:
+                print(f"[Analyze] setup stats fetch failed: {e}")
+        _setup_stats_cache["ts"] = now
+        _setup_stats_cache["data"] = stats
+    d = _setup_stats_cache["data"].get(setup_type, {"wins": 0, "trades": 0})
+    return d["wins"], d["trades"]
+
+
+def _unified_signal(ohlcv: pd.DataFrame, ticker: str, sentiment_score: float = 0.0):
+    """Score a single ticker with the SAME calibrated engine that powers the
+    daily emails (feature engineering → technical rules → calibrated win
+    probability → expected-R → weighted final score). Returns None when the
+    history is too short, in which case the caller uses a corrected fallback.
+    """
+    try:
+        from app.services.daily_signal_engine import (
+            adjusted_win_rate,
+            build_feature_frame,
+            compute_expected_r,
+            compute_final_score,
+            detect_market_regime,
+            evaluate_technical_setup,
+            fetch_market_context,
+            predict_signal_probabilities,
+            validate_candidate_frame,
+            wilson_lower_bound_placeholder,
+        )
+        from app.services.daily_signal_engine.config import (
+            DEFAULT_K_SMOOTHING,
+            RISK_PROFILES,
+            UNIVERSE_AVERAGE_WIN_RATE,
+        )
+    except Exception as e:
+        print(f"[Analyze] calibrated engine import failed: {e}")
+        return None
+
+    risk_level = "Balanced"
+    profile = RISK_PROFILES[risk_level]
+
+    try:
+        feats = build_feature_frame(ohlcv)
+    except Exception as e:
+        print(f"[Analyze] feature frame build failed for {ticker}: {e}")
+        return None
+    if feats is None or len(feats) < 30:
+        return None
+
+    latest = feats.iloc[-1]
+    close = float(latest["close"])
+    atr = float(latest["atr14"])
+    if close <= 0 or atr <= 0:
+        return None
+
+    # Market regime + relative strength (best-effort; neutral on failure).
+    market = _infer_market(ticker)
+    regime = {"label": "neutral", "alignment_buy": 0.55, "alignment_sell": 0.55, "score": 0.55}
+    relative_strength = 0.0
+    try:
+        ctx = fetch_market_context(market)
+        idx_hist = ctx["index_history"]
+        regime = detect_market_regime(idx_hist)
+        idx_feats = build_feature_frame(idx_hist)
+        if len(feats) >= 25 and len(idx_feats) >= 25:
+            stock_ret = float(feats["close"].iloc[-1] / feats["close"].iloc[-21] - 1)
+            index_ret = float(idx_feats["close"].iloc[-1] / idx_feats["close"].iloc[-21] - 1)
+            relative_strength = (stock_ret - index_ret) * 100
+    except Exception:
+        pass
+
+    try:
+        validation = validate_candidate_frame(feats, risk_level)
+    except Exception:
+        validation = {"quality_score": 0.5, "rejections": [], "avg_turnover": 0.0}
+    quality_score = float(validation.get("quality_score", 0.5))
+
+    technical_setup = evaluate_technical_setup(latest.to_dict(), relative_strength, 0.0)
+    probabilities = predict_signal_probabilities(
+        technical_setup, regime, risk_level, relative_strength, quality_score
+    )
+    direction = technical_setup["direction"]
+    pwin = float(probabilities["calibrated_pwin"])
+    chart_quality = float(technical_setup["chart_setup_quality"])
+    regime_alignment = regime["alignment_buy"] if direction == "BUY" else regime["alignment_sell"]
+
+    # Volatility-scaled targets/stops from the risk profile (not hand-tuned).
+    target_mult = profile["target_atr_multiplier"]
+    stop_mult = profile["stop_atr_multiplier"]
+    if direction == "BUY":
+        target_price = close + atr * target_mult
+        stop_loss = close - atr * stop_mult
+        target_r = max((target_price - close) / max(close - stop_loss, 1e-6), 0.0)
+    else:
+        target_price = close - atr * target_mult
+        stop_loss = close + atr * stop_mult
+        target_r = max((close - target_price) / max(stop_loss - close, 1e-6), 0.0)
+    expected_r = compute_expected_r(pwin, float(probabilities["p_loss"]), target_r, 1.0)
+
+    # Honest historical hit-rate (shrinkage toward universe prior + Wilson floor).
+    setup_type = technical_setup["setup_type"]
+    wins, trades = _setup_outcome_counts(setup_type)
+    setup_win_rate = adjusted_win_rate(wins, trades, UNIVERSE_AVERAGE_WIN_RATE, DEFAULT_K_SMOOTHING)
+    wilson_floor = wilson_lower_bound_placeholder(wins, trades) if trades else UNIVERSE_AVERAGE_WIN_RATE * 0.8
+    adjusted_setup_win_rate = min(setup_win_rate, max(wilson_floor, 0.0) + 0.12)
+
+    atr_pct = atr / close
+    penalty = max(0.0, (1.0 - quality_score) * 0.18) + max(0.0, atr_pct - profile["max_atr_pct"] / 100) * 0.5
+    penalty *= profile["risk_penalty_multiplier"]
+
+    compute_final_score(
+        calibrated_pwin=pwin,
+        expected_r=expected_r,
+        adjusted_setup_win_rate=adjusted_setup_win_rate,
+        market_regime_alignment=regime_alignment,
+        chart_setup_quality=chart_quality,
+        relative_strength=min(1.0, abs(relative_strength) / 5),
+        liquidity_score=_liquidity_score_local(float(validation.get("avg_turnover", 0.0))),
+        model_stability=float(probabilities["model_stability"]),
+        risk_penalties=penalty,
+    )
+
+    # 0-100 conviction meter (direction-aware so SELL setups read low).
+    conviction = 0.5 * pwin + 0.3 * chart_quality + 0.2 * regime_alignment
+    fiso = conviction * 100 if direction == "BUY" else (1 - conviction) * 100
+    fiso = max(1.0, min(99.0, fiso))
+
+    # Realistic time-to-target: net directional drift is only a fraction of the
+    # daily range, scaled by trend strength (ADX). No ATR-as-speed, no double 1.4x.
+    adx = float(latest.get("adx14", 18.0) or 18.0)
+    trend_factor = max(0.5, min(1.4, adx / 22.0))
+    daily_drift = atr * 0.32 * trend_factor
+    distance = abs(target_price - close)
+    est_trading_days = int(max(2, min(15, round(distance / max(daily_drift, 1e-6)))))
+
+    confidence = max(40.0, min(95.0, float(probabilities["confidence"]) * 100))
+
+    return {
+        "fiso": fiso,
+        "direction": direction,
+        "target_price": float(target_price),
+        "stop_loss": float(stop_loss),
+        "target_r": float(target_r),
+        "expected_r": float(expected_r),
+        "confidence": confidence,
+        "est_trading_days": est_trading_days,
+        "setup_type": setup_type,
+        "setup_win_rate": float(adjusted_setup_win_rate),
+        "setup_sample_size": int(trades),
+        "quality_score": quality_score,
+        "rejections": list(validation.get("rejections", [])),
+        "reasons": list(technical_setup.get("reasons", [])),
+    }
+
+
 def run_analysis(df: pd.DataFrame, ticker: str):
     # ── RAM cache check ────────────────────────────────────────────────────────
     now = time.time()
@@ -456,6 +650,16 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     df = df.dropna(subset=['close', 'high', 'low', 'volume'])
     df = df.reset_index(drop=True)
 
+    # Clean OHLCV captured BEFORE long-window indicators are added — the
+    # calibrated engine needs the full history, not the ~50 rows that survive
+    # an SMA_200 dropna below.
+    _ohlcv_cols = [c for c in ['date', 'open', 'high', 'low', 'close', 'volume'] if c in df.columns]
+    ohlcv = df[_ohlcv_cols].copy()
+    if 'date' not in ohlcv.columns:
+        ohlcv['date'] = pd.date_range(end=datetime.utcnow(), periods=len(ohlcv), freq='D')
+    if 'open' not in ohlcv.columns:
+        ohlcv['open'] = ohlcv['close']
+
     close, high, low, volume = df['close'], df['high'], df['low'], df['volume']
 
     # Indicators needed for 20 strategies
@@ -479,20 +683,65 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     prev = df.iloc[-2]
     sentiment = fetch_news_sentiment(ticker)
 
-    # Core FISO Score
-    sma_diff_pct = (latest['SMA_50'] - latest['SMA_200']) / latest['SMA_200']
-    trend_score = max(0.0, min(35.0, 17.5 + (sma_diff_pct * 250))) 
-    
-    rsi = latest['RSI_14']
-    if rsi < 30: momentum_score = 35.0 
-    elif rsi > 70: momentum_score = 5.0 
-    else: momentum_score = max(0.0, min(35.0, 35.0 - ((rsi - 30) * 0.75)))
-    
-    macd_hist = latest['MACD'] - latest['MACD_signal']
-    macd_score = max(0.0, min(30.0, 15.0 + (macd_hist / latest['close'] * 1500)))
+    atr_val = float(latest['ATR_14'])
+    entry = float(latest['close'])
+    rsi = float(latest['RSI_14'])
 
-    raw_fiso = trend_score + momentum_score + macd_score + (sentiment['score'] * 20.0)
-    fiso = min(100.0, max(0.0, raw_fiso))
+    # ── Primary path: the SAME calibrated engine that powers the daily emails ──
+    unified = _unified_signal(ohlcv, ticker, float(sentiment.get('score', 0.0)))
+
+    if unified is not None:
+        fiso = unified["fiso"]
+        direction = unified["direction"]
+        target = unified["target_price"]
+        stop_loss = unified["stop_loss"]
+        confidence = unified["confidence"]
+        estimated_days = unified["est_trading_days"]
+        reward_ratio = unified["target_r"]
+        setup_win_rate = unified["setup_win_rate"]
+        setup_sample_size = unified["setup_sample_size"]
+        setup_type = unified["setup_type"]
+        expected_r = unified["expected_r"]
+        data_quality = unified["quality_score"]
+        rejections = unified["rejections"]
+        engine_used = "calibrated"
+    else:
+        # ── Fallback (short history): trend-ALIGNED, volatility-scaled. ──
+        # No inverted RSI; no ATR-as-speed time estimate.
+        sma_diff_pct = float((latest['SMA_50'] - latest['SMA_200']) / latest['SMA_200'])
+        trend_up = (latest['SMA_50'] >= latest['SMA_200']) and (latest['close'] >= latest['EMA_50'])
+        macd_hist = float(latest['MACD'] - latest['MACD_signal'])
+        # RSI aligned WITH the trend (rising RSI confirms an uptrend; falling confirms a downtrend).
+        rsi_aligned = max(0.0, min(1.0, (rsi - 40) / 30)) if trend_up else max(0.0, min(1.0, (60 - rsi) / 30))
+        trend_strength = max(0.0, min(1.0, abs(sma_diff_pct) * 12))
+        macd_align = 1.0 if ((macd_hist > 0) == trend_up) else 0.0
+        sent_term = max(0.0, min(1.0, 0.5 + float(sentiment.get('score', 0.0))))
+        conviction = 0.45 * trend_strength + 0.30 * rsi_aligned + 0.15 * macd_align + 0.10 * sent_term
+        direction = "BUY" if trend_up else "SELL"
+        fiso = max(1.0, min(99.0, 50 + conviction * 45)) if trend_up else max(1.0, min(99.0, 50 - conviction * 45))
+
+        target_mult, stop_mult = 1.0, 0.72
+        if direction == "BUY":
+            target = entry + atr_val * target_mult
+            stop_loss = entry - atr_val * stop_mult
+            reward_ratio = (target - entry) / max(entry - stop_loss, 1e-6)
+        else:
+            target = entry - atr_val * target_mult
+            stop_loss = entry + atr_val * stop_mult
+            reward_ratio = (entry - target) / max(stop_loss - entry, 1e-6)
+
+        adx_proxy = abs(sma_diff_pct) * 100
+        trend_factor = max(0.5, min(1.4, (20 + adx_proxy) / 22))
+        daily_drift = atr_val * 0.32 * trend_factor
+        estimated_days = int(max(2, min(15, round(abs(target - entry) / max(daily_drift, 1e-6)))))
+        confidence = max(40.0, min(92.0, 50 + conviction * 40))
+        setup_win_rate = 0.52
+        setup_sample_size = 0
+        setup_type = "trend_continuation"
+        expected_r = None
+        data_quality = 0.5
+        rejections = ["insufficient history for calibrated engine"]
+        engine_used = "fallback"
 
     if fiso >= 75:
         verdict = "Strong Buy"
@@ -505,30 +754,13 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     else:
         verdict = "Strong Sell"
 
-    atr_val = float(latest['ATR_14'])
-    entry = float(latest['close'])
-    
-    fiso_strength = abs(fiso - 50) / 50.0  
-    reward_ratio = 1.5 + (fiso_strength * 2.0) 
-
-    if fiso >= 50: 
-        stop_loss = entry - (1.5 * atr_val)
-        target = entry + (reward_ratio * atr_val) 
-    else: 
-        stop_loss = entry + (1.5 * atr_val)
-        target = entry - (reward_ratio * atr_val)
-
-    momentum_velocity = 1.0 + (abs(rsi - 50) / 50.0) 
-    estimated_days = max(1, min(math.ceil((abs(target - entry) / atr_val) / momentum_velocity * 1.4), 21)) 
-    
-    confidence = min(99.4, max(42.1, 45 + abs(fiso - 50) * 0.9 + (rsi / 100) * 12))
-
     strategy_evals, best_id = evaluate_strategies(latest, prev, df)
 
     result = {
         "ticker": ticker,
         "fiso_score": round(fiso, 2),
         "verdict": verdict,
+        "direction": direction,
         "entry": round(entry, 2),
         "stop_loss": round(stop_loss, 2),
         "target": round(target, 2),
@@ -538,7 +770,14 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "best_strategy_id": best_id,
         "confidence": round(confidence, 2),
         "estimated_days": estimated_days,
-        "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y')
+        "target_date": (datetime.now() + timedelta(days=round(estimated_days * 1.4))).strftime('%b %d, %Y'),
+        "risk_reward": round(float(reward_ratio), 2),
+        "expected_r": round(float(expected_r), 3) if expected_r is not None else None,
+        "setup_type": setup_type,
+        "setup_hit_rate": round(float(setup_win_rate) * 100, 1),
+        "setup_sample_size": int(setup_sample_size),
+        "data_quality": round(float(data_quality), 2),
+        "engine": engine_used,
     }
 
     # ── Save to RAM cache ──────────────────────────────────────────────────────

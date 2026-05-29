@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from .config import CORRELATION_LOOKBACK, CORRELATION_THRESHOLD, MAX_SELECTED_SIGNALS
+from .config import CORRELATION_LOOKBACK, CORRELATION_THRESHOLD, MAX_SELECTED_SIGNALS, MAX_SIGNALS_PER_SECTOR
 
 
 def _is_highly_correlated(candidate: dict[str, Any], selected: list[dict[str, Any]]) -> bool:
@@ -27,9 +27,15 @@ def _is_highly_correlated(candidate: dict[str, Any], selected: list[dict[str, An
 def diversify_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     sector_counts: dict[str, int] = defaultdict(int)
-    for candidate in sorted(candidates, key=lambda item: item["final_score"], reverse=True):
+    # Sort by the risk-aware rank score when present (so Conservative/Balanced/
+    # Aggressive produce different shortlists), falling back to the raw score.
+    for candidate in sorted(
+        candidates,
+        key=lambda item: item.get("rank_score", item["final_score"]),
+        reverse=True,
+    ):
         sector = candidate.get("sector") or "General"
-        if sector_counts[sector] >= 2:
+        if sector_counts[sector] >= MAX_SIGNALS_PER_SECTOR:
             continue
         if _is_highly_correlated(candidate, selected):
             continue

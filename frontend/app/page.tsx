@@ -3,7 +3,7 @@ import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
-import { STOCKS } from './stocks';
+import { STOCKS, SEARCH_STOCKS, getExchangeVariants } from './stocks';
 
 const BACKEND = '/api/backend';
 const fetcher = async (url: string) => {
@@ -319,9 +319,9 @@ function NotificationSettingsModal({
           <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
             <div>
               <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-300 font-['Space_Grotesk']">Logged-in Alerts</div>
-              <h2 className="mt-2 text-2xl font-black font-['Space_Grotesk']">Daily 10 Stock Signals Email</h2>
+              <h2 className="mt-2 text-2xl font-black font-['Space_Grotesk']">Daily Stock Signals Email (up to 10)</h2>
               <p className="mt-2 text-sm text-slate-400 font-['JetBrains_Mono']">
-                {userEmail || 'Your signed-in account'} can receive a model-ranked 10-stock email for the next trading day after the Indian market closes.
+                {userEmail || 'Your signed-in account'} can receive a model-ranked email of up to 10 stocks for the next trading day after the Indian market closes. Only names that clear every quality filter are sent, so some days have fewer.
               </p>
             </div>
             <button
@@ -362,7 +362,7 @@ function NotificationSettingsModal({
                       Daily Automatic Alert
                     </div>
                     <div className="mt-2 text-[11px] text-slate-400 font-['JetBrains_Mono']">
-                      Turn this on once and Bullseye will automatically email your next-trading-day top 10 signals on each trading day.
+                      Turn this on once and Bullseye will automatically email your next-trading-day signals (up to 10) on each trading day.
                     </div>
                   </div>
                   <input
@@ -1231,6 +1231,11 @@ const MarketAssetCard = ({
   quickQuote?: QuoteSnapshot;
   onPreview: (stock: typeof STOCKS[0]) => void;
 }) => {
+  // Gate client-only (localStorage-backed) rendering until after mount so the
+  // server HTML and the first client render match (avoids hydration mismatch).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const analysisView = getAnalysisPresentation(prefetchedAnalysis);
   const isReady = !!analysisView;
   const quickPrice = Number(quickQuote?.price);
@@ -1241,75 +1246,74 @@ const MarketAssetCard = ({
 
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
-  const verdictColor = isReady
-    ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400')
-    : (quickSignalBullish ? 'text-green-500' : 'text-red-500');
   const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : quickSignal;
-
-  // Mini verdict dot shown even before hover when prefetch is done
-  const dotColor = isReady
-    ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
-    : (quickSignalBullish ? 'bg-green-400' : 'bg-red-400');
   const signalGradient = isReady
     ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
     : (quickSignalBullish ? 'from-emerald-300 to-cyan-300' : 'from-rose-300 to-orange-200');
 
+  // Real 1-month sparkline (cached per ticker — reuses the preview chart cache)
+  const { data: cardChart } = useSWR(`/api/v1/chart/${stock.ticker}?range=1mo`, fetcher, {
+    fallbackData: getCache(`chart:${stock.ticker}:1mo`),
+    onSuccess: (data) => setCache(`chart:${stock.ticker}:1mo`, data),
+  });
+  const sparkPath = buildPreviewChartPath(cardChart, 120, 30);
+  const confidencePct = Math.round(isReady ? analysisView.confidenceLevel : quickConfidence);
+  const changeUp = quickChange >= 0;
+  const sparkColor = isReady
+    ? (isBull ? '#10b981' : isHold ? '#0891b2' : '#ef4444')
+    : (changeUp ? '#10b981' : '#ef4444');
+  const pillClass = isReady
+    ? (isBull ? 'bg-emerald-50 text-emerald-700' : isHold ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600')
+    : (quickSignalBullish ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600');
+
   return (
     <div
       data-market-card={stock.ticker}
-      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
-        border-slate-200/80 hover:border-cyan-200`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onPreview(stock)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPreview(stock); } }}
+      aria-label={`Open ${stock.symbol} preview`}
+      className={`group relative flex w-full cursor-pointer flex-col overflow-hidden rounded-[22px] border border-slate-200/80 bg-white/90 p-4 backdrop-blur-md transition-all duration-300 select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:border-cyan-200 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)] sm:p-5`}
     >
-      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient} opacity-0 transition-opacity duration-300 group-hover:opacity-100`} />
       <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-100/55 blur-2xl opacity-0 transition-opacity group-hover:opacity-100" />
-      <div className="relative flex justify-between items-start gap-2 mb-5">
-        <div className="min-w-0">
-          <span className="block truncate text-[11px] font-black font-['JetBrains_Mono'] text-slate-500 transition-colors group-hover:text-cyan-600">{stock.symbol}</span>
-          <span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500 font-['JetBrains_Mono']">{stock.exchange}</span>
-        </div>
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Live verdict dot — green/red/grey based on prefetch status */}
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Open preview'} />
-          <button
-            type="button"
-            onPointerDown={(e) => { e.stopPropagation(); onPreview(stock); }}
-            onClick={(e) => { e.stopPropagation(); onPreview(stock); }}
-            className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-cyan-600 hover:bg-cyan-50 hover:border-cyan-300 transition-all flex items-center justify-center shrink-0 shadow-sm"
-            aria-label={`Open ${stock.symbol} preview`}
-            title="Open preview"
-          >
-            <span className="text-xs transition-transform group-hover:-rotate-90">⌄</span>
-          </button>
-        </div>
-      </div>
-      <div className="relative font-black text-base text-slate-950 font-['Space_Grotesk'] leading-snug line-clamp-2 min-h-11">{stock.name}</div>
 
-      <div className="relative mt-3 flex min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-2 sm:px-3">
-        <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400 sm:text-[10px] sm:tracking-widest">Price</span>
-        <span className="min-w-0 truncate text-right font-['JetBrains_Mono'] text-xs font-black text-slate-950 sm:text-sm">
-          {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
-        </span>
-      </div>
-      <div className="relative mt-2 flex min-w-0 items-center justify-between gap-2 px-1">
-        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Face Value</span>
-        <span className="text-[10px] font-black text-slate-600 font-['JetBrains_Mono']">{formatFaceValue(stock)}</span>
+      {/* Symbol + exchange badge */}
+      <div className="relative flex items-start justify-between gap-2">
+        <span className="min-w-0 truncate font-['Space_Grotesk'] text-[15px] font-black text-slate-950 transition-colors group-hover:text-cyan-700" title={stock.symbol}>{stock.symbol}</span>
+        <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400 font-['JetBrains_Mono']">{stock.exchange}</span>
       </div>
 
-      <div className="relative mt-5 flex items-center justify-between gap-3">
-        <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-1000"
-            style={{
-              width: `${isReady ? analysisView.confidenceLevel : quickConfidence}%`,
-              backgroundColor: isReady
-                ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171')
-                : (quickSignalBullish ? '#4ade80' : '#f87171'),
-            }}
-          />
-        </div>
-        <span className={`shrink-0 text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk'] ${verdictColor}`}>
+      {/* Company name */}
+      <div className="relative mt-1 truncate font-['JetBrains_Mono'] text-[11px] text-slate-500" title={stock.name}>{stock.name}</div>
+
+      {/* Price */}
+      <div className="relative mt-4 font-['JetBrains_Mono'] text-xl font-black text-slate-950">
+        {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '—'}
+      </div>
+      {/* Change */}
+      <div className={`relative mt-1 font-['JetBrains_Mono'] text-xs font-bold ${changeUp ? 'text-emerald-600' : 'text-rose-600'}`}>
+        {changeUp ? '▲' : '▼'} {Math.abs(quickChange).toFixed(2)}%
+      </div>
+
+      {/* Real 1-month sparkline */}
+      <div className="relative mt-3 h-[34px] w-full">
+        {mounted && sparkPath ? (
+          <svg viewBox="0 0 120 34" preserveAspectRatio="none" className="h-full w-full" role="img" aria-label={`${stock.symbol} 1 month trend`}>
+            <path d={sparkPath} fill="none" stroke={sparkColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          </svg>
+        ) : (
+          <div className="h-full w-full rounded-md bg-slate-50" />
+        )}
+      </div>
+
+      {/* Verdict pill + confidence */}
+      <div className="relative mt-4 flex items-center justify-between gap-3">
+        <span className={`rounded-full px-3 py-1 font-['Space_Grotesk'] text-[11px] font-black uppercase tracking-wide ${pillClass}`}>
           {verdictBadge}
         </span>
+        <span className="font-['JetBrains_Mono'] text-[10px] font-bold uppercase tracking-wide text-slate-400">Conf {confidencePct}%</span>
       </div>
     </div>
   );
@@ -1962,6 +1966,19 @@ const FisoDetailPanel = ({
                 <div className="h-full rounded-full bg-cyan-400" style={{ width: `${analysisView.confidenceLevel}%` }} />
               </div>
             </div>
+            {typeof analysisView.setup_hit_rate === 'number' && (
+              <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Historical Hit-Rate</span>
+                  <span className="text-xs font-black text-white font-['JetBrains_Mono']">{analysisView.setup_hit_rate}%</span>
+                </div>
+                <span className="text-[9px] text-zinc-500 block leading-relaxed">
+                  {Number(analysisView.setup_sample_size) > 0
+                    ? `${String(analysisView.setup_type ?? 'this').replace(/_/g, ' ')} setups · n=${analysisView.setup_sample_size} tracked trades. Past results, not a guarantee.`
+                    : 'Prior estimate — not enough tracked trades yet for this setup. Past results never guarantee future moves.'}
+                </span>
+              </div>
+            )}
           </div>
       </div>
       </div>
@@ -3629,7 +3646,7 @@ function HomeContent() {
   useEffect(() => {
     if (input.trim().length < 1) { setSuggestions([]); setShowSuggestions(false); return; }
     const q = input.trim().toLowerCase();
-    const mapped = STOCKS.map(s => {
+    const mapped = SEARCH_STOCKS.map(s => {
       const name = s.name.toLowerCase();
       const symbol = s.symbol.toLowerCase();
       const tickerValue = s.ticker.toLowerCase();
@@ -4078,6 +4095,28 @@ function HomeContent() {
         .bullseye-light .fixed.inset-0.z-0 {
           background: transparent !important;
         }
+        /* ---- modern polish pass (cosmetic only: softer depth, smoother motion; no layout/position/color changes) ---- */
+        .bullseye-light { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+        /* Float the large glass panels with a soft two-layer shadow (box-shadow only — no reflow) */
+        .bullseye-light [class*="bg-black"][class*="rounded-3xl"],
+        .bullseye-light [class*="bg-black"][class*="rounded-2xl"] {
+          box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 20px 48px rgba(15,23,42,0.08) !important;
+        }
+        /* Consistent, gentle transitions on interactive elements */
+        .bullseye-light a, .bullseye-light button {
+          transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+        }
+        /* Dark ticker tape (matches design sample) — keep the bar dark, force its text light */
+        .bullseye-light .bullseye-ticker {
+          background: linear-gradient(90deg,#04141a,#062a30 50%,#04141a) !important;
+          border-bottom-color: rgba(255,255,255,0.08) !important;
+          box-shadow: 0 10px 30px rgba(4,20,26,0.22) !important;
+          backdrop-filter: none !important;
+        }
+        .bullseye-light .bullseye-ticker [class*="text-white"],
+        .bullseye-light .bullseye-ticker [class*="text-zinc-400"] { color: #cbeef2 !important; }
+        .bullseye-light .bullseye-ticker [class*="text-zinc-600"] { color: #7dd3e0 !important; }
+        .bullseye-light .bullseye-ticker [class*="border-white"] { border-color: rgba(255,255,255,0.08) !important; }
         .brand-mark {
           box-shadow: 0 16px 40px rgba(8,145,178,0.22), inset 0 1px 0 rgba(255,255,255,0.9);
         }
@@ -4311,7 +4350,7 @@ function HomeContent() {
         </div>
 
         {/* TICKER TAPE */}
-        <div className="relative z-20 w-full bg-black/60 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+        <div className="bullseye-ticker relative z-20 w-full bg-black/60 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
           <IndexTickerTape />
         </div>
 
@@ -4348,7 +4387,6 @@ function HomeContent() {
                   <div key={stock.ticker} onMouseDown={() => selectStock(stock)} className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-white/5 px-3 py-3 transition-all last:border-0 hover:bg-white/5 sm:px-5 sm:py-3.5 group">
                     <span className="min-w-0 truncate font-['Space_Grotesk'] text-xs font-bold uppercase tracking-wide text-zinc-300 group-hover:text-white sm:text-sm sm:tracking-wider" title={stock.name}>{stock.name}</span>
                     <div className="flex min-w-0 max-w-[92px] shrink-0 items-center justify-end gap-1.5 sm:max-w-[140px] sm:gap-2">
-                      <span className="rounded bg-white/5 px-1.5 py-0.5 font-['JetBrains_Mono'] text-[8px] uppercase text-zinc-500 sm:px-2 sm:text-[9px]">{stock.exchange}</span>
                       <span className="min-w-0 truncate font-['JetBrains_Mono'] text-[10px] text-cyan-500/70 group-hover:text-cyan-400 sm:text-xs" title={stock.symbol}>{stock.symbol}</span>
                     </div>
                   </div>
@@ -4489,12 +4527,12 @@ function HomeContent() {
               <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
                 {(['INDIA', 'US'] as const).map(market => (
                   <button key={market} onClick={() => setActiveMarket(market)}
-                    className={`relative p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border backdrop-blur-xl transition-all duration-300 flex flex-col items-start overflow-hidden
+                    className={`relative p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border bg-white/85 backdrop-blur-xl transition-all duration-300 flex flex-col items-start overflow-hidden hover:-translate-y-1
                       ${activeMarket === market
                         ? market === 'INDIA'
-                          ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_40px_rgba(6,182,212,0.25)] ring-1 ring-cyan-400/20 market-tab-active-india'
-                          : 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_40px_rgba(217,70,239,0.25)] ring-1 ring-fuchsia-400/20 market-tab-active-us'
-                        : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]'}`}>
+                          ? 'border-cyan-300 shadow-[0_20px_50px_rgba(6,182,212,0.18)] ring-1 ring-cyan-200 market-tab-active-india'
+                          : 'border-fuchsia-300 shadow-[0_20px_50px_rgba(217,70,239,0.18)] ring-1 ring-fuchsia-200 market-tab-active-us'
+                        : 'border-slate-200/80 shadow-[0_18px_45px_rgba(15,23,42,0.06)] hover:border-cyan-200 hover:shadow-[0_24px_60px_rgba(8,145,178,0.14)]'}`}>
                     <span className={`text-2xl sm:text-4xl mb-2 sm:mb-4 ${activeMarket === market ? 'opacity-100' : 'opacity-40'}`}>
                       {market === 'INDIA' ? '🇮🇳' : '🇺🇸'}
                     </span>
@@ -4570,7 +4608,7 @@ function HomeContent() {
 
               <GlobalNewsPanel />
 
-              <section className="overflow-hidden rounded-3xl border border-cyan-300/25 bg-slate-950 p-5 text-white shadow-[0_28px_90px_rgba(8,47,73,0.28)] sm:p-7">
+              <section className="overflow-hidden rounded-3xl border border-cyan-300/25 p-5 text-white shadow-[0_28px_90px_rgba(8,47,73,0.28)] sm:p-7" style={{ background: 'linear-gradient(160deg,#071a20,#0a2a30 60%,#06222a)' }}>
                 <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
                   <div className="flex min-h-[230px] flex-col justify-between rounded-2xl border border-white/10 bg-white/[0.06] p-5 sm:p-6">
                     <div>
@@ -4625,10 +4663,35 @@ function HomeContent() {
                     className="text-zinc-400 font-bold uppercase text-[10px] hover:text-cyan-400 transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 hover:bg-cyan-500/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10 hover:border-cyan-400/30">
                     ← Overview
                   </button>
-                  <h1 className="break-words font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-normal font-['Space_Grotesk'] drop-shadow-[0_2px_20px_rgba(6,182,212,0.2)]">{ticker}</h1>
+                  <h1 className="break-words font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-normal font-['Space_Grotesk'] drop-shadow-[0_2px_20px_rgba(6,182,212,0.2)]">{selectedStock?.symbol ?? ticker}</h1>
                   {selectedStock?.name && (
                     <div className="mt-2 text-sm text-zinc-400 font-['JetBrains_Mono'] tracking-wide">{selectedStock.name}</div>
                   )}
+                  {(() => {
+                    if (!selectedStock) return null;
+                    const variants = getExchangeVariants(selectedStock);
+                    if (variants.length < 2) return null;
+                    return (
+                      <div className="mt-3 inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+                        <span className="px-2 text-[9px] font-bold uppercase tracking-[0.18em] text-zinc-500 font-['JetBrains_Mono']">Exchange</span>
+                        {variants.map(variant => (
+                          <button
+                            key={variant.ticker}
+                            type="button"
+                            onClick={() => openStockView(variant, dashboardView)}
+                            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
+                              variant.exchange === selectedStock.exchange
+                                ? 'bg-cyan-500 text-white shadow-[0_4px_14px_rgba(6,182,212,0.4)]'
+                                : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                            }`}
+                            aria-pressed={variant.exchange === selectedStock.exchange}
+                          >
+                            {variant.exchange}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex flex-col sm:items-end gap-3">
                   {canOpenDetailedAnalysis && (

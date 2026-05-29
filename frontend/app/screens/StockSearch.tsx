@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { STOCKS } from '../stocks';
+import { SEARCH_STOCKS } from '../stocks';
 
-function scoreStock(stock: typeof STOCKS[number], query: string) {
+function scoreStock(stock: typeof SEARCH_STOCKS[number], query: string) {
   const target = `${stock.name} ${stock.symbol} ${stock.ticker} ${stock.exchange}`.toLowerCase();
   if (stock.symbol.toLowerCase() === query) return 0;
   if (stock.name.toLowerCase().startsWith(query) || stock.symbol.toLowerCase().startsWith(query)) return 1;
@@ -19,7 +19,7 @@ export default function StockSearch({ compact = false }: { compact?: boolean }) 
   const suggestions = useMemo(() => {
     const query = value.trim().toLowerCase();
     if (!query) return [];
-    return STOCKS
+    return SEARCH_STOCKS
       .map(stock => ({ stock, score: scoreStock(stock, query) }))
       .filter(item => item.score < 100)
       .sort((a, b) => a.score - b.score || a.stock.symbol.localeCompare(b.stock.symbol))
@@ -62,7 +62,6 @@ export default function StockSearch({ compact = false }: { compact?: boolean }) 
                 <span className="block truncate font-['Space_Grotesk'] text-sm font-black text-slate-950">{stock.name}</span>
                 <span className="mt-0.5 block font-['JetBrains_Mono'] text-[10px] font-bold uppercase tracking-widest text-slate-400">{stock.symbol}</span>
               </span>
-              <span className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 font-['JetBrains_Mono'] text-[10px] font-bold text-slate-500">{stock.exchange}</span>
             </Link>
           ))}
         </div>
