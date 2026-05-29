@@ -17,6 +17,8 @@ load_dotenv()
 
 default_origins = [
     "https://bullseye-analytics-ai.vercel.app",
+    "https://bullseye.help",
+    "https://www.bullseye.help",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
