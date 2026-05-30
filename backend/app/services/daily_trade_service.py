@@ -652,6 +652,16 @@ def _build_candidate(
             "sector_strength": round(sector_strength, 4),
             "relative_strength": round(relative_strength, 4),
             "signal_type": signal_type,
+            # Per-stock technical readings so the email can show real, distinct
+            # values for each name instead of a fixed boilerplate sentence.
+            "rsi": technical_setup["rsi"],
+            "adx": technical_setup["adx"],
+            "volume_ratio": technical_setup["volume_ratio"],
+            "buy_score": technical_setup["buy_score"],
+            "sell_score": technical_setup["sell_score"],
+            "chart_setup_quality": technical_setup["chart_setup_quality"],
+            "market_regime_alignment": round(regime_alignment, 6),
+            "calibrated_pwin": probabilities.get("calibrated_pwin"),
         },
         "recent_returns": returns,
     }

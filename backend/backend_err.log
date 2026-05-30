@@ -8,3 +8,8 @@ $ZOMATO.NS: possibly delisted; no price data found  (period=320d) (Yahoo error =
 
 1 Failed download:
 ['ZOMATO.NS']: possibly delisted; no price data found  (period=320d) (Yahoo error = "No data found, symbol may be delisted")
+$ZOMATO.NS: possibly delisted; no price data found  (period=320d) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['ZOMATO.NS']: possibly delisted; no price data found  (period=320d) (Yahoo error = "No data found, symbol may be delisted")
+WARNING:  WatchFiles detected changes in 'main.py'. Reloading...

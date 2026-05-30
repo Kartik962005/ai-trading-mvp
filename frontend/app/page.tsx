@@ -96,6 +96,13 @@ function getAnalysisPresentation(analysis: any) {
   const isBullish = direction === 'bullish' || /buy/i.test(displayVerdict);
   const isBearish = direction === 'bearish' || /sell/i.test(displayVerdict);
 
+  // FISO is a directional bullishness meter: ~100 = strong buy, ~0 = strong sell,
+  // ~50 = coin-flip. "Confidence" must express conviction in the CALLED direction —
+  // so a strong SELL (low FISO) is HIGH confidence, not low. We measure how far the
+  // reading sits from the 50 neutral line in either direction.
+  const fisoScore = toFiniteNumber(analysis.fiso_score, 50);
+  const confidenceLevel = Math.round(Math.min(99, 50 + Math.abs(fisoScore - 50)));
+
   return {
     ...analysis,
     entry,
@@ -106,7 +113,8 @@ function getAnalysisPresentation(analysis: any) {
     isBullish,
     isBearish,
     isHold: !isBullish && !isBearish,
-    confidenceLevel: toFiniteNumber(analysis.fiso_score, 0),
+    fisoScore,
+    confidenceLevel,
   };
 }
 

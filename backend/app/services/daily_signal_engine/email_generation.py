@@ -29,27 +29,52 @@ def _detail_reason(signal: dict[str, Any]) -> tuple[str, str]:
     relative_strength = explanation.get("relative_strength", signal.get("relative_strength"))
     sector_strength = explanation.get("sector_strength")
     confidence = signal.get("confidence")
-    regime_alignment = signal.get("market_regime_alignment")
+    regime_alignment = explanation.get("market_regime_alignment", signal.get("market_regime_alignment"))
+    rsi = explanation.get("rsi")
+    adx = explanation.get("adx")
+    volume_ratio = explanation.get("volume_ratio")
+    buy_score = explanation.get("buy_score")
+    sell_score = explanation.get("sell_score")
+    win_prob = explanation.get("calibrated_pwin")
+    if not isinstance(win_prob, (int, float)):
+        win_prob = probabilities.get("calibrated_pwin")
 
     lead = (
         f"Bullseye suggests {direction} because the setup scored well on "
-        f"{', '.join(reasons[:3]) if reasons else 'trend, momentum, and risk filters'}."
+        f"{', '.join(reasons[:5]) if reasons else 'trend, momentum, and risk filters'}."
     )
-    technical = (
-        "Indicators reviewed: EMA 20 / EMA 50 trend alignment, breakout or breakdown versus recent support and resistance, "
-        "volume versus the 20-day average, RSI(14), ADX(14), relative strength versus the market index, sector strength, "
-        "liquidity checks, volatility filters, and model confidence scoring."
-    )
+
+    # Per-stock factor readout — real values pulled from THIS signal, so every
+    # card reads differently instead of one fixed "indicators reviewed" sentence.
+    chosen_score = buy_score if direction == "BUY" else sell_score
+    factors: list[str] = []
+    if isinstance(chosen_score, (int, float)):
+        factors.append(f"chart setup cleared {int(chosen_score)} of 8 technical checks")
+    if isinstance(rsi, (int, float)):
+        factors.append(f"RSI(14) {rsi:.1f}")
+    if isinstance(adx, (int, float)):
+        factors.append(f"ADX(14) {adx:.1f}")
+    if isinstance(volume_ratio, (int, float)):
+        factors.append(f"volume {volume_ratio:.2f}x the 20-day average")
+    if isinstance(relative_strength, (int, float)):
+        factors.append(f"relative strength {relative_strength:+.2f}% vs index")
+    if isinstance(sector_strength, (int, float)):
+        factors.append(f"sector strength {sector_strength:+.2f}")
+    if isinstance(win_prob, (int, float)):
+        factors.append(f"model win-probability {win_prob:.0%}")
+    if isinstance(regime_alignment, (int, float)):
+        factors.append(f"market-regime alignment {regime_alignment:+.2f}")
+
+    if factors:
+        technical = "This stock's readings: " + "; ".join(factors) + "."
+    else:
+        technical = (
+            "Indicators reviewed: EMA trend alignment, breakout or breakdown versus recent support and "
+            "resistance, volume versus the 20-day average, RSI(14), ADX(14), relative strength versus the "
+            "market index, sector strength, liquidity checks, and volatility filters."
+        )
+
     metrics = f"Setup type: {setup}. Confidence: {_format_percent(confidence, 0)}. "
-    metrics += (
-        f"Relative strength vs index: {relative_strength:.2f}%. " if isinstance(relative_strength, (int, float)) else ""
-    )
-    metrics += (
-        f"Sector strength: {sector_strength:.2f}. " if isinstance(sector_strength, (int, float)) else ""
-    )
-    metrics += (
-        f"Market regime alignment: {regime_alignment:.2f}. " if isinstance(regime_alignment, (int, float)) else ""
-    )
     quality = (
         "Data quality passed liquidity, stale-data, spread, and abnormal-volatility checks."
         if validation.get("is_valid", True)

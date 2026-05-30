@@ -65,6 +65,7 @@ from app.services.alert_service import (
     update_alert_status,
 )
 from app.services.daily_trade_service import (
+    _is_market_holiday,
     disable_daily_alerts,
     enable_daily_alerts,
     get_admin_status,
@@ -91,6 +92,31 @@ INDEX_TICKERS = ["^NSEI", "^BSESN", "^IXIC", "^GSPC"]
 IST = ZoneInfo("Asia/Kolkata")
 
 
+def _parse_hhmm(value: str, default_h: int, default_m: int) -> tuple[int, int]:
+    """Parse 'HH:MM' from env; fall back to the supplied defaults."""
+    try:
+        hh, mm = value.strip().split(":", 1)
+        return max(0, min(23, int(hh))), max(0, min(59, int(mm)))
+    except Exception:
+        return default_h, default_m
+
+
+def _is_market_open_now(now: datetime | None = None) -> bool:
+    """True only during the NSE/BSE cash session.
+
+    Custom per-stock alerts should fire while the market is actually open
+    (default Mon-Fri 09:15-15:30 IST, holidays excluded) rather than around
+    the clock. Window is overridable via MARKET_OPEN_TIME / MARKET_CLOSE_TIME.
+    """
+    now = now or datetime.now(IST)
+    if _is_market_holiday(now.date()):
+        return False
+    open_h, open_m = _parse_hhmm(os.getenv("MARKET_OPEN_TIME", "09:15"), 9, 15)
+    close_h, close_m = _parse_hhmm(os.getenv("MARKET_CLOSE_TIME", "15:30"), 15, 30)
+    minutes = now.hour * 60 + now.minute
+    return (open_h * 60 + open_m) <= minutes <= (close_h * 60 + close_m)
+
+
 @app.on_event("startup")
 def warm_index_quotes():
     def warm():
@@ -111,9 +137,15 @@ async def start_alert_checker():
     async def loop():
         await asyncio.sleep(8)
         interval = max(60, int(os.getenv("ALERT_CHECK_INTERVAL_SECONDS", "900")))
+        respect_hours = os.getenv("ALERT_MARKET_HOURS_ONLY", "true").lower() in {"1", "true", "yes"}
         while True:
             try:
-                check_active_alerts(limit=int(os.getenv("ALERT_CHECK_BATCH_SIZE", "100")))
+                if respect_hours and not _is_market_open_now():
+                    # Skip the cycle when the market is closed so per-stock
+                    # alerts don't email users at 6 AM on stale daily bars.
+                    pass
+                else:
+                    check_active_alerts(limit=int(os.getenv("ALERT_CHECK_BATCH_SIZE", "100")))
             except Exception as exc:
                 print(f"[Alerts] scheduled check failed: {exc}")
             await asyncio.sleep(interval)
