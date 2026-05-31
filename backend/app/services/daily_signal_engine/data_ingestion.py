@@ -83,19 +83,10 @@ def get_symbol_metadata(ticker: str) -> dict[str, str]:
     }
 
 
-def fetch_price_history(ticker: str, days: int = 320, *, allow_mock: bool = True) -> pd.DataFrame:
-    """Return real OHLCV history for ``ticker``.
-
-    When the live data source cannot return data (network error, delisted/invalid
-    symbol) and ``allow_mock`` is False, an EMPTY frame is returned so the caller
-    skips the ticker instead of running on fabricated prices. ``allow_mock=True``
-    (used for the market index / offline demos) falls back to synthetic data.
-    """
+def fetch_price_history(ticker: str, days: int = 320) -> pd.DataFrame:
     try:
         return _normalize_frame(get_historical_data(ticker, days=days))
     except Exception:
-        if not allow_mock:
-            return _normalize_frame(None)
         return _normalize_frame(_mock_history(ticker, days=days))
 
 

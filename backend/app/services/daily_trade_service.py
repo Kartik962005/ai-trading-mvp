@@ -34,7 +34,6 @@ from app.services.daily_signal_engine import (
     wilson_lower_bound_placeholder,
 )
 from app.services.daily_signal_engine.config import (
-    ALLOW_MOCK_SIGNAL_DATA,
     COMPANY_NAME_BY_SYMBOL,
     DEFAULT_EMAIL_TIME,
     DEFAULT_MARKET,
@@ -453,54 +452,6 @@ def _risk_penalties(validation: dict[str, Any], atr_pct: float, risk_level: str)
     return penalty * _risk_profile(risk_level)["risk_penalty_multiplier"]
 
 
-def _risk_rank_score(
-    *,
-    risk_level: str,
-    final_score: float,
-    calibrated_pwin: float,
-    expected_r: float,
-    adjusted_setup_win_rate: float,
-    model_stability: float,
-    liquidity_score: float,
-    relative_strength_norm: float,
-    regime_alignment: float,
-    chart_setup_quality: float,
-    atr_pct: float,
-    penalties: float,
-) -> float:
-    """Risk-aware ranking so each risk level surfaces a genuinely different
-    shortlist instead of the same survivors reordered.
-
-    - Conservative: rewards calibrated win-rate, historical setup win-rate,
-      model stability and liquidity; PENALISES volatility.
-    - Aggressive: rewards expected-R, relative strength and chart quality;
-      TOLERATES (mildly rewards) volatility.
-    - Balanced: keeps the standard final score.
-    """
-    vol_norm = min(1.0, max(0.0, atr_pct / 0.06))
-    if risk_level == "Conservative":
-        return (
-            0.34 * calibrated_pwin
-            + 0.22 * adjusted_setup_win_rate
-            + 0.20 * model_stability
-            + 0.14 * liquidity_score
-            + 0.10 * regime_alignment
-            - 0.18 * vol_norm
-            - penalties
-        )
-    if risk_level == "Aggressive":
-        return (
-            0.26 * calibrated_pwin
-            + 0.34 * max(expected_r, 0.0)
-            + 0.16 * relative_strength_norm
-            + 0.14 * chart_setup_quality
-            + 0.10 * regime_alignment
-            + 0.16 * vol_norm
-            - 0.7 * penalties
-        )
-    return final_score
-
-
 def _relative_strength(frame: pd.DataFrame, index_frame: pd.DataFrame) -> float:
     if len(frame) < 25 or len(index_frame) < 25:
         return 0.0
@@ -587,32 +538,16 @@ def _build_candidate(
     penalties = _risk_penalties(validation, atr_pct, risk_level)
     regime_alignment = regime["alignment_buy"] if technical_setup["direction"] == "BUY" else regime["alignment_sell"]
 
-    relative_strength_norm = min(1.0, abs(relative_strength) / 5)
     final_score = compute_final_score(
         calibrated_pwin=probabilities["calibrated_pwin"],
         expected_r=expected_r,
         adjusted_setup_win_rate=adjusted_setup_win_rate,
         market_regime_alignment=regime_alignment,
         chart_setup_quality=technical_setup["chart_setup_quality"],
-        relative_strength=relative_strength_norm,
+        relative_strength=min(1.0, abs(relative_strength) / 5),
         liquidity_score=liquidity_score,
         model_stability=probabilities["model_stability"],
         risk_penalties=penalties,
-    )
-
-    rank_score = _risk_rank_score(
-        risk_level=risk_level,
-        final_score=final_score,
-        calibrated_pwin=probabilities["calibrated_pwin"],
-        expected_r=expected_r,
-        adjusted_setup_win_rate=adjusted_setup_win_rate,
-        model_stability=probabilities["model_stability"],
-        liquidity_score=liquidity_score,
-        relative_strength_norm=relative_strength_norm,
-        regime_alignment=regime_alignment,
-        chart_setup_quality=technical_setup["chart_setup_quality"],
-        atr_pct=atr_pct,
-        penalties=penalties,
     )
 
     if expected_r <= 0 or confidence < profile["confidence_threshold"] or risk_reward < profile["min_risk_reward"]:
@@ -635,7 +570,6 @@ def _build_candidate(
         "expected_r": round(expected_r, 6),
         "risk_reward": round(risk_reward, 6),
         "final_score": round(final_score, 6),
-        "rank_score": round(rank_score, 6),
         "setup_type": technical_setup["setup_type"],
         "reasons": technical_setup["reasons"],
         "relative_strength": round(relative_strength, 4),
@@ -652,16 +586,6 @@ def _build_candidate(
             "sector_strength": round(sector_strength, 4),
             "relative_strength": round(relative_strength, 4),
             "signal_type": signal_type,
-            # Per-stock technical readings so the email can show real, distinct
-            # values for each name instead of a fixed boilerplate sentence.
-            "rsi": technical_setup["rsi"],
-            "adx": technical_setup["adx"],
-            "volume_ratio": technical_setup["volume_ratio"],
-            "buy_score": technical_setup["buy_score"],
-            "sell_score": technical_setup["sell_score"],
-            "chart_setup_quality": technical_setup["chart_setup_quality"],
-            "market_regime_alignment": round(regime_alignment, 6),
-            "calibrated_pwin": probabilities.get("calibrated_pwin"),
         },
         "recent_returns": returns,
     }
@@ -792,18 +716,11 @@ def run_daily_prediction(
     index_frame = build_feature_frame(market_context["index_history"])
     regime = detect_market_regime(market_context["index_history"])
     feature_frames: dict[str, pd.DataFrame] = {}
-    skipped_no_data = 0
     for ticker in get_universe(market):
-        # allow_mock=False => never build a signal on synthetic/mock prices.
-        history = fetch_price_history(ticker, days=320, allow_mock=ALLOW_MOCK_SIGNAL_DATA)
-        if history.empty:
-            skipped_no_data += 1
-            continue
+        history = fetch_price_history(ticker, days=320)
         features = build_feature_frame(history)
         if not features.empty:
             feature_frames[ticker] = features
-        else:
-            skipped_no_data += 1
 
     sector_strengths = _group_sector_strength(feature_frames, market_context["index_history"])
     stats = _setup_stats()
@@ -873,9 +790,6 @@ def run_daily_prediction(
         "status": "completed",
         "summary": {
             "market_regime": regime,
-            "evaluated_count": len(feature_frames),
-            "skipped_no_data": skipped_no_data,
-            "max_signals": MAX_SELECTED_SIGNALS,
             "method": "data ingestion, validation, feature engineering, technical rules, scoring, diversification, and outcome tracking",
         },
     }

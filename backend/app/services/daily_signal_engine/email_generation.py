@@ -10,15 +10,6 @@ def _format_percent(value: float | None, digits: int = 0) -> str:
     return f"{value:.{digits}%}"
 
 
-def _count_phrase(count: int) -> str:
-    """Headline phrase that never over-promises a fixed number of signals."""
-    if count == 0:
-        return "No stock signals passed today's filters"
-    if count == 1:
-        return "1 stock signal (up to 10 daily)"
-    return f"{count} stock signals (up to 10 daily)"
-
-
 def _detail_reason(signal: dict[str, Any]) -> tuple[str, str]:
     explanation = signal.get("explanation_json") or {}
     reasons = explanation.get("reasons") or signal.get("reasons") or []
@@ -29,52 +20,27 @@ def _detail_reason(signal: dict[str, Any]) -> tuple[str, str]:
     relative_strength = explanation.get("relative_strength", signal.get("relative_strength"))
     sector_strength = explanation.get("sector_strength")
     confidence = signal.get("confidence")
-    regime_alignment = explanation.get("market_regime_alignment", signal.get("market_regime_alignment"))
-    rsi = explanation.get("rsi")
-    adx = explanation.get("adx")
-    volume_ratio = explanation.get("volume_ratio")
-    buy_score = explanation.get("buy_score")
-    sell_score = explanation.get("sell_score")
-    win_prob = explanation.get("calibrated_pwin")
-    if not isinstance(win_prob, (int, float)):
-        win_prob = probabilities.get("calibrated_pwin")
+    regime_alignment = signal.get("market_regime_alignment")
 
     lead = (
         f"Bullseye suggests {direction} because the setup scored well on "
-        f"{', '.join(reasons[:5]) if reasons else 'trend, momentum, and risk filters'}."
+        f"{', '.join(reasons[:3]) if reasons else 'trend, momentum, and risk filters'}."
     )
-
-    # Per-stock factor readout — real values pulled from THIS signal, so every
-    # card reads differently instead of one fixed "indicators reviewed" sentence.
-    chosen_score = buy_score if direction == "BUY" else sell_score
-    factors: list[str] = []
-    if isinstance(chosen_score, (int, float)):
-        factors.append(f"chart setup cleared {int(chosen_score)} of 8 technical checks")
-    if isinstance(rsi, (int, float)):
-        factors.append(f"RSI(14) {rsi:.1f}")
-    if isinstance(adx, (int, float)):
-        factors.append(f"ADX(14) {adx:.1f}")
-    if isinstance(volume_ratio, (int, float)):
-        factors.append(f"volume {volume_ratio:.2f}x the 20-day average")
-    if isinstance(relative_strength, (int, float)):
-        factors.append(f"relative strength {relative_strength:+.2f}% vs index")
-    if isinstance(sector_strength, (int, float)):
-        factors.append(f"sector strength {sector_strength:+.2f}")
-    if isinstance(win_prob, (int, float)):
-        factors.append(f"model win-probability {win_prob:.0%}")
-    if isinstance(regime_alignment, (int, float)):
-        factors.append(f"market-regime alignment {regime_alignment:+.2f}")
-
-    if factors:
-        technical = "This stock's readings: " + "; ".join(factors) + "."
-    else:
-        technical = (
-            "Indicators reviewed: EMA trend alignment, breakout or breakdown versus recent support and "
-            "resistance, volume versus the 20-day average, RSI(14), ADX(14), relative strength versus the "
-            "market index, sector strength, liquidity checks, and volatility filters."
-        )
-
+    technical = (
+        "Indicators reviewed: EMA 20 / EMA 50 trend alignment, breakout or breakdown versus recent support and resistance, "
+        "volume versus the 20-day average, RSI(14), ADX(14), relative strength versus the market index, sector strength, "
+        "liquidity checks, volatility filters, and model confidence scoring."
+    )
     metrics = f"Setup type: {setup}. Confidence: {_format_percent(confidence, 0)}. "
+    metrics += (
+        f"Relative strength vs index: {relative_strength:.2f}%. " if isinstance(relative_strength, (int, float)) else ""
+    )
+    metrics += (
+        f"Sector strength: {sector_strength:.2f}. " if isinstance(sector_strength, (int, float)) else ""
+    )
+    metrics += (
+        f"Market regime alignment: {regime_alignment:.2f}. " if isinstance(regime_alignment, (int, float)) else ""
+    )
     quality = (
         "Data quality passed liquidity, stale-data, spread, and abnormal-volatility checks."
         if validation.get("is_valid", True)
@@ -162,9 +128,8 @@ def build_signal_email(
         "<div style='max-width:720px;margin:0 auto;background:#111827;border:1px solid #243041;border-radius:22px;overflow:hidden'>"
         "<div style='padding:24px;background:#0f172a;color:#f8fafc'>"
         "<div style='font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#67e8f9;font-weight:700'>Bullseye Signals</div>"
-        f"<h1 style='margin:10px 0 0;font-size:26px;line-height:1.25;color:#f8fafc'>{_count_phrase(len(signals))} for the next trading day</h1>"
-        f"<p style='margin:10px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Up to 10 stocks are sent each day &mdash; only the names that clear every quality, liquidity and risk filter are included, so some days have fewer.</p>"
-        f"<p style='margin:8px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Market: {escape(market)} | Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
+        f"<h1 style='margin:10px 0 0;font-size:26px;line-height:1.25;color:#f8fafc'>Top {len(signals)} {escape(market)} stock signals for the next trading day</h1>"
+        f"<p style='margin:10px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
         "</div>"
         "<div style='padding:16px'>"
         + ("".join(card_rows) if card_rows else "<div style='padding:18px;color:#e2e8f0'>No signals passed the quality filters for the next trading day.</div>")
@@ -178,8 +143,6 @@ def build_signal_email(
 
     text = (
         f"Bullseye {market} next-trading-day stock signals\n"
-        f"{_count_phrase(len(signals))}. Up to 10 stocks are sent each day; only names that clear every "
-        f"quality, liquidity and risk filter are included, so some days have fewer.\n"
         f"Generated on: {signal_date} | Risk level: {risk_level} | Signal type: {signal_type}\n\n"
         + ("\n".join(text_rows) if text_rows else "No signals passed the quality filters for the next trading day.")
         + "\nSignals are model-generated analysis. Returns are not guaranteed. Past performance does not guarantee future results.\n"

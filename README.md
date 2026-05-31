@@ -37,7 +37,7 @@ npm run dev
 1. Sign in.
 2. Open the account icon.
 3. Open `Notification Settings`.
-4. Turn on `Daily Stock Signals Email (up to 10)`.
+4. Turn on `Daily 10 Stock Signals Email`.
 5. Pick market, risk level, signal type, and preferred email time.
 6. Accept the consent notice.
 

@@ -902,39 +902,3 @@ function inferFaceValue(stock: typeof RAW_STOCKS[number]) {
 export const STOCKS = RAW_STOCKS
   .filter((stock) => stock.exchange !== 'CRYPTO')
   .map((stock) => ({ ...stock, faceValue: inferFaceValue(stock) }));
-
-export type StockEntry = typeof STOCKS[number];
-
-// Preference order when the same company is listed on multiple Indian exchanges.
-const EXCHANGE_PRIORITY: Record<string, number> = { NSE: 0, BSE: 1 };
-
-// Same company can appear on both NSE and BSE (identical name + symbol, only the
-// ticker/exchange differ). For SEARCH we want a single row per company, defaulting
-// to NSE, so the dropdown never shows duplicate NSE/BSE entries. We key on
-// `name|symbol` (not symbol alone) so distinct companies that happen to share a
-// ticker across markets — e.g. HAL = Hindustan Aeronautics (NSE) vs Halliburton
-// (NYSE) — are NOT merged.
-export const SEARCH_STOCKS: StockEntry[] = (() => {
-  const byCompany = new Map<string, StockEntry>();
-  for (const stock of STOCKS) {
-    const key = `${stock.name.toLowerCase()}|${stock.symbol.toLowerCase()}`;
-    const existing = byCompany.get(key);
-    if (!existing) {
-      byCompany.set(key, stock);
-      continue;
-    }
-    const currentRank = EXCHANGE_PRIORITY[existing.exchange] ?? 9;
-    const candidateRank = EXCHANGE_PRIORITY[stock.exchange] ?? 9;
-    if (candidateRank < currentRank) byCompany.set(key, stock);
-  }
-  return [...byCompany.values()];
-})();
-
-// Given any stock, return the list of exchange variants (NSE / BSE) of the SAME
-// company, sorted by preference. Used by the stock page to offer an NSE/BSE toggle.
-export function getExchangeVariants(stock: Pick<StockEntry, 'name' | 'symbol'>): StockEntry[] {
-  const key = `${stock.name.toLowerCase()}|${stock.symbol.toLowerCase()}`;
-  return STOCKS
-    .filter((s) => `${s.name.toLowerCase()}|${s.symbol.toLowerCase()}` === key)
-    .sort((a, b) => (EXCHANGE_PRIORITY[a.exchange] ?? 9) - (EXCHANGE_PRIORITY[b.exchange] ?? 9));
-}
