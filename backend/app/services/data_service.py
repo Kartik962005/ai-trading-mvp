@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import time
 import os
+import threading
 
 # ── Safe Supabase import ───────────────────────────────────────────────────────
 try:
@@ -30,6 +31,18 @@ QUOTE_TTL = 15     # 15 seconds
 CHART_TTL = 3600
 FUNDAMENTALS_TTL = 3600 * 6
 NSE_QUOTE_TTL = 3600
+# Refresh Supabase-cached history when its newest row is older than this many
+# calendar days. Covers normal weekends/holidays while forcing a refresh when a
+# ticker's cache has fallen months behind (which broke "today"/"last Friday" lookups).
+CACHE_MAX_STALE_DAYS = 5
+# Serialize writes to the shared Supabase client. It wraps a single httpx
+# connection that isn't safe for concurrent use, so simultaneous upserts from
+# the movers-scan thread pool trip "[WinError 10035] non-blocking socket
+# operation could not be completed immediately" on Windows. One writer at a time
+# plus a short bounded retry makes persistence reliable under that concurrency.
+_supabase_write_lock = threading.Lock()
+_SUPABASE_WRITE_RETRIES = 3
+_SUPABASE_WRITE_BACKOFF = 0.5  # seconds; doubled each retry
 YAHOO_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json,text/plain,*/*",
@@ -485,6 +498,7 @@ def get_historical_data(ticker: str, days: int = 365):
             return cached_df
 
     # ── Layer 2: Supabase database (simplified — single table, no asset_id) ───
+    stale_cache_df = None  # kept as a last-resort fallback if a Yahoo refresh fails
     if SUPABASE_OK and supabase:
         try:
             db_data = supabase.table("stock_prices") \
@@ -499,13 +513,22 @@ def get_historical_data(ticker: str, days: int = 365):
                 for col in ['open','high','low','close','volume']:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 df = df.dropna()
-                print(f"[Cache] Supabase hit for {ticker} ({len(df)} rows)")
-                _hist_cache[ticker] = {'df': df.copy(), 'ts': time.time()}
-                return df
+                latest_cached = df['date'].max()
+                stale_days = (pd.Timestamp.now().normalize() - latest_cached.normalize()).days
+                # Only trust the cache when its newest row is recent enough. A
+                # cache that ends months ago must be refreshed so date-sensitive
+                # lookups (today, last Friday, movers) see real recent sessions.
+                if stale_days <= CACHE_MAX_STALE_DAYS:
+                    print(f"[Cache] Supabase hit for {ticker} ({len(df)} rows, latest {latest_cached.date()})")
+                    _hist_cache[ticker] = {'df': df.copy(), 'ts': time.time()}
+                    return df
+                print(f"[Cache] Supabase data for {ticker} is stale (latest {latest_cached.date()}, {stale_days}d old) - refreshing from Yahoo.")
+                stale_cache_df = df
         except Exception as e:
             print(f"[Cache] Supabase read failed for {ticker}: {e}")
 
     # Layer 3: direct Yahoo chart API, with yfinance only as a final fallback.
+    df = None
     try:
         print(f"[Download] Fetching {ticker} from Yahoo chart API...")
         df = _fetch_yahoo_chart_data(ticker, range_key=_range_for_days(days), interval="1d")
@@ -514,10 +537,19 @@ def get_historical_data(ticker: str, days: int = 365):
     except Exception as direct_error:
         print(f"[Download] Yahoo chart API failed for {ticker}: {direct_error}")
         print(f"[Download] Fetching {ticker} from yfinance fallback...")
-        raw = yf.download(ticker, period=f"{days}d", progress=False, auto_adjust=True)
-        df = _normalize_ohlcv_frame(raw.reset_index() if raw is not None else raw)
+        try:
+            raw = yf.download(ticker, period=f"{days}d", progress=False, auto_adjust=True)
+            df = _normalize_ohlcv_frame(raw.reset_index() if raw is not None else raw)
+        except Exception as yf_error:
+            print(f"[Download] yfinance fallback failed for {ticker}: {yf_error}")
+            df = None
 
-    if len(df) == 0:
+    if df is None or len(df) == 0:
+        # A stale cached answer beats no answer at all when Yahoo is unreachable.
+        if stale_cache_df is not None and len(stale_cache_df) > 0:
+            print(f"[Download] Falling back to stale Supabase cache for {ticker}.")
+            _hist_cache[ticker] = {'df': stale_cache_df.copy(), 'ts': time.time()}
+            return stale_cache_df
         raise ValueError(f"No valid OHLCV data for ticker '{ticker}'.")
 
     # ── Save to Supabase ───────────────────────────────────────────────────────
@@ -536,12 +568,24 @@ def get_historical_data(ticker: str, days: int = 365):
                     "volume":  int(row['volume'])
                 })
             if records:
-                # upsert in chunks of 100 to avoid payload limits
-                for i in range(0, len(records), 100):
-                    supabase.table("stock_prices").upsert(
-                        records[i:i+100],
-                        on_conflict="ticker,date"
-                    ).execute()
+                # One writer at a time (see _supabase_write_lock) so concurrent
+                # movers-scan threads don't race on the shared client's socket.
+                with _supabase_write_lock:
+                    # upsert in chunks of 100 to avoid payload limits
+                    for i in range(0, len(records), 100):
+                        chunk = records[i:i+100]
+                        for attempt in range(_SUPABASE_WRITE_RETRIES):
+                            try:
+                                supabase.table("stock_prices").upsert(
+                                    chunk,
+                                    on_conflict="ticker,date"
+                                ).execute()
+                                break
+                            except Exception as chunk_err:
+                                if attempt == _SUPABASE_WRITE_RETRIES - 1:
+                                    raise
+                                print(f"[Cache] Supabase upsert retry {attempt+1}/{_SUPABASE_WRITE_RETRIES} for {ticker}: {chunk_err}")
+                                time.sleep(_SUPABASE_WRITE_BACKOFF * (2 ** attempt))
                 print(f"[Cache] Saved {len(records)} rows for {ticker} to Supabase")
         except Exception as e:
             print(f"[Cache] Supabase save failed for {ticker}: {e}")

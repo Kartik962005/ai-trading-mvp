@@ -53,6 +53,7 @@ from app.services.data_service import get_latest_quote, get_historical_data, get
 from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
 from app.services.stock_ai_service import run_stock_ai_search
+from app.services.ask_ai_service import run_ask_ai, movers_snapshot_status
 from app.services.alert_service import (
     check_active_alerts,
     check_alert,
@@ -287,6 +288,31 @@ class StockAiRequest(BaseModel):
     stocks: list[ScreenerStock] = []
 
 
+class AskAiMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AskAiContext(BaseModel):
+    """Optional app context the UI can attach so answers use real data
+    (selected stock, current prediction/confidence, indicators, trend, page)."""
+    selected_symbol: str | None = None
+    selected_ticker: str | None = None
+    current_page: str | None = None
+    prediction: Any | None = None
+    confidence: Any | None = None
+    trend: str | None = None
+    analysis_summary: str | None = None
+    indicators: dict[str, Any] = {}
+
+
+class AskAiRequest(BaseModel):
+    prompt: str
+    history: list[AskAiMessage] = []
+    stocks: list[ScreenerStock] = []
+    context: AskAiContext | None = None
+
+
 class AlertCreateRequest(BaseModel):
     ticker: str
     prompt: str
@@ -363,6 +389,38 @@ async def stock_ai_search(request: Request, body: StockAiRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/ask-ai/chat")
+@limiter.limit("12/minute")
+async def ask_ai_chat(request: Request, body: AskAiRequest):
+    try:
+        # Pass the FULL catalog through. Market-wide queries (movers/circuit
+        # hits) need to see every stock, not a truncated head, or mid-cap names
+        # (e.g. NETWEB at ~#1389) get silently dropped before the engine runs.
+        stocks = [
+            stock.model_dump() if hasattr(stock, "model_dump") else stock.dict()
+            for stock in body.stocks[:5000]
+        ]
+        history = [
+            message.model_dump() if hasattr(message, "model_dump") else message.dict()
+            for message in body.history[:20]
+        ]
+        context = None
+        if body.context is not None:
+            context = body.context.model_dump() if hasattr(body.context, "model_dump") else body.context.dict()
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, run_ask_ai, body.prompt, history, stocks, context)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/ask-ai/movers-status")
+@limiter.limit("120/minute")
+async def ask_ai_movers_status(request: Request):
+    return movers_snapshot_status()
 
 
 @app.get("/api/v1/alerts")

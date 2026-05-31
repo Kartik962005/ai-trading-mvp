@@ -3801,7 +3801,7 @@ function HomeContent() {
       cancelled = true;
       cleanup();
     };
-  }, [chartData, chartRange, indicatorPanels, ticker]);
+  }, [chartData, chartRange, indicatorPanels, ticker, dashboardView]);
 
   const openStockView = (stock: typeof STOCKS[0], nextView: DashboardView = 'overview') => {
     const market = resolveMarket(stock.exchange);
@@ -4316,7 +4316,7 @@ function HomeContent() {
         </div>
 
         {/* NAV */}
-        <nav className="relative z-20 mx-auto grid w-full max-w-[1600px] grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 border-b border-white/5 bg-black/20 px-3 py-3 backdrop-blur-sm sm:gap-3 sm:px-6 sm:py-4 lg:gap-5">
+        <nav className="relative z-20 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 border-b border-white/5 bg-black/20 px-3 py-3 backdrop-blur-sm sm:gap-3 sm:px-6 sm:py-4 lg:flex-nowrap lg:gap-5">
           <div className="min-w-0 cursor-pointer group shrink-0" onClick={goHome}>
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-200 bg-gradient-to-br from-white via-cyan-100 to-emerald-100 sm:h-11 sm:w-11">
@@ -4331,7 +4331,7 @@ function HomeContent() {
             </p>
           </div>
 
-          <div className="relative min-w-0">
+          <div className="relative order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
             <div className="absolute inset-0 bg-cyan-500/5 rounded-xl blur-lg sm:rounded-2xl"></div>
             <input
               value={input}
@@ -4356,6 +4356,15 @@ function HomeContent() {
               </div>
             )}
           </div>
+
+          <Link
+            href="/ask-ai"
+            onClick={() => setShowProfileMenu(false)}
+            className="force-light-text ml-auto inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-600 to-emerald-500 px-3 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_12px_32px_rgba(6,182,212,0.28)] transition-all hover:from-cyan-500 hover:to-emerald-400 hover:shadow-[0_14px_38px_rgba(6,182,212,0.4)] sm:h-12 sm:rounded-2xl sm:px-5 sm:text-xs sm:tracking-[0.2em] lg:ml-0"
+          >
+            <span aria-hidden="true">✦</span>
+            Ask AI
+          </Link>
 
           <Link
             href="/screens"
@@ -4669,7 +4678,10 @@ function HomeContent() {
                 </div>
               </div>
 
-              {/* Chart + fundamentals snapshot */}
+              {/* Chart + fundamentals snapshot — shown in Overview only. The
+                  Detailed Analysis panel renders its own fundamentals/analytics,
+                  so these boxes would otherwise duplicate there. */}
+              {dashboardView === 'overview' && (
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-start">
               <FundamentalsSnapshotCard
                 stock={selectedStock}
@@ -4720,7 +4732,7 @@ function HomeContent() {
                       {showIndicatorMenu && (
                         <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowIndicatorMenu(false)} />
-                        <div className="absolute right-0 top-12 z-50 w-[min(86vw,420px)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.28)]">
+                        <div className="fixed left-1/2 top-20 z-50 w-[min(92vw,420px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.28)] sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:translate-x-0">
                           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                             <div className="text-lg font-black font-['Space_Grotesk']">Indicators</div>
                             <button
@@ -4740,7 +4752,7 @@ function HomeContent() {
                               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-300 focus:bg-white font-['Space_Grotesk']"
                             />
                           </div>
-                          <div className="max-h-[420px] overflow-y-auto py-2">
+                          <div className="max-h-[min(55vh,420px)] overflow-y-auto py-2">
                             {filteredIndicators.map(name => {
                               const selected = activeIndicators.includes(name);
                               return (
@@ -4811,6 +4823,7 @@ function HomeContent() {
                 )}
               </div>
               </div>
+              )}
 
               {/* FISO Analysis + all sections in order */}
               {dashboardView === 'details' && selectedStock && canOpenDetailedAnalysis ? (
