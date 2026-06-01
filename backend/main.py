@@ -172,7 +172,11 @@ def _run_snapshot_build_background(reason: str) -> None:
 
 @app.on_event("startup")
 async def start_stock_snapshot_refresh():
-    if os.getenv("STOCK_SNAPSHOT_REFRESH_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+    # Default OFF: building the full ~2,142-stock snapshot in-process OOM-kills
+    # small hosts (e.g. Render free 512MB) on boot, taking the whole API down.
+    # Enable only on a host with enough RAM, or build via external cron / the
+    # scripts/build_snapshot.py one-off instead.
+    if os.getenv("STOCK_SNAPSHOT_REFRESH_ENABLED", "false").lower() not in {"1", "true", "yes"}:
         return
     await asyncio.sleep(2)
     if is_snapshot_stale():
@@ -181,7 +185,7 @@ async def start_stock_snapshot_refresh():
 
 @app.on_event("startup")
 async def start_daily_snapshot_refresh():
-    if os.getenv("STOCK_SNAPSHOT_REFRESH_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+    if os.getenv("STOCK_SNAPSHOT_REFRESH_ENABLED", "false").lower() not in {"1", "true", "yes"}:
         return
 
     async def loop():
