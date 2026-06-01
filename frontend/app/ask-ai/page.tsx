@@ -820,6 +820,35 @@ export default function AskAiPage() {
                       {message.data?.backtest && (
                         <BacktestCard data={message.data.backtest} ticker={message.data.target_stock ?? null} />
                       )}
+                      {message.data?.mode === 'strategy' && message.data.strategy_alert?.stats && (
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Backtest (educational)</div>
+                          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Trades</div>
+                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.trades ?? 0)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Win rate</div>
+                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.win_rate ?? 0).toFixed(2)}%</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Avg trade</div>
+                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.avg_return_per_trade ?? 0).toFixed(2)}%</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Max drawdown</div>
+                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.max_drawdown ?? 0).toFixed(2)}%</div>
+                            </div>
+                          </div>
+                          {!message.data.strategy_alert.alertable && message.data.strategy_alert.quality?.reason && (
+                            <p className="mt-2 text-[11px] leading-4 text-slate-500">{message.data.strategy_alert.quality.reason}</p>
+                          )}
+                          {message.data.strategy_alert.disclaimer && (
+                            <p className="mt-2 text-[10px] leading-4 text-slate-400">{message.data.strategy_alert.disclaimer}</p>
+                          )}
+                        </div>
+                      )}
                       {message.data?.strategy_alert?.alertable && message.data?.strategy_json && (
                         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                           <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">Daily alert available</div>

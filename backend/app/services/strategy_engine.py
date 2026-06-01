@@ -13,7 +13,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.core.supabase_client import supabase
-from app.services import llm_client, price_store
+from app.services import llm_client, price_store, stock_snapshot_service
 
 
 DISCLAIMER = (
@@ -160,6 +160,36 @@ def _fallback_translate(nl_text: str) -> dict[str, Any] | None:
     if change:
         entry.append({"field": "change_pct", "op": change.group(1), "value": float(change.group(2))})
 
+    # Plain English "buy when X% down, sell when Y% up" style rules.
+    def _pct(*patterns: str) -> float | None:
+        for pattern in patterns:
+            m = re.search(pattern, text)
+            if m:
+                grp = next((g for g in m.groups() if g), None)
+                if grp:
+                    return float(grp)
+        return None
+
+    down_val = _pct(
+        r"(\d+(?:\.\d+)?)\s*(?:percent|%)\s*(?:down|lower|drop|fall|decline|loss)",
+        r"(?:down|drop|drops|fall|falls|decline|declines|lower)\s*(?:by\s*)?(\d+(?:\.\d+)?)\s*(?:percent|%)",
+    )
+    up_val = _pct(
+        r"(\d+(?:\.\d+)?)\s*(?:percent|%)\s*(?:up|higher|rise|gain|profit)",
+        r"(?:up|rise|rises|gain|gains|profit|higher)\s*(?:by\s*)?(\d+(?:\.\d+)?)\s*(?:percent|%)",
+    )
+    has_change = any(e.get("field") == "change_pct" for e in entry)
+    target_override: float | None = None
+    if down_val and not has_change:
+        entry.append({"field": "change_pct", "op": "<=", "value": -abs(down_val)})
+        has_change = True
+    if up_val is not None:
+        # "sell when up Y%" -> profit target; a bare "up Y%" with no down -> entry on strength.
+        if down_val or "sell" in text or "target" in text or "profit" in text:
+            target_override = abs(up_val)
+        elif not entry:
+            entry.append({"field": "change_pct", "op": ">=", "value": abs(up_val)})
+
     exclude: list[str] = []
     if "skip it" in text or "exclude it" in text:
         exclude.append("IT")
@@ -178,7 +208,7 @@ def _fallback_translate(nl_text: str) -> dict[str, Any] | None:
         "execution": {"enter": enter},
         "exit": {
             "stop_pct": float(stop_match.group(1)) if stop_match else 15,
-            "target_pct": float(target_match.group(1)) if target_match else None,
+            "target_pct": float(target_match.group(1)) if target_match else target_override,
             "max_hold_days": int(hold_match.group(1)) if hold_match else 20,
         },
     }
@@ -243,9 +273,29 @@ def _sector_matches(sector: str | None, wanted: list[str]) -> bool:
     return False
 
 
+def _fallback_universe(strategy: StrategySpec, cap: int) -> list[dict[str, Any]]:
+    """Built-in liquid NSE universe (from the frontend catalog) so backtests work
+    even before stock_snapshot is populated. Sector/market-cap filters need
+    snapshot data, so they're skipped here; the catalog is ordered by liquidity."""
+    try:
+        stocks = stock_snapshot_service.load_frontend_stock_universe(exchange="NSE")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Strategy] fallback universe load failed: {exc}")
+        return []
+    out: list[dict[str, Any]] = []
+    for stock in stocks:
+        ticker = str(stock.get("ticker") or "")
+        if not ticker:
+            continue
+        out.append({"ticker": ticker, "symbol": stock.get("symbol"), "name": stock.get("name")})
+        if len(out) >= cap:
+            break
+    return out
+
+
 def _snapshot_candidates(strategy: StrategySpec, cap: int) -> list[dict[str, Any]]:
     if supabase is None:
-        return []
+        return _fallback_universe(strategy, cap)
     try:
         response = (
             supabase.table("stock_snapshot")
@@ -257,7 +307,7 @@ def _snapshot_candidates(strategy: StrategySpec, cap: int) -> list[dict[str, Any
         rows = getattr(response, "data", None) or []
     except Exception as exc:
         print(f"[Strategy] stock_snapshot read failed: {exc}")
-        return []
+        return _fallback_universe(strategy, cap)
 
     uni = strategy.universe
     filtered = []
@@ -281,7 +331,7 @@ def _snapshot_candidates(strategy: StrategySpec, cap: int) -> list[dict[str, Any
         filtered.append(row)
         if len(filtered) >= cap:
             break
-    return filtered
+    return filtered or _fallback_universe(strategy, cap)
 
 
 def _prepare_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -466,6 +516,26 @@ def _stats(trades: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _load_prices(ticker: str) -> pd.DataFrame | None:
+    """Cached Parquet first, then the full data_service chain (RAM -> Storage ->
+    Postgres -> Yahoo). This lets backtests run even before Storage is migrated."""
+    try:
+        df = price_store.read_prices(ticker)
+        if df is not None and len(df) >= 90:
+            return df
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.data_service import get_historical_data
+
+        df = get_historical_data(ticker, days=500)
+        if df is not None and len(df) >= 90:
+            return df
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Strategy] price load failed for {ticker}: {exc}")
+    return None
+
+
 def backtest_strategy(
     strategy_input: StrategySpec | dict[str, Any],
     *,
@@ -480,11 +550,11 @@ def backtest_strategy(
         return {
             "stats": _stats([]),
             "alertable": False,
-            "quality": {"alertable": False, "reason": "stock_snapshot is unavailable or has no matching NSE rows."},
+            "quality": {"alertable": False, "reason": "No NSE universe is available to scan right now. Please try again shortly."},
             "recent_signals": [],
             "scanned": 0,
             "partial": False,
-            "note": "Apply/build stock_snapshot before running strategy backtests.",
+            "note": "Market universe temporarily unavailable.",
             "disclaimer": DISCLAIMER,
         }
 
@@ -499,7 +569,7 @@ def backtest_strategy(
         ticker = str(row.get("ticker") or "")
         if not ticker:
             continue
-        df = price_store.read_prices(ticker)
+        df = _load_prices(ticker)
         if df is None or len(df) < 90:
             continue
         trades, signals = _simulate_one(df, strategy, ticker, row.get("symbol"))

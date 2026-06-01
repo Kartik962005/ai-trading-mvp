@@ -212,6 +212,14 @@ _ACTION_PATTERNS = re.compile(
     r"\d+\s*%|across all|every stock|all (nse|us)?\s*stocks)\b",
     re.IGNORECASE,
 )
+# A recurring buy/sell RULE the user may want backtested and turned into a daily
+# alert. Needs an action verb AND a condition/threshold word somewhere after it.
+# Routed to the structured strategy engine (StrategyCard + "Enable daily alerts").
+_STRATEGY_PATTERNS = re.compile(
+    r"(?is)\b(buy|sell|enter|exit|go long|go short|alert me|notify me|daily alert|every day|each morning)\b"
+    r".*\b(when|if|below|above|under|over|cross|crosses|gap|rsi|vwap|sma|ema|percent|%|"
+    r"down|up|drop|drops|fall|falls|rise|rises|gain|gains|dip|dips)\b",
+)
 # Market-data lookups: biggest movers / gainers / losers / circuit hits for a
 # day. Answered by computing daily moves across the universe from our data.
 # Kept deliberately broad ("user can ask anything") -- explicit ranking nouns,
@@ -250,6 +258,11 @@ def _classify(prompt: str, ticker: str | None) -> str:
     # concrete rule or explicitly ask to backtest/scan something.
     if explain and not action:
         return "GENERAL"
+
+    # A market-wide buy/sell rule (no specific ticker) => structured strategy that
+    # can be backtested and offered as a recurring daily alert.
+    if not ticker and _STRATEGY_PATTERNS.search(prompt):
+        return "STRATEGY"
 
     # Market-data lookup: biggest movers / circuit / gainers / losers across the
     # market (or whenever the phrasing is about a list rather than one stock).
@@ -1377,6 +1390,81 @@ def _general_chat(
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
+def _strategy_alert(prompt: str, history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Backtest a user-typed strategy via the structured engine and offer to turn
+    it into a daily alert. Used inside Ask-AI so strategies live in the chat (no
+    separate page). Falls back to general chat if the rule can't be mapped."""
+    try:
+        from app.services import strategy_engine as se
+    except Exception:  # noqa: BLE001
+        return _general_chat(prompt, history, None, None)
+
+    try:
+        strategy_json = se.translate_strategy(prompt)
+    except ValueError as exc:
+        res = _general_chat(prompt, history, None, None)
+        note = str(exc)
+        if "intraday" in note.lower():
+            res["answer"] = f"{note}\n\n{res['answer']}"
+        return res
+
+    cap = int(os.getenv("ASK_AI_STRATEGY_CAP", "25"))
+    budget = float(os.getenv("ASK_AI_STRATEGY_BUDGET_SEC", "12"))
+    bt = se.backtest_strategy(strategy_json, cap=cap, time_budget_sec=budget)
+    stats = bt.get("stats") or {}
+    oos = bt.get("out_of_sample") or {}
+    alertable = bool(bt.get("alertable"))
+
+    data_lines = [
+        "Educational backtest of the user's strategy on recent NSE history:",
+        f"Trades: {stats.get('trades')}; win rate {stats.get('win_rate')}%; "
+        f"avg per trade {stats.get('avg_return_per_trade')}%; median {stats.get('median_return')}%; "
+        f"max drawdown {stats.get('max_drawdown')}%.",
+        f"Out-of-sample avg per trade: {oos.get('avg_return_per_trade')}%.",
+        f"Stocks scanned: {bt.get('scanned')}" + (" (partial — time budget reached)" if bt.get("partial") else "") + ".",
+        f"Quality gate: {'PASSED — eligible for daily alerts.' if alertable else 'NOT met.'} {bt.get('quality', {}).get('reason', '')}",
+    ]
+    fallback = (
+        f"I backtested that: {stats.get('trades')} trades, {stats.get('win_rate')}% win rate, "
+        f"{stats.get('avg_return_per_trade')}% average per trade, max drawdown {stats.get('max_drawdown')}%. "
+        + ("It clears the quality gate, so you can turn it into a daily alert." if alertable
+           else "It doesn't clear the quality gate, so I wouldn't auto-alert on it yet.")
+    )
+    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, ANALYST_SYSTEM_PROMPT, history)
+    if alertable:
+        answer += "\n\n_Want this as a daily email alert? Tap “Save as daily alert” below (sign in required)._"
+
+    return {
+        "answer": answer,
+        "mode": "strategy",
+        "success": True,
+        "model_used": model_used,
+        "target_stock": None,
+        "backtest": None,
+        "scan": None,
+        # Top-level fields the Ask-AI frontend reads to render the strategy block
+        # and the "Save as daily alert" button.
+        "strategy_json": strategy_json,
+        "strategy_alert": {
+            "alertable": alertable,
+            "quality": bt.get("quality"),
+            "stats": stats,
+            "out_of_sample": oos,
+            "recent_signals": bt.get("recent_signals"),
+            "scanned": bt.get("scanned"),
+            "partial": bt.get("partial"),
+            "disclaimer": bt.get("disclaimer"),
+            "cta": "Save as daily alert" if alertable else None,
+        },
+        "disclaimer": bt.get("disclaimer"),
+        "suggestions": [
+            "Tighten the stop to 8% and re-test",
+            "Add a 10% profit target",
+            "Try it only on large-cap stocks",
+        ],
+    }
+
+
 def run_ask_ai(
     prompt: str,
     history: list[dict[str, Any]] | None = None,
@@ -1404,6 +1492,8 @@ def run_ask_ai(
     intent = _classify(prompt, ticker)
 
     try:
+        if intent == "STRATEGY":
+            return _strategy_alert(prompt, history)
         if intent == "MOVERS":
             return _market_movers(prompt, universe, history)
         if intent == "CROSS_SCAN":

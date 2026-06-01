@@ -4451,13 +4451,6 @@ function HomeContent() {
                     >
                       Logged-in Alerts
                     </button>
-                    <Link
-                      href="/alerts"
-                      onClick={() => setShowProfileMenu(false)}
-                      className="mb-3 block w-full rounded-xl border border-emerald-200 bg-emerald-50 py-3 text-center text-xs font-black uppercase tracking-widest text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100 font-['Space_Grotesk']"
-                    >
-                      AI Strategy Alerts
-                    </Link>
                     <button
                       type="button"
                       onClick={handleSignOut}
