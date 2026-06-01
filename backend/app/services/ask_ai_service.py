@@ -298,6 +298,7 @@ def _narrate(
     user_prompt: str,
     fallback: str,
     system_prompt: str = ANALYST_SYSTEM_PROMPT,
+    history: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """Return (answer_text, model_used). Falls back to deterministic text.
 
@@ -320,8 +321,13 @@ def _narrate(
                 + data_section
             ),
         },
-        {"role": "user", "content": user_prompt},
     ]
+    for turn in (history or [])[-6:]:
+        role = turn.get("role")
+        content = str(turn.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content[:4000]})
+    messages.append({"role": "user", "content": user_prompt})
     try:
         result = llm_client.chat(messages, temperature=0.35, max_tokens=900)
         return result["text"], result["model"]
@@ -362,7 +368,7 @@ def _simulate(df: pd.DataFrame, strategy: dict[str, Any]) -> tuple[dict | None, 
 
 
 # ── Mode: single-stock backtest ───────────────────────────────────────────────
-def _single_backtest(prompt: str, ticker: str) -> dict[str, Any]:
+def _single_backtest(prompt: str, ticker: str, history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     df = get_historical_data(ticker, days=1825)
     if df is None or len(df) < 30:
         raise ValueError(f"Not enough price history for {ticker}.")
@@ -396,7 +402,7 @@ def _single_backtest(prompt: str, ticker: str) -> dict[str, Any]:
         data_lines.append("No closed trades were triggered by this strategy on this stock.")
 
     fallback = result.get("analysis_text") or "Backtest completed."
-    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback)
+    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, history=history)
 
     result["buy_and_hold_return_pct"] = round(buy_hold, 2)
     if summary:
@@ -459,7 +465,11 @@ def _scan_one(stock: dict[str, Any], strategy: dict[str, Any]) -> dict[str, Any]
         return None
 
 
-def _cross_scan(prompt: str, known_stocks: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _cross_scan(
+    prompt: str,
+    known_stocks: list[dict[str, Any]] | None,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     universe = _pick_universe(prompt, known_stocks)
     if not universe:
         raise ValueError("No stocks available to scan.")
@@ -508,7 +518,7 @@ def _cross_scan(prompt: str, known_stocks: list[dict[str, Any]] | None) -> dict[
         f"Scanned {scanned} stocks. {len(traded)} traded, {profitable} were profitable, "
         f"and {beat_bh} beat buy-and-hold. Average win rate {avg_win}%, average return {avg_return}%."
     )
-    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback)
+    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, history=history)
 
     return {
         "answer": answer,
@@ -728,7 +738,11 @@ def _move_from_series(series: list[tuple[str, float]], target: dt.date | None) -
     }
 
 
-def _market_movers(prompt: str, known_stocks: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _market_movers(
+    prompt: str,
+    known_stocks: list[dict[str, Any]] | None,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     group = _detect_group(prompt)
     universe = _group_universe(group, known_stocks)
     if not universe:
@@ -825,7 +839,7 @@ def _market_movers(prompt: str, known_stocks: list[dict[str, Any]] | None) -> di
     fallback = f"The {direction} on {session_date}:\n" + "\n".join(
         f"- {r['symbol'] or r['ticker']}: {r['change_pct']:+.2f}% (close {r['close']})" for r in top
     )
-    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, MOVERS_SYSTEM_PROMPT)
+    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, MOVERS_SYSTEM_PROMPT, history)
 
     # Be honest if the full-market scan is still warming up. Appended after the
     # model's answer so the model itself never narrates backend mechanics.
@@ -861,7 +875,12 @@ def _market_movers(prompt: str, known_stocks: list[dict[str, Any]] | None) -> di
 
 
 # ── Mode: technical / ROI (reuse stock_ai_service) ─────────────────────────────
-def _single_stock_reuse(prompt: str, ticker: str, known_stocks: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _single_stock_reuse(
+    prompt: str,
+    ticker: str,
+    known_stocks: list[dict[str, Any]] | None,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     raw = run_stock_ai_search(prompt, ticker, known_stocks)
     deterministic = raw.get("answer") or "Here is what the data shows."
 
@@ -884,7 +903,7 @@ def _single_stock_reuse(prompt: str, ticker: str, known_stocks: list[dict[str, A
         data_lines = [deterministic]
         mode = raw.get("type", "technical")
 
-    answer, model_used = _narrate("\n".join(data_lines), prompt, deterministic)
+    answer, model_used = _narrate("\n".join(data_lines), prompt, deterministic, history=history)
     return {
         "answer": answer,
         "mode": mode,
@@ -1127,13 +1146,13 @@ def run_ask_ai(
 
     try:
         if intent == "MOVERS":
-            return _market_movers(prompt, universe)
+            return _market_movers(prompt, universe, history)
         if intent == "CROSS_SCAN":
-            return _cross_scan(prompt, universe)
+            return _cross_scan(prompt, universe, history)
         if intent == "BACKTEST" and ticker:
-            return _single_backtest(prompt, ticker)
+            return _single_backtest(prompt, ticker, history)
         if intent in {"TECHNICAL", "ROI"} and ticker:
-            return _single_stock_reuse(prompt, ticker, universe)
+            return _single_stock_reuse(prompt, ticker, universe, history)
     except Exception as exc:  # noqa: BLE001 - degrade gracefully to a chat answer
         print(f"[AskAI] {intent} handler failed, falling back to chat: {exc}")
         fallback = _general_chat(prompt, history, ticker, context)

@@ -48,8 +48,8 @@ def _detail_reason(signal: dict[str, Any]) -> tuple[str, str]:
     )
 
     html_reason = (
-        f"<div style='font-size:13px;line-height:1.65;color:#cbd5e1'>"
-        f"<strong style='color:#f8fafc'>{escape(lead)}</strong><br/>"
+        f"<div style='font-size:13px;line-height:1.65;color:#334155'>"
+        f"<strong style='color:#0f172a'>{escape(lead)}</strong><br/>"
         f"{escape(technical)}<br/>"
         f"{escape(metrics + quality)}"
         f"</div>"
@@ -60,9 +60,9 @@ def _detail_reason(signal: dict[str, Any]) -> tuple[str, str]:
 
 def _metric_block(label: str, value: str) -> str:
     return (
-        "<td style='padding:0 6px 10px 0;vertical-align:top'>"
-        f"<div style='font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#67e8f9;font-weight:700;margin-bottom:4px'>{escape(label)}</div>"
-        f"<div style='font-size:15px;line-height:1.5;color:#f8fafc'>{escape(value)}</div>"
+        "<td style='padding:0 12px 12px 0;vertical-align:top;width:50%'>"
+        f"<div style='font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#2563eb;font-weight:700;margin-bottom:4px'>{escape(label)}</div>"
+        f"<div style='font-size:15px;line-height:1.5;color:#0f172a;font-weight:700'>{escape(value)}</div>"
         "</td>"
     )
 
@@ -76,73 +76,81 @@ def build_signal_email(
     risk_level: str,
     signal_type: str,
 ) -> tuple[str, str, str]:
-    subject = f"Bullseye {market} next-trading-day stock signals | generated {signal_date}"
+    signal_label = str(signal_type or "next-trading-day").replace("_", " ").strip()
+    subject = f"Bullseye {market} {signal_label} stock signals | generated {signal_date}"
     card_rows: list[str] = []
     text_rows: list[str] = []
 
     for index, signal in enumerate(signals, 1):
         html_reason, text_reason = _detail_reason(signal)
+        symbol = str(signal["symbol"])
+        direction = str(signal["direction"])
+        company_name = str(signal.get("company_name") or symbol)
+        entry_range = f"{signal['entry_low']:.2f} - {signal['entry_high']:.2f}"
+        target_price = f"{signal['target_price']:.2f}"
+        stop_loss = f"{signal['stop_loss']:.2f}"
+        risk_reward = f"{signal['risk_reward']:.2f}"
+        setup_type = str(signal.get("setup_type") or "Model-ranked setup").replace("_", " ").title()
         card_rows.append(
-            "<div style='margin-bottom:16px;border:1px solid #243041;border-radius:18px;background:#0f172a;padding:18px'>"
-            "<table role='presentation' style='width:100%;border-collapse:collapse'>"
+            "<table role='presentation' style='width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #dbeafe;background:#ffffff'>"
             "<tr>"
-            "<td style='padding-bottom:12px'>"
-            f"<div style='font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#67e8f9;font-weight:700'>Signal {index}</div>"
-            f"<div style='font-size:28px;line-height:1.2;color:#f8fafc;font-weight:800;margin-top:6px'>{escape(signal['symbol'])}</div>"
-            f"<div style='font-size:13px;line-height:1.5;color:#cbd5e1;margin-top:4px'>{escape(signal.get('company_name') or signal['symbol'])} | {escape(signal['direction'])}</div>"
+            "<td colspan='2' style='padding:18px 18px 12px 18px;background:#eff6ff;border-bottom:1px solid #dbeafe'>"
+            f"<div style='font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#2563eb;font-weight:700'>Signal {index}</div>"
+            f"<div style='font-size:28px;line-height:1.2;color:#0f172a;font-weight:800;margin-top:6px'>{escape(symbol)}</div>"
+            f"<div style='font-size:13px;line-height:1.5;color:#334155;margin-top:4px'>{escape(company_name)} | {escape(direction)}</div>"
             "</td>"
             "</tr>"
-            "<tr>"
-            f"{_metric_block('Entry', f'{signal['entry_low']:.2f} - {signal['entry_high']:.2f}')}"
-            f"{_metric_block('Target', f'{signal['target_price']:.2f}')}"
+            "<tr><td colspan='2' style='padding:18px 18px 0 18px'><table role='presentation' style='width:100%;border-collapse:collapse'><tr>"
+            f"{_metric_block('Entry', entry_range)}"
+            f"{_metric_block('Target', target_price)}"
             "</tr>"
             "<tr>"
-            f"{_metric_block('Stop Loss', f'{signal['stop_loss']:.2f}')}"
+            f"{_metric_block('Stop Loss', stop_loss)}"
             f"{_metric_block('Confidence', _format_percent(signal.get('confidence'), 0))}"
             "</tr>"
             "<tr>"
-            f"{_metric_block('Risk / Reward', f'{signal['risk_reward']:.2f}')}"
-            f"{_metric_block('Setup Type', str(signal.get('setup_type') or 'Model-ranked setup').replace('_', ' ').title())}"
-            "</tr>"
-            "<tr><td colspan='2' style='padding-top:4px'>"
-            "<div style='font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#67e8f9;font-weight:700;margin-bottom:6px'>Why Bullseye Suggested This</div>"
+            f"{_metric_block('Risk / Reward', risk_reward)}"
+            f"{_metric_block('Setup Type', setup_type)}"
+            "</tr></table></td></tr>"
+            "<tr><td colspan='2' style='padding:4px 18px 18px 18px'>"
+            "<div style='font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#2563eb;font-weight:700;margin-bottom:6px'>Why Bullseye Suggested This</div>"
             f"{html_reason}"
             "</td></tr>"
             "</table>"
-            "</div>"
         )
 
         text_rows.append(
-            f"{index}. {signal['symbol']} {signal['direction']}\n"
-            f"Entry: {signal['entry_low']:.2f}-{signal['entry_high']:.2f}\n"
-            f"Target: {signal['target_price']:.2f}\n"
-            f"Stop Loss: {signal['stop_loss']:.2f}\n"
+            f"{index}. {symbol} {direction}\n"
+            f"Entry: {entry_range}\n"
+            f"Target: {target_price}\n"
+            f"Stop Loss: {stop_loss}\n"
             f"Confidence: {_format_percent(signal.get('confidence'), 0)}\n"
-            f"Risk / Reward: {signal['risk_reward']:.2f}\n"
-            f"Setup Type: {str(signal.get('setup_type') or 'Model-ranked setup').replace('_', ' ').title()}\n"
+            f"Risk / Reward: {risk_reward}\n"
+            f"Setup Type: {setup_type}\n"
             f"Why: {text_reason}\n"
         )
 
     html = (
-        "<div style='font-family:Inter,Arial,sans-serif;background:#111827;padding:16px;color:#0f172a'>"
-        "<div style='max-width:720px;margin:0 auto;background:#111827;border:1px solid #243041;border-radius:22px;overflow:hidden'>"
-        "<div style='padding:24px;background:#0f172a;color:#f8fafc'>"
-        "<div style='font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#67e8f9;font-weight:700'>Bullseye Signals</div>"
-        f"<h1 style='margin:10px 0 0;font-size:26px;line-height:1.25;color:#f8fafc'>Top {len(signals)} {escape(market)} stock signals for the next trading day</h1>"
-        f"<p style='margin:10px 0 0;color:#cbd5e1;font-size:14px;line-height:1.6'>Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
-        "</div>"
-        "<div style='padding:16px'>"
-        + ("".join(card_rows) if card_rows else "<div style='padding:18px;color:#e2e8f0'>No signals passed the quality filters for the next trading day.</div>")
-        + "<div style='margin-top:8px;padding:16px;border-radius:14px;background:#eff6ff;color:#1e293b;font-size:13px;line-height:1.7'>"
+        "<table role='presentation' style='width:100%;border-collapse:collapse;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a'>"
+        "<tr><td style='padding:18px'>"
+        "<table role='presentation' style='width:100%;max-width:720px;margin:0 auto;border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0'>"
+        "<tr><td style='padding:24px;background:#0f172a;color:#ffffff'>"
+        "<div style='font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#93c5fd;font-weight:700'>Bullseye Signals</div>"
+        f"<h1 style='margin:10px 0 0;font-size:26px;line-height:1.25;color:#ffffff'>Top {len(signals)} {escape(market)} {escape(signal_label)} stock signals</h1>"
+        f"<p style='margin:10px 0 0;color:#dbeafe;font-size:14px;line-height:1.6'>Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
+        "</td></tr>"
+        "<tr><td style='padding:16px'>"
+        + ("".join(card_rows) if card_rows else "<div style='padding:18px;color:#334155'>No signals passed the quality filters for the next trading day.</div>")
+        + "<div style='margin-top:8px;padding:16px;background:#eff6ff;color:#1e293b;font-size:13px;line-height:1.7'>"
         "Signals are model-generated analysis for research use only. Returns are not guaranteed. "
         "Past performance does not guarantee future results. You can turn alerts off anytime in your account settings."
         "</div>"
-        f"<div style='margin-top:16px;font-size:12px;line-height:1.6'><a href='{escape(unsubscribe_url)}' style='color:#67e8f9'>Unsubscribe from daily stock emails</a></div>"
-        "</div></div></div>"
+        f"<div style='margin-top:16px;font-size:12px;line-height:1.6'><a href='{escape(unsubscribe_url)}' style='color:#2563eb'>Unsubscribe from daily stock emails</a></div>"
+        "</td></tr></table></td></tr></table>"
     )
 
     text = (
-        f"Bullseye {market} next-trading-day stock signals\n"
+        f"Bullseye {market} {signal_label} stock signals\n"
         f"Generated on: {signal_date} | Risk level: {risk_level} | Signal type: {signal_type}\n\n"
         + ("\n".join(text_rows) if text_rows else "No signals passed the quality filters for the next trading day.")
         + "\nSignals are model-generated analysis. Returns are not guaranteed. Past performance does not guarantee future results.\n"

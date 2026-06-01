@@ -4,6 +4,8 @@ import os
 import re
 import time
 from datetime import datetime, timezone
+from html import escape
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -17,6 +19,12 @@ from app.services.data_service import get_historical_data
 
 ALERT_TABLE = "user_alerts"
 EVENT_TABLE = "alert_events"
+logger = logging.getLogger(__name__)
+
+if not os.getenv("RESEND_API_KEY"):
+    logger.warning("RESEND_API_KEY is not set; Resend alert emails will not send.")
+if not (os.getenv("ALERT_FROM_EMAIL") or os.getenv("RESEND_FROM_EMAIL")):
+    logger.warning("ALERT_FROM_EMAIL or RESEND_FROM_EMAIL is not set; alert emails need a configured from-address.")
 
 
 def _utc_now_iso() -> str:
@@ -318,26 +326,34 @@ def _send_email(to_email: str, subject: str, text: str, html: str | None = None)
     resend_key = os.getenv("RESEND_API_KEY")
     from_email = os.getenv("ALERT_FROM_EMAIL") or os.getenv("RESEND_FROM_EMAIL")
     if resend_key and from_email:
-        response = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-            json={
-                "from": from_email,
-                "to": [to_email],
-                "subject": subject,
-                "text": text,
-                **({"html": html} if html else {}),
-            },
-            timeout=12,
-        )
-        if response.ok:
-            return {"provider": "resend", "status": "sent", "response": response.json()}
-        return {
-            "provider": "resend",
-            "status": "failed",
-            "status_code": response.status_code,
-            "response": response.text[:1000],
+        payload = {
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "text": text,
+            **({"html": html} if html else {}),
         }
+        last_error: str | None = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=12,
+                )
+                if response.ok:
+                    return {"provider": "resend", "status": "sent", "response": response.json()}
+                last_error = f"status={response.status_code} response={response.text[:1000]}"
+                logger.error("Resend alert email failed on attempt %s for %s: %s", attempt, to_email, last_error)
+                if response.status_code < 500 and response.status_code != 429:
+                    break
+            except requests.RequestException as exc:
+                last_error = str(exc)
+                logger.exception("Resend alert email request failed on attempt %s for %s", attempt, to_email)
+            if attempt < 3:
+                time.sleep(0.75 * attempt)
+        return {"provider": "resend", "status": "failed", "error": last_error or "unknown Resend failure"}
 
     smtp_host = os.getenv("SMTP_HOST")
     smtp_user = os.getenv("SMTP_USER")
@@ -359,7 +375,43 @@ def _send_email(to_email: str, subject: str, text: str, html: str | None = None)
             server.send_message(msg)
         return {"provider": "smtp", "status": "sent"}
 
+    logger.warning(
+        "Alert email skipped for %s: no provider configured. Check RESEND_API_KEY and ALERT_FROM_EMAIL/RESEND_FROM_EMAIL.",
+        to_email,
+    )
     return {"provider": "none", "status": "skipped", "reason": "Email provider not configured."}
+
+
+def _build_alert_email_html(alert: dict[str, Any], evaluation: dict[str, Any]) -> str:
+    ticker = escape(str(alert.get("ticker") or "Stock"))
+    description = escape(str(evaluation.get("description") or alert.get("prompt") or "Alert rule"))
+    value_label = escape(str(evaluation.get("value_label") or "Value"))
+    current_value = escape(str(evaluation.get("current_value") or "n/a"))
+    target_value = escape(str(evaluation.get("target_value") or "n/a"))
+    checked_at = escape(str(evaluation.get("checked_at") or _utc_now_iso()))
+    return (
+        "<table role='presentation' style='width:100%;border-collapse:collapse;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a'>"
+        "<tr><td style='padding:18px'>"
+        "<table role='presentation' style='width:100%;max-width:640px;margin:0 auto;border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0'>"
+        "<tr><td style='padding:22px;background:#0f172a;color:#ffffff'>"
+        "<div style='font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#93c5fd;font-weight:700'>Bullseye Alert</div>"
+        f"<h1 style='margin:8px 0 0;font-size:24px;line-height:1.25;color:#ffffff'>{ticker} alert triggered</h1>"
+        "</td></tr>"
+        "<tr><td style='padding:18px'>"
+        f"<p style='margin:0 0 14px;font-size:14px;line-height:1.6;color:#334155'>{description}</p>"
+        "<table role='presentation' style='width:100%;border-collapse:collapse'>"
+        f"<tr><td style='padding:10px 12px;border:1px solid #dbeafe;background:#eff6ff;color:#2563eb;font-size:12px;font-weight:700;text-transform:uppercase'>{value_label}</td>"
+        f"<td style='padding:10px 12px;border:1px solid #dbeafe;color:#0f172a;font-size:15px;font-weight:700'>{current_value}</td></tr>"
+        "<tr><td style='padding:10px 12px;border:1px solid #dbeafe;background:#eff6ff;color:#2563eb;font-size:12px;font-weight:700;text-transform:uppercase'>Target</td>"
+        f"<td style='padding:10px 12px;border:1px solid #dbeafe;color:#0f172a;font-size:15px;font-weight:700'>{target_value}</td></tr>"
+        "<tr><td style='padding:10px 12px;border:1px solid #dbeafe;background:#eff6ff;color:#2563eb;font-size:12px;font-weight:700;text-transform:uppercase'>Checked</td>"
+        f"<td style='padding:10px 12px;border:1px solid #dbeafe;color:#334155;font-size:14px'>{checked_at}</td></tr>"
+        "</table>"
+        "<p style='margin:16px 0 0;font-size:12px;line-height:1.6;color:#64748b'>"
+        "Alerts are model-assisted market monitoring for research use only. Review the chart before making any trade."
+        "</p>"
+        "</td></tr></table></td></tr></table>"
+    )
 
 
 def notify_alert(alert: dict[str, Any], evaluation: dict[str, Any]) -> list[dict[str, Any]]:
@@ -375,9 +427,13 @@ def notify_alert(alert: dict[str, Any], evaluation: dict[str, Any]) -> list[dict
     channels = alert.get("channels") or ["email"]
     if "email" in channels and alert.get("email"):
         try:
-            results.append(_send_email(alert["email"], subject, message))
+            html = _build_alert_email_html(alert, evaluation)
+            results.append(_send_email(alert["email"], subject, message, html=html))
         except Exception as exc:
+            logger.exception("Alert notification failed for alert %s", alert.get("id"))
             results.append({"provider": "email", "status": "failed", "error": str(exc)})
+    elif "email" in channels:
+        logger.error("Alert %s triggered but has no recipient email.", alert.get("id"))
     return results
 
 

@@ -148,7 +148,7 @@ async def start_daily_trade_updates():
 
 
 def analyze_ticker_sync(ticker: str):
-    df = get_historical_data(ticker)
+    df = get_historical_data(ticker, days=500)
     return run_analysis(df, ticker)
 
 

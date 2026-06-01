@@ -11,11 +11,17 @@ import math
 import numpy as np
 import time
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
 
 # ── In-memory analysis cache ──────────────────────────────────────────────────
 _analysis_cache: dict = {}
 ANALYSIS_TTL = 3600
+_sentiment_cache: dict = {}
+_sentiment_inflight: dict = {}
+_sentiment_lock = threading.Lock()
+_sentiment_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="news-sentiment")
 
 # ── Supabase for persistent cache ─────────────────────────────────────────────
 try:
@@ -26,6 +32,57 @@ except Exception:
     _sb = None
     _SUPABASE_OK = False
     _SUPABASE_WRITES_OK = False
+
+
+def _neutral_sentiment(message: str = "News sentiment is updating in the background.") -> dict:
+    return {"score": 0, "label": "Neutral", "headlines": [message], "stories": []}
+
+
+def _rss_root(url: str):
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    response = urllib.request.urlopen(req, timeout=3)
+    return ET.fromstring(response.read())
+
+
+def _fetch_rss_roots(urls: dict[str, str]) -> dict:
+    executor = ThreadPoolExecutor(max_workers=min(2, len(urls)))
+    futures = {name: executor.submit(_rss_root, url) for name, url in urls.items()}
+    done, _ = wait(futures.values(), timeout=3.5)
+    roots = {}
+    for name, future in futures.items():
+        if future not in done:
+            future.cancel()
+            continue
+        try:
+            roots[name] = future.result()
+        except Exception:
+            pass
+    executor.shutdown(wait=False, cancel_futures=True)
+    return roots
+
+
+def _finish_sentiment_fetch(ticker: str, future) -> None:
+    try:
+        sentiment = future.result()
+    except Exception as exc:
+        print(f"[News] Sentiment fetch failed for {ticker}: {exc}")
+        sentiment = _neutral_sentiment("Live news feed unavailable.")
+    with _sentiment_lock:
+        _sentiment_cache[ticker] = {"result": sentiment, "ts": time.time()}
+        _sentiment_inflight.pop(ticker, None)
+
+
+def _sentiment_for_analysis(ticker: str) -> tuple[dict, bool]:
+    now = time.time()
+    with _sentiment_lock:
+        cached = _sentiment_cache.get(ticker)
+        if cached and now - cached["ts"] < ANALYSIS_TTL:
+            return cached["result"], True
+        if ticker not in _sentiment_inflight:
+            future = _sentiment_executor.submit(fetch_news_sentiment, ticker)
+            _sentiment_inflight[ticker] = future
+            future.add_done_callback(lambda done, symbol=ticker: _finish_sentiment_fetch(symbol, done))
+    return _neutral_sentiment(), False
 
 def fetch_news_sentiment(ticker: str):
     try:
@@ -57,13 +114,17 @@ def fetch_news_sentiment(ticker: str):
             f'-site:tickertape.in -site:meyka.com'
         )
         url = f"https://news.google.com/rss/search?q={search_query}&hl=en-IN&gl=IN&ceid=IN:en"
-
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req, timeout=8)
-        xml_data = response.read()
-
-        root = ET.fromstring(xml_data)
-        items = root.findall('.//item')
+        fb_parts = f'({search_name} OR {base_ticker})' if search_name != base_ticker else base_ticker
+        fb_q = urllib.parse.quote(
+            f'{fb_parts} '
+            f'-site:tradingview.com -site:simplywall.st -site:stockanalysis.com '
+            f'-site:macrotrends.net -site:screener.in -site:trendlyne.com '
+            f'-site:tickertape.in -site:meyka.com'
+        )
+        fb_url = f"https://news.google.com/rss/search?q={fb_q}&hl=en-IN&gl=IN&ceid=IN:en"
+        roots = _fetch_rss_roots({"primary": url, "fallback": fb_url})
+        root = roots.get("primary") or roots.get("fallback")
+        items = root.findall('.//item') if root is not None else []
 
         headlines = []
         stories = []
@@ -175,17 +236,9 @@ def fetch_news_sentiment(ticker: str):
         # Fallback: broader search when primary returned fewer than 3 headlines
         if len(headlines) < 3:
             try:
-                fb_parts = f'({search_name} OR {base_ticker})' if search_name != base_ticker else base_ticker
-                fb_q = urllib.parse.quote(
-                    f'{fb_parts} '
-                    f'-site:tradingview.com -site:simplywall.st -site:stockanalysis.com '
-                    f'-site:macrotrends.net -site:screener.in -site:trendlyne.com '
-                    f'-site:tickertape.in -site:meyka.com'
-                )
-                fb_url = f"https://news.google.com/rss/search?q={fb_q}&hl=en-IN&gl=IN&ceid=IN:en"
-                req2 = urllib.request.Request(fb_url, headers={'User-Agent': 'Mozilla/5.0'})
-                resp2 = urllib.request.urlopen(req2, timeout=8)
-                root2 = ET.fromstring(resp2.read())
+                root2 = roots.get("fallback")
+                if root2 is None:
+                    raise ValueError("Fallback RSS was unavailable.")
                 seen = set(headlines)
                 for item2 in root2.findall('.//item'):
                     title_el2 = item2.find('title')
@@ -477,7 +530,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
 
     latest = df.iloc[-1]
     prev = df.iloc[-2]
-    sentiment = fetch_news_sentiment(ticker)
+    sentiment, sentiment_ready = _sentiment_for_analysis(ticker)
 
     # Core FISO Score
     sma_diff_pct = (latest['SMA_50'] - latest['SMA_200']) / latest['SMA_200']
@@ -542,10 +595,11 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     }
 
     # ── Save to RAM cache ──────────────────────────────────────────────────────
-    _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+    if sentiment_ready:
+        _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
 
     # ── Save to Supabase cache ─────────────────────────────────────────────────
-    if _SUPABASE_OK and _sb and _SUPABASE_WRITES_OK:
+    if sentiment_ready and _SUPABASE_OK and _sb and _SUPABASE_WRITES_OK:
         try:
             import json as _json
             _sb.table("analysis_cache").upsert({
@@ -555,5 +609,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
             }, on_conflict="ticker").execute()
         except Exception as e:
             print(f"[Cache] Analysis Supabase save failed: {e}")
+    if not sentiment_ready:
+        print(f"[News] Returning {ticker} analysis with neutral sentiment while news cache warms.")
 
     return result
