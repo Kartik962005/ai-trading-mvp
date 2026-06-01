@@ -61,6 +61,15 @@ from app.services.ask_ai_history_service import (
     save_turn,
 )
 from app.services.stock_snapshot_service import is_snapshot_stale
+from app.services.strategy_engine import DISCLAIMER as STRATEGY_DISCLAIMER, backtest_nl_strategy, backtest_strategy, strategy_to_dict
+from app.services.strategy_store import (
+    create_strategy as create_ai_strategy,
+    delete_strategy as delete_ai_strategy,
+    list_signals as list_ai_strategy_signals,
+    list_strategies as list_ai_strategies,
+    update_strategy as update_ai_strategy,
+    validate_strategy_json,
+)
 from app.services.alert_service import (
     check_active_alerts,
     check_alert,
@@ -376,6 +385,23 @@ class AlertCreateRequest(BaseModel):
     email: str | None = None
 
 
+class StrategyBacktestRequest(BaseModel):
+    nl_text: str
+
+
+class StrategyCreateRequest(BaseModel):
+    name: str | None = None
+    nl_text: str
+    strategy_json: dict[str, Any] | None = None
+    quality: dict[str, Any] | None = None
+    enabled: bool = True
+
+
+class StrategyPatchRequest(BaseModel):
+    enabled: bool | None = None
+    name: str | None = None
+
+
 class AlertStatusRequest(BaseModel):
     status: str
 
@@ -518,6 +544,106 @@ async def ask_ai_conversation(request: Request, conversation_id: str):
         return get_conversation(user["id"], conversation_id)
     except ValueError as e:
         raise HTTPException(status_code=404 if "not found" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/strategies/backtest")
+@limiter.limit("6/minute")
+async def post_strategy_backtest(request: Request, body: StrategyBacktestRequest):
+    try:
+        result = backtest_nl_strategy(body.nl_text)
+        result["success"] = True
+        result["disclaimer"] = STRATEGY_DISCLAIMER
+        return result
+    except ValueError as e:
+        return {
+            "success": False,
+            "message": str(e),
+            "disclaimer": STRATEGY_DISCLAIMER,
+            "strategy_json": None,
+            "stats": None,
+            "alertable": False,
+            "recent_signals": [],
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Strategy backtest is unavailable right now: {e}",
+            "disclaimer": STRATEGY_DISCLAIMER,
+            "strategy_json": None,
+            "stats": None,
+            "alertable": False,
+            "recent_signals": [],
+        }
+
+
+@app.post("/api/v1/strategies")
+@limiter.limit("10/minute")
+async def post_ai_strategy(request: Request, body: StrategyCreateRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        strategy_json = validate_strategy_json(body.strategy_json) if body.strategy_json else backtest_nl_strategy(body.nl_text)["strategy_json"]
+        strategy = create_ai_strategy(
+            user,
+            name=body.name,
+            nl_text=body.nl_text,
+            strategy_json=strategy_json,
+            quality=body.quality,
+            enabled=body.enabled,
+        )
+        return {"strategy": strategy, "disclaimer": STRATEGY_DISCLAIMER}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/strategies")
+@limiter.limit("30/minute")
+async def get_ai_strategies(request: Request):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"strategies": list_ai_strategies(user["id"]), "disclaimer": STRATEGY_DISCLAIMER}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/v1/strategies/{strategy_id}")
+@limiter.limit("20/minute")
+async def patch_ai_strategy(request: Request, strategy_id: str, body: StrategyPatchRequest):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        patch = body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else body.dict(exclude_none=True)
+        return {"strategy": update_ai_strategy(user["id"], strategy_id, patch)}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/v1/strategies/{strategy_id}")
+@limiter.limit("20/minute")
+async def delete_ai_strategy_endpoint(request: Request, strategy_id: str):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return delete_ai_strategy(user["id"], strategy_id)
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/strategies/{strategy_id}/signals")
+@limiter.limit("30/minute")
+async def get_ai_strategy_signals(request: Request, strategy_id: str):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"signals": list_ai_strategy_signals(user["id"], strategy_id), "disclaimer": STRATEGY_DISCLAIMER}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

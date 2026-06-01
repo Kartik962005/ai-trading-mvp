@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -10,7 +11,7 @@ from app.core.supabase_client import supabase
 
 CONVERSATIONS_TABLE = "ask_ai_conversations"
 MESSAGES_TABLE = "ask_ai_messages"
-TTL_DAYS = 5
+TTL_HOURS = int(os.getenv("ASK_AI_HISTORY_TTL_HOURS", "48"))
 
 
 def _utc_now() -> datetime:
@@ -22,7 +23,7 @@ def _utc_now_iso() -> str:
 
 
 def _expires_iso() -> str:
-    return (_utc_now() + timedelta(days=TTL_DAYS)).isoformat()
+    return (_utc_now() + timedelta(hours=TTL_HOURS)).isoformat()
 
 
 def _supabase_required():
@@ -190,6 +191,9 @@ def _assistant_data(response: dict[str, Any]) -> dict[str, Any]:
         "backtest": response.get("backtest"),
         "scan": response.get("scan"),
         "suggestions": response.get("suggestions"),
+        "strategy_json": response.get("strategy_json"),
+        "strategy_alert": response.get("strategy_alert"),
+        "disclaimer": response.get("disclaimer"),
     }
 
 

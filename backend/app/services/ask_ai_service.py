@@ -280,6 +280,31 @@ def _classify(prompt: str, ticker: str | None) -> str:
     return "GENERAL"
 
 
+_FOLLOWUP_SAME_IDEA = re.compile(
+    r"\b(same idea|same strategy|this strategy|that strategy|the strategy|it across|across all|all nse stocks)\b",
+    re.IGNORECASE,
+)
+
+
+def _expand_strategy_followup(prompt: str, history: list[dict[str, Any]] | None) -> str:
+    clean = prompt.strip()
+    if not _FOLLOWUP_SAME_IDEA.search(clean):
+        return clean
+    if re.search(r"\b(if i buy|buy when|buy after|sell when|sell on|rsi|macd|gap|moving average|\d+\s*%)\b", clean, re.IGNORECASE):
+        return clean
+    for turn in reversed(history or []):
+        if turn.get("role") != "user":
+            continue
+        prior = str(turn.get("content") or "").strip()
+        if not prior or prior.lower() == clean.lower():
+            continue
+        if _BACKTEST_PATTERNS.search(prior) or re.search(r"\b(if i buy|buy when|buy after|sell when|sell on)\b", prior, re.IGNORECASE):
+            if _CROSS_PATTERNS.search(clean) or re.search(r"\b(all|across|nse|stocks|scan)\b", clean, re.IGNORECASE):
+                return f"Scan all NSE stocks for this strategy: {prior}"
+            return f"{clean}. Use this previous strategy: {prior}"
+    return clean
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def _buy_and_hold_pct(df: pd.DataFrame) -> float:
     if df is None or len(df) < 2:
@@ -343,6 +368,16 @@ def _narrate(
 
 # ── Strategy translation (once) + reuse across stocks ─────────────────────────
 def _translate_once(prompt: str) -> dict[str, Any]:
+    clean = prompt.lower()
+    week_drop = re.search(r"(?:falls?|drops?|down)\s+(\d+(?:\.\d+)?)\s*%\s+in\s+a\s+week", clean)
+    delay = re.search(r"(\d+)\s+days?\s+after", clean)
+    bounce = re.search(r"(\d+(?:\.\d+)?)\s*%\s+bounce", clean)
+    if week_drop and bounce:
+        return {
+            "buy_expr": f"df['week_return'].shift({int(delay.group(1)) if delay else 0}) < -{float(week_drop.group(1))}",
+            "sell_expr": f"df['week_return'] > {float(bounce.group(1))}",
+            "mode": "crossover",
+        }
     strategy = _rule_engine_fallback(prompt)
     if strategy:
         return strategy
@@ -370,6 +405,29 @@ def _simulate(df: pd.DataFrame, strategy: dict[str, Any]) -> tuple[dict | None, 
     except Exception:
         trades, open_trade = _run_simple(prepared, buy_expr)
     return _summary(trades), trades, open_trade
+
+
+def _strategy_alert_payload(prompt: str) -> dict[str, Any] | None:
+    try:
+        from app.services.strategy_engine import DISCLAIMER, backtest_nl_strategy
+
+        result = backtest_nl_strategy(prompt)
+        return {
+            "strategy_json": result.get("strategy_json"),
+            "strategy_alert": {
+                "alertable": bool(result.get("alertable")),
+                "quality": result.get("quality"),
+                "stats": result.get("stats"),
+                "out_of_sample": result.get("out_of_sample"),
+                "recent_signals": result.get("recent_signals") or [],
+                "disclaimer": DISCLAIMER,
+                "cta": "Save as daily alert" if result.get("alertable") else None,
+            },
+            "disclaimer": DISCLAIMER,
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AskAI] strategy alert payload skipped: {exc}")
+        return None
 
 
 # ── Mode: single-stock backtest ───────────────────────────────────────────────
@@ -413,7 +471,7 @@ def _single_backtest(prompt: str, ticker: str, history: list[dict[str, Any]] | N
     if summary:
         result["alpha_vs_buy_hold_pct"] = round((summary.get("total_return_pct") or 0) - buy_hold, 2)
 
-    return {
+    response = {
         "answer": answer,
         "mode": "single_backtest",
         "success": True,
@@ -423,10 +481,14 @@ def _single_backtest(prompt: str, ticker: str, history: list[dict[str, Any]] | N
         "scan": None,
         "suggestions": [
             f"Compare this against buy-and-hold on {ticker}",
-            "Test the same idea across all NSE stocks",
+            f"Test this strategy across all NSE stocks: {prompt}",
             "Add a stop-loss and re-run",
         ],
     }
+    alert_payload = _strategy_alert_payload(prompt)
+    if alert_payload:
+        response.update(alert_payload)
+    return response
 
 
 # ── Mode: cross-stock scan ─────────────────────────────────────────────────────
@@ -527,7 +589,7 @@ def _cross_scan(
     )
     answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, history=history)
 
-    return {
+    response = {
         "answer": answer,
         "mode": "cross_scan",
         "success": True,
@@ -552,6 +614,10 @@ def _cross_scan(
             "Compare this to a simple buy-and-hold portfolio",
         ],
     }
+    alert_payload = _strategy_alert_payload(prompt)
+    if alert_payload:
+        response.update(alert_payload)
+    return response
 
 
 # ── Known-universe cache (so movers see EVERY stock, not a truncated head) ─────
@@ -1320,6 +1386,7 @@ def run_ask_ai(
     prompt = (prompt or "").strip()
     if not prompt:
         raise ValueError("Prompt is required.")
+    prompt = _expand_strategy_followup(prompt, history)
 
     # Remember the fullest catalog we have ever seen so ticker resolution and the
     # background market scan cover EVERY listed stock, even when a later request

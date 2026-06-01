@@ -102,6 +102,15 @@ type AskAiResponse = {
   suggestions?: string[];
   conversation_id?: string;
   saved?: boolean;
+  strategy_json?: Record<string, unknown> | null;
+  strategy_alert?: {
+    alertable?: boolean;
+    quality?: { alertable?: boolean; reason?: string };
+    stats?: Record<string, number>;
+    disclaimer?: string;
+    cta?: string | null;
+  };
+  disclaimer?: string;
 };
 
 type AppContext = {
@@ -445,9 +454,13 @@ export default function AskAiPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const autoOpenedRef = useRef(false);
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabaseAvailable = !!(supabaseUrl && supabaseKey);
+  const [authReady, setAuthReady] = useState(!supabaseAvailable);
+  const [signedInUser, setSignedInUser] = useState<any>(null);
 
   async function getAccessToken() {
     if (!supabaseAvailable) return null;
@@ -462,29 +475,114 @@ export default function AskAiPage() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
-  async function loadConversations() {
+  async function saveStrategyAlert(data: Partial<AskAiResponse>) {
+    if (!data.strategy_json) return;
+    const headers = await authHeaders();
+    if (!('Authorization' in headers)) {
+      setMessages((prev) => [
+        ...prev,
+        { id: `e-${Date.now()}`, role: 'assistant', content: 'Sign in before saving daily strategy alerts.', error: true },
+      ]);
+      return;
+    }
+    const response = await fetch(`${BACKEND}/api/v1/strategies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({
+        name: 'Ask-AI strategy alert',
+        nl_text: messages.slice().reverse().find((message) => message.role === 'user')?.content || 'Ask-AI strategy',
+        strategy_json: data.strategy_json,
+        quality: data.strategy_alert?.quality,
+        enabled: true,
+      }),
+    });
+    const raw = await response.json().catch(() => ({}));
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `a-${Date.now()}`,
+        role: 'assistant',
+        content: response.ok ? 'Saved as a daily strategy alert.' : raw?.detail || 'Could not save that strategy alert.',
+        error: !response.ok,
+      },
+    ]);
+  }
+
+  function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
+      }
+    });
+  }
+
+  async function loadConversations(): Promise<ConversationSummary[]> {
     const headers = await authHeaders();
     if (!('Authorization' in headers)) {
       setConversations([]);
-      return;
+      return [];
     }
     const response = await fetch(`${BACKEND}/api/v1/ask-ai/conversations`, { headers, cache: 'no-store' });
     if (!response.ok) {
       setConversations([]);
-      return;
+      return [];
     }
     const data = await response.json().catch(() => ({}));
-    setConversations(Array.isArray(data.conversations) ? data.conversations : []);
+    const rows = Array.isArray(data.conversations) ? data.conversations : [];
+    setConversations(rows);
+    return rows;
   }
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    scrollToBottom('smooth');
   }, [messages, loading]);
 
   useEffect(() => {
+    let active = true;
+    let subscription: { unsubscribe?: () => void } | null = null;
+    if (!supabaseAvailable) {
+      setAuthReady(true);
+      setSignedInUser(null);
+      return;
+    }
+    getSharedSupabaseClient(supabaseUrl!, supabaseKey!).then(async (sb) => {
+      if (!sb || !active) return;
+      const session = await sb.auth.getSession();
+      if (!active) return;
+      setSignedInUser(session?.data?.session?.user ?? null);
+      setAuthReady(true);
+      subscription = sb.auth.onAuthStateChange((_event: string, nextSession: any) => {
+        setSignedInUser(nextSession?.user ?? null);
+        setAuthReady(true);
+        autoOpenedRef.current = false;
+      })?.data?.subscription;
+    });
+    return () => {
+      active = false;
+      subscription?.unsubscribe?.();
+    };
+  }, [supabaseAvailable, supabaseKey, supabaseUrl]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (!signedInUser) {
+      setConversations([]);
+      return;
+    }
     loadConversations().catch(() => setConversations([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authReady, signedInUser?.id]);
+
+  useEffect(() => {
+    if (!authReady || !signedInUser || autoOpenedRef.current || conversationId || messages.length > 0 || conversations.length === 0) {
+      return;
+    }
+    autoOpenedRef.current = true;
+    openConversation(conversations[0].id).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, signedInUser?.id, conversations.length, conversationId, messages.length]);
 
   // Pick up an optional stock the user arrived with (e.g. /ask-ai?ticker=RELIANCE.NS)
   // so answers can use that stock's real context. No-op when none is present.
@@ -508,6 +606,7 @@ export default function AskAiPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    scrollToBottom('smooth');
 
     try {
       const tokenHeaders = await authHeaders();
@@ -721,6 +820,22 @@ export default function AskAiPage() {
                       {message.data?.backtest && (
                         <BacktestCard data={message.data.backtest} ticker={message.data.target_stock ?? null} />
                       )}
+                      {message.data?.strategy_alert?.alertable && message.data?.strategy_json && (
+                        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">Daily alert available</div>
+                          <p className="mt-1 text-[12px] leading-5 text-emerald-900">
+                            {message.data.strategy_alert.quality?.reason || 'This strategy passed the quality gate.'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => saveStrategyAlert(message.data || {}).catch(() => {})}
+                            className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-bold text-white transition hover:bg-emerald-500"
+                          >
+                            Save as daily alert
+                          </button>
+                          <p className="mt-2 text-[10px] leading-4 text-emerald-900/70">{message.data.disclaimer}</p>
+                        </div>
+                      )}
                       {message.data?.mode === 'movers' && message.data.scan && (
                         <MoversCard data={message.data.scan as MoversScan} />
                       )}
@@ -767,6 +882,7 @@ export default function AskAiPage() {
                 </div>
               </div>
             )}
+            <div ref={bottomRef} aria-hidden="true" />
           </div>
         )}
       </div>

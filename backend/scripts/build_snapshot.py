@@ -67,6 +67,8 @@ def _snapshot_record(stock: dict[str, Any], metrics: dict[str, Any], fundamental
     market_cap, market_cap_cr = _market_cap_values(summary)
     price = _num(metrics.get("latest_close")) or _num(summary.get("current_price"))
     previous_close = _num(metrics.get("previous_close")) or _num(summary.get("previous_close"))
+    today_open = _num(metrics.get("today_open"))
+    gap_pct = _num(metrics.get("gap_pct"))
     change_pct = _num(metrics.get("today_return_pct"))
     if change_pct is None and price is not None and previous_close:
         change_pct = round(((price - previous_close) / previous_close) * 100, 4)
@@ -78,6 +80,9 @@ def _snapshot_record(stock: dict[str, Any], metrics: dict[str, Any], fundamental
         "sector": company.get("sector") or stock.get("sector"),
         "price": price,
         "previous_close": previous_close,
+        "today_open": today_open,
+        "gap_pct": gap_pct,
+        "vwap10": _num(metrics.get("vwap10")),
         "change_pct": change_pct,
         "trailing_pe": _num(summary.get("trailing_pe")),
         "forward_pe": _num(summary.get("forward_pe")),
@@ -132,7 +137,26 @@ def _technical_rows_for_batch(batch: list[dict[str, Any]], period: str) -> dict[
             if len(frame) < 60:
                 print(f"[Snapshot] skipped {ticker}: insufficient OHLCV rows ({len(frame)})")
                 continue
-            rows[ticker] = _technical_metrics(frame, 5)
+            metrics = _technical_metrics(frame, 5)
+            latest = frame.iloc[-1]
+            prev = frame.iloc[-2] if len(frame) >= 2 else None
+            today_open = _num(latest.get("Open") if "Open" in latest else latest.get("open"))
+            prev_close = _num(prev.get("Close") if prev is not None and "Close" in prev else prev.get("close") if prev is not None else None)
+            high = pd.to_numeric(frame["High"] if "High" in frame.columns else frame["high"], errors="coerce")
+            low = pd.to_numeric(frame["Low"] if "Low" in frame.columns else frame["low"], errors="coerce")
+            close = pd.to_numeric(frame["Close"] if "Close" in frame.columns else frame["close"], errors="coerce")
+            volume = pd.to_numeric(frame["Volume"] if "Volume" in frame.columns else frame["volume"], errors="coerce")
+            typical = (high + low + close) / 3
+            vol_sum = volume.rolling(10, min_periods=2).sum()
+            vwap10 = ((typical * volume).rolling(10, min_periods=2).sum() / vol_sum).iloc[-1]
+            metrics.update(
+                {
+                    "today_open": today_open,
+                    "gap_pct": round(((today_open - prev_close) / prev_close) * 100, 4) if today_open is not None and prev_close else None,
+                    "vwap10": _num(vwap10),
+                }
+            )
+            rows[ticker] = metrics
         except Exception as exc:
             print(f"[Snapshot] technicals failed for {ticker}: {exc}")
     return rows

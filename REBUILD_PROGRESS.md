@@ -255,3 +255,91 @@ Cutover state:
 - Reads: Storage-first, Postgres fallback.
 - Writes: dual-write to Storage and Postgres.
 - Postgres `stock_prices`: intact; not dropped.
+
+## 2026-06-01 - AI Strategy Alerts
+
+Status: partial.
+
+Done:
+- Added `backend/app/services/strategy_engine.py` with a strict Pydantic strategy schema, EOD-only/intraday rejection, deterministic predicate evaluation, bounded Storage-backed backtests, quality gate, recent triggers, and the shared educational disclaimer.
+- Added `backend/supabase_strategy_alerts.sql` for user-owned `user_strategies` and `strategy_signals`, including RLS and a unique `(strategy_id, ticker, signal_date)` dedupe constraint.
+- Added `backend/app/services/strategy_store.py` for strategy CRUD, per-user cap, signal listing, and friendly setup errors when the strategy tables are missing.
+- Added authenticated FastAPI endpoints: `POST /api/v1/strategies/backtest`, `POST /api/v1/strategies`, `GET /api/v1/strategies`, `PATCH /api/v1/strategies/{id}`, `DELETE /api/v1/strategies/{id}`, and `GET /api/v1/strategies/{id}/signals`.
+- Extended `backend/supabase_stock_snapshot.sql` and `backend/scripts/build_snapshot.py` with `today_open`, `gap_pct`, and `vwap10` so daily detection can use cheap snapshot reads.
+- Added `backend/scripts/run_strategy_alerts.py` for GitHub Actions/off-server strategy detection, capped triggers, deduped signal writes, and Resend email delivery through the existing email helper.
+- Updated `.github/workflows/daily-snapshot.yml` to run strategy alerts after the snapshot build.
+- Added `/alerts` in the frontend for signed-in AI Strategy Alerts: plain-English strategy input, bounded backtest stats, quality verdict, disclaimer, save/enable, list, enable/disable, and delete.
+- Added an account-menu link to AI Strategy Alerts.
+- Ask-AI responses can now include optional `strategy_json`, `strategy_alert`, and `disclaimer` fields, plus a signed-in "Save as daily alert" CTA when the bounded engine marks a strategy alertable. Existing Ask-AI `backtest` and `scan` response shapes are preserved.
+
+Partial / blocked:
+- The live Supabase project still does not have `public.stock_snapshot`, so the real endpoint can translate the required example and return a valid no-data result, but cannot run a live stock universe backtest until `backend/supabase_stock_snapshot.sql` is applied and `build_snapshot.py` runs.
+- The live Supabase project does not yet have `public.user_strategies` / `public.strategy_signals`, so CRUD and the daily script degrade with setup messages until `backend/supabase_strategy_alerts.sql` is applied.
+- A live dry-run of `run_strategy_alerts.py` could not write signals because the strategy tables are missing. The script exits cleanly with a table-missing message.
+
+Files changed:
+- `.github/workflows/daily-snapshot.yml`
+- `backend/supabase_stock_snapshot.sql`
+- `backend/supabase_strategy_alerts.sql`
+- `backend/app/services/strategy_engine.py`
+- `backend/app/services/strategy_store.py`
+- `backend/app/services/ask_ai_service.py`
+- `backend/app/services/stock_snapshot_service.py`
+- `backend/scripts/build_snapshot.py`
+- `backend/scripts/run_strategy_alerts.py`
+- `backend/main.py`
+- `frontend/app/alerts/page.tsx`
+- `frontend/app/ask-ai/page.tsx`
+- `frontend/app/page.tsx`
+- `REBUILD_PROGRESS.md`
+
+Verification:
+- Read `frontend/AGENTS.md` and consulted local Next docs: `frontend/node_modules/next/dist/docs/01-app/01-getting-started/05-server-and-client-components.md`.
+- `python -m py_compile app\services\strategy_engine.py app\services\strategy_store.py app\services\ask_ai_service.py app\services\stock_snapshot_service.py main.py scripts\build_snapshot.py scripts\run_strategy_alerts.py` passed.
+- `python -c "import main; print('main import ok')"` passed.
+- Required example translated to valid schema without LLM/network: `gap_pct >= 2`, `price_vs_vwap(10) < 0`, excluded IT/Metals, next-day-open, 15% stop, 20-day hold.
+- Required intraday/live example rejected with the mandated EOD-only message.
+- `POST /api/v1/strategies/backtest` smoke-tested with FastAPI TestClient on the required example; it returned HTTP 200, valid `strategy_json`, `alertable=false`, and the disclaimer. Current no-data reason is the missing `stock_snapshot` table.
+- Local monkeypatched bounded backtest smoke test scanned 5 synthetic rows only, did not go beyond the provided cap, returned quality metadata and disclaimer.
+- `python scripts\run_strategy_alerts.py --dry-run --max-triggers 3` exited cleanly and reported missing `user_strategies` instead of crashing.
+- `npm.cmd --prefix frontend exec -- tsc -p frontend\tsconfig.json --noEmit` passed.
+
+Deviations / decisions:
+- The required example is handled by a deterministic offline translator path before LLM fallback, so verification works even when LLM secrets/network are unavailable.
+- The Render endpoint reads at most a capped set of top-market-cap snapshot rows, then cached Parquet files from `price_store`; it does not use Yahoo or scan the full universe.
+- `run_strategy_alerts.py` is the only full snapshot detection path and is wired to GitHub Actions after the snapshot build.
+
+Next owner steps:
+- Run `backend/supabase_strategy_alerts.sql` in production Supabase.
+- Run the `stock_snapshot` ALTER statements in `backend/supabase_stock_snapshot.sql` in production Supabase.
+- Ensure GitHub secrets `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `RESEND_API_KEY` exist; optionally set `RESEND_FROM_EMAIL` or `ALERT_FROM_EMAIL`.
+- Commit and push, then trigger the daily snapshot workflow once to rebuild `stock_snapshot` with `today_open`, `gap_pct`, and `vwap10`.
+
+## 2026-06-01 - Ask-AI Follow-up + History Fixes
+
+Status: done.
+
+Done:
+- Fixed "Test the same idea across all NSE stocks" follow-ups by expanding "same idea/this strategy" prompts from recent chat history before backend intent routing.
+- Added a deterministic translator path for the TCS rule shape: buy N days after a weekly fall of X%, sell on a Y% bounce. This prevents the cross-stock follow-up from depending on the LLM to rediscover the rule.
+- Changed single-stock backtest suggestions to include the original strategy text when asking to test across all NSE stocks.
+- Changed Ask-AI signed-in history TTL from 5 days to 48 hours in both backend code and `backend/supabase_ask_ai.sql`.
+- Added Ask-AI saved assistant metadata for strategy alert fields so restored chats keep the CTA context.
+- Fixed Ask-AI history loading on refresh by waiting for Supabase auth readiness, tracking auth state changes, and auto-opening the most recent saved conversation for signed-in users when the page first loads.
+- Added a bottom scroll anchor plus window/container scroll calls so submitting from higher in the chat moves the user to the newest message/answer.
+
+Files changed:
+- `backend/app/services/ask_ai_service.py`
+- `backend/app/services/ask_ai_history_service.py`
+- `backend/supabase_ask_ai.sql`
+- `frontend/app/ask-ai/page.tsx`
+- `REBUILD_PROGRESS.md`
+
+Verification:
+- `python -m py_compile app\services\ask_ai_service.py app\services\ask_ai_history_service.py main.py` passed.
+- `npm.cmd --prefix frontend exec -- tsc -p frontend\tsconfig.json --noEmit` passed.
+- Direct backend test confirmed the follow-up expands to: `Scan all NSE stocks for this strategy: If I buy TCS 2 days after it falls 5% in a week, then sell on a 3% bounce, does it work?`
+- Direct translator test confirmed that expanded rule becomes `buy_expr=df['week_return'].shift(2) < -5.0`, `sell_expr=df['week_return'] > 3.0`, `mode=crossover`.
+
+Owner note:
+- Apply the updated `backend/supabase_ask_ai.sql` default in production Supabase so new conversations default to 48-hour expiry. Existing conversations will use the backend-updated 48-hour expiry the next time a turn is saved.

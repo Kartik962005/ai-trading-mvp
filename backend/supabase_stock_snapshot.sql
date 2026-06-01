@@ -5,6 +5,9 @@ create table if not exists public.stock_snapshot (
   sector text,
   price numeric,
   previous_close numeric,
+  today_open numeric,
+  gap_pct numeric,
+  vwap10 numeric,
   change_pct numeric,
   trailing_pe numeric,
   forward_pe numeric,
@@ -51,6 +54,10 @@ create index if not exists stock_snapshot_symbol_idx on public.stock_snapshot(sy
 create index if not exists stock_snapshot_sector_idx on public.stock_snapshot(sector);
 create index if not exists stock_snapshot_updated_at_idx on public.stock_snapshot(updated_at desc);
 create index if not exists stock_snapshot_pe_roe_idx on public.stock_snapshot(trailing_pe, roe);
+
+alter table public.stock_snapshot add column if not exists today_open numeric;
+alter table public.stock_snapshot add column if not exists gap_pct numeric;
+alter table public.stock_snapshot add column if not exists vwap10 numeric;
 
 alter table public.stock_snapshot enable row level security;
 

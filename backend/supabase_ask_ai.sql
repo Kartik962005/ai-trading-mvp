@@ -6,8 +6,11 @@ create table if not exists public.ask_ai_conversations (
   title text not null default 'Ask AI chat',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  expires_at timestamptz not null default (now() + interval '5 days')
+  expires_at timestamptz not null default (now() + interval '48 hours')
 );
+
+alter table public.ask_ai_conversations
+alter column expires_at set default (now() + interval '48 hours');
 
 create table if not exists public.ask_ai_messages (
   id uuid primary key default gen_random_uuid(),
