@@ -5,7 +5,7 @@ from .diversification import diversify_candidates
 from .email_generation import build_signal_email
 from .feature_engineering import build_feature_frame
 from .market_regime import detect_market_regime
-from .ml_interface import predict_signal_probabilities
+from .ml_interface import build_live_feature_values, predict_signal_probabilities
 from .outcome_tracking import evaluate_signal_outcome
 from .scoring import (
     adjusted_win_rate,
@@ -19,6 +19,7 @@ __all__ = [
     "DEFAULT_CONSENT_VERSION",
     "adjusted_win_rate",
     "build_feature_frame",
+    "build_live_feature_values",
     "build_signal_email",
     "compute_expected_r",
     "compute_final_score",

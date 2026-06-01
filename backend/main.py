@@ -54,6 +54,13 @@ from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
 from app.services.stock_ai_service import run_stock_ai_search
 from app.services.ask_ai_service import run_ask_ai, movers_snapshot_status
+from app.services.ask_ai_history_service import (
+    get_conversation,
+    history_for_llm,
+    list_conversations,
+    save_turn,
+)
+from app.services.stock_snapshot_service import is_snapshot_stale
 from app.services.alert_service import (
     check_active_alerts,
     check_alert,
@@ -82,6 +89,7 @@ from app.services.daily_trade_service import (
     unsubscribe_daily_alerts,
     update_notification_preference,
     update_daily_update_preference,
+    _is_market_holiday,
 )
 from app.strategies.engine import run_analysis, evaluate_strategies, fetch_global_market_news
 from app.strategies.nlp_backtester import run_custom_backtest
@@ -106,12 +114,13 @@ def warm_index_quotes():
 
 @app.on_event("startup")
 async def start_alert_checker():
-    if os.getenv("ALERT_CHECKER_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+    if os.getenv("ALERT_CHECKER_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+        print("[Alerts] in-process checker disabled; use external cron on /api/v1/alerts/check-now.")
         return
 
     async def loop():
         await asyncio.sleep(8)
-        interval = max(60, int(os.getenv("ALERT_CHECK_INTERVAL_SECONDS", "900")))
+        interval = max(60, int(os.getenv("ALERT_CHECK_INTERVAL_SECONDS", "300")))
         while True:
             try:
                 check_active_alerts(limit=int(os.getenv("ALERT_CHECK_BATCH_SIZE", "100")))
@@ -124,7 +133,8 @@ async def start_alert_checker():
 
 @app.on_event("startup")
 async def start_daily_trade_updates():
-    if os.getenv("DAILY_UPDATES_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+    if os.getenv("DAILY_UPDATES_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+        print("[DailyTrade] in-process scheduler disabled; use external cron on /api/v1/daily-updates/run-forecast and /api/v1/daily-updates/run-review.")
         return
 
     async def loop():
@@ -133,9 +143,8 @@ async def start_daily_trade_updates():
         while True:
             now = datetime.now(IST)
             today = now.date().isoformat()
-            is_trading_weekday = now.weekday() < 5
             try:
-                if is_trading_weekday:
+                if not _is_market_holiday(now.date()):
                     process_scheduled_daily_alerts()
                     if now.hour >= 16 and outcome_tracked_for != today:
                         run_outcome_tracking(review_day=now.date())
@@ -143,6 +152,48 @@ async def start_daily_trade_updates():
             except Exception as exc:
                 print(f"[DailyTrade] scheduled update failed: {exc}")
             await asyncio.sleep(60)
+
+    asyncio.create_task(loop())
+
+
+def _run_snapshot_build_background(reason: str) -> None:
+    def build():
+        try:
+            from scripts.build_snapshot import run_snapshot_build
+
+            print(f"[Snapshot] starting background build ({reason})")
+            result = run_snapshot_build()
+            print(f"[Snapshot] background build complete: {result}")
+        except Exception as exc:
+            print(f"[Snapshot] background build failed ({reason}): {exc}")
+
+    Thread(target=build, daemon=True).start()
+
+
+@app.on_event("startup")
+async def start_stock_snapshot_refresh():
+    if os.getenv("STOCK_SNAPSHOT_REFRESH_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+        return
+    await asyncio.sleep(2)
+    if is_snapshot_stale():
+        _run_snapshot_build_background("startup stale snapshot")
+
+
+@app.on_event("startup")
+async def start_daily_snapshot_refresh():
+    if os.getenv("STOCK_SNAPSHOT_REFRESH_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+        return
+
+    async def loop():
+        await asyncio.sleep(30)
+        built_for: str | None = None
+        while True:
+            now = datetime.now(IST)
+            today = now.date().isoformat()
+            if now.weekday() < 5 and now.hour >= 16 and built_for != today and is_snapshot_stale():
+                _run_snapshot_build_background("nightly after close")
+                built_for = today
+            await asyncio.sleep(600)
 
     asyncio.create_task(loop())
 
@@ -311,6 +362,7 @@ class AskAiRequest(BaseModel):
     history: list[AskAiMessage] = []
     stocks: list[ScreenerStock] = []
     context: AskAiContext | None = None
+    conversation_id: str | None = None
 
 
 class AlertCreateRequest(BaseModel):
@@ -356,7 +408,7 @@ async def screener_search(request: Request, body: ScreenerRequest):
     try:
         stocks = [
             stock.model_dump() if hasattr(stock, "model_dump") else stock.dict()
-            for stock in body.stocks[:240]
+            for stock in body.stocks
         ]
         return screen_stocks(body.prompt, stocks)
     except Exception as e:
@@ -369,7 +421,7 @@ async def smart_screener_search(request: Request, body: SmartScreenerRequest):
     try:
         stocks = [
             stock.model_dump() if hasattr(stock, "model_dump") else stock.dict()
-            for stock in body.stocks[:300]
+            for stock in body.stocks
         ]
         return smart_search(body.prompt, stocks, body.screeners, body.sectors)
     except Exception as e:
@@ -395,6 +447,13 @@ async def stock_ai_search(request: Request, body: StockAiRequest):
 @limiter.limit("12/minute")
 async def ask_ai_chat(request: Request, body: AskAiRequest):
     try:
+        user = None
+        auth_header = request.headers.get("authorization")
+        if auth_header:
+            try:
+                user = get_user_from_authorization(auth_header)
+            except ValueError as exc:
+                print(f"[AskAIHistory] auth verification failed; continuing unsaved: {exc}")
         # Pass the FULL catalog through. Market-wide queries (movers/circuit
         # hits) need to see every stock, not a truncated head, or mid-cap names
         # (e.g. NETWEB at ~#1389) get silently dropped before the engine runs.
@@ -406,11 +465,23 @@ async def ask_ai_chat(request: Request, body: AskAiRequest):
             message.model_dump() if hasattr(message, "model_dump") else message.dict()
             for message in body.history[:20]
         ]
+        if user:
+            history = history_for_llm(user["id"], body.conversation_id, history)
         context = None
         if body.context is not None:
             context = body.context.model_dump() if hasattr(body.context, "model_dump") else body.context.dict()
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, run_ask_ai, body.prompt, history, stocks, context)
+        result = await loop.run_in_executor(None, run_ask_ai, body.prompt, history, stocks, context)
+        if user:
+            conversation_id = save_turn(user["id"], body.conversation_id, body.prompt, result)
+            if conversation_id:
+                result["conversation_id"] = conversation_id
+                result["saved"] = True
+            else:
+                result["saved"] = False
+        else:
+            result["saved"] = False
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -421,6 +492,30 @@ async def ask_ai_chat(request: Request, body: AskAiRequest):
 @limiter.limit("120/minute")
 async def ask_ai_movers_status(request: Request):
     return movers_snapshot_status()
+
+
+@app.get("/api/v1/ask-ai/conversations")
+@limiter.limit("60/minute")
+async def ask_ai_conversations(request: Request):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return {"conversations": list_conversations(user["id"])}
+    except ValueError as e:
+        raise HTTPException(status_code=401 if "sign in" in str(e).lower() or "session" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/ask-ai/conversations/{conversation_id}")
+@limiter.limit("60/minute")
+async def ask_ai_conversation(request: Request, conversation_id: str):
+    try:
+        user = get_user_from_authorization(request.headers.get("authorization"))
+        return get_conversation(user["id"], conversation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/alerts")

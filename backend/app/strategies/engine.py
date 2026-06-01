@@ -15,6 +15,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
 
+from app.services.daily_signal_engine import build_live_feature_values, evaluate_technical_setup, predict_signal_probabilities
+
 # ── In-memory analysis cache ──────────────────────────────────────────────────
 _analysis_cache: dict = {}
 ANALYSIS_TTL = 3600
@@ -520,10 +522,16 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     df['MACD']    = ta.trend.macd(close)
     df['MACD_signal'] = ta.trend.macd_signal(close)
     df['ATR_14']  = ta.volatility.average_true_range(high, low, close, window=14)
+    df['ADX_14']  = ta.trend.adx(high, low, close, window=14)
     df['BBU_14_2.0'] = ta.volatility.bollinger_hband(close, window=14, window_dev=2)
     df['BBL_14_2.0'] = ta.volatility.bollinger_lband(close, window=14, window_dev=2)
     df['VWAP'] = ta.volume.volume_weighted_average_price(high, low, close, volume, window=14)
     df['VOL_SMA_20'] = volume.rolling(window=20).mean()
+    df['RET_5'] = close.pct_change(5)
+    df['RET_20'] = close.pct_change(20)
+    df['RANGE_PCT'] = (high - low) / close
+    df['RESISTANCE_20'] = high.rolling(20).max().shift(1)
+    df['SUPPORT_20'] = low.rolling(20).min().shift(1)
 
     df = df.dropna()
     if len(df) < 5: return {"error": "Insufficient historical data."}
@@ -532,7 +540,7 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     prev = df.iloc[-2]
     sentiment, sentiment_ready = _sentiment_for_analysis(ticker)
 
-    # Core FISO Score
+    # Legacy FISO components are retained as a diagnostic score only.
     sma_diff_pct = (latest['SMA_50'] - latest['SMA_200']) / latest['SMA_200']
     trend_score = max(0.0, min(35.0, 17.5 + (sma_diff_pct * 250))) 
     
@@ -547,34 +555,66 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     raw_fiso = trend_score + momentum_score + macd_score + (sentiment['score'] * 20.0)
     fiso = min(100.0, max(0.0, raw_fiso))
 
-    if fiso >= 75:
-        verdict = "Strong Buy"
-    elif fiso >= 55:
-        verdict = "Buy"
-    elif fiso > 50:
-        verdict = "Hold"
-    elif fiso >= 20:
-        verdict = "Sell"
+    live_latest = {
+        "close": float(latest["close"]),
+        "high": float(latest["high"]),
+        "low": float(latest["low"]),
+        "volume": float(latest["volume"]),
+        "ema20": float(latest["EMA_20"]),
+        "ema50": float(latest["EMA_50"]),
+        "rsi14": float(latest["RSI_14"]),
+        "adx14": float(latest["ADX_14"]),
+        "atr14": float(latest["ATR_14"]),
+        "vol_avg20": float(latest["VOL_SMA_20"]),
+        "resistance20": float(latest["RESISTANCE_20"]),
+        "support20": float(latest["SUPPORT_20"]),
+        "ret5": float(latest["RET_5"]),
+        "ret20": float(latest["RET_20"]),
+        "range_pct": float(latest["RANGE_PCT"]),
+    }
+    relative_strength = float(latest["RET_20"] * 100)
+    regime = {"label": "neutral", "alignment_buy": 0.55, "alignment_sell": 0.55, "score": 0.55}
+    technical_setup = evaluate_technical_setup(live_latest, relative_strength, 0.0)
+    feature_values = build_live_feature_values(
+        live_latest,
+        technical_setup,
+        regime,
+        relative_strength=relative_strength,
+        sector_strength=0.0,
+    )
+    probabilities = predict_signal_probabilities(
+        technical_setup,
+        regime,
+        "Balanced",
+        relative_strength,
+        technical_setup["chart_setup_quality"],
+        feature_values=feature_values,
+        setup_type=technical_setup.get("setup_type"),
+    )
+    model_pwin = float(probabilities["calibrated_pwin"])
+    model_expected_r = float(probabilities.get("expected_return") or 0.0)
+    direction = technical_setup["direction"]
+    if direction == "BUY":
+        verdict = "Strong Buy" if model_pwin >= 0.70 else "Buy" if model_pwin >= 0.55 else "Hold" if model_pwin >= 0.45 else "Sell"
     else:
-        verdict = "Strong Sell"
+        verdict = "Strong Sell" if model_pwin >= 0.70 else "Sell" if model_pwin >= 0.55 else "Hold" if model_pwin >= 0.45 else "Buy"
 
     atr_val = float(latest['ATR_14'])
     entry = float(latest['close'])
     
-    fiso_strength = abs(fiso - 50) / 50.0  
-    reward_ratio = 1.5 + (fiso_strength * 2.0) 
-
-    if fiso >= 50: 
+    stop_distance = 1.5 * atr_val
+    forecast_r = max(0.35, min(abs(model_expected_r), 3.0))
+    if direction == "BUY": 
         stop_loss = entry - (1.5 * atr_val)
-        target = entry + (reward_ratio * atr_val) 
+        target = entry + (forecast_r * stop_distance) 
     else: 
         stop_loss = entry + (1.5 * atr_val)
-        target = entry - (reward_ratio * atr_val)
+        target = entry - (forecast_r * stop_distance)
 
     momentum_velocity = 1.0 + (abs(rsi - 50) / 50.0) 
     estimated_days = max(1, min(math.ceil((abs(target - entry) / atr_val) / momentum_velocity * 1.4), 21)) 
     
-    confidence = min(99.4, max(42.1, 45 + abs(fiso - 50) * 0.9 + (rsi / 100) * 12))
+    confidence = float(probabilities["confidence"]) * 100
 
     strategy_evals, best_id = evaluate_strategies(latest, prev, df)
 
@@ -590,6 +630,11 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "strategy_evals": strategy_evals,
         "best_strategy_id": best_id,
         "confidence": round(confidence, 2),
+        "model_probability": round(model_pwin, 4),
+        "model_expected_return_r": round(model_expected_r, 4),
+        "model_path": probabilities.get("model_path", "fallback"),
+        "historical_hit_rate": probabilities.get("historical_hit_rate"),
+        "historical_hit_rate_trades": probabilities.get("historical_hit_rate_trades"),
         "estimated_days": estimated_days,
         "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y')
     }

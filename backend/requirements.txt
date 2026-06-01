@@ -10,3 +10,6 @@ slowapi
 ta
 textblob
 groq
+scikit-learn
+joblib
+pyarrow

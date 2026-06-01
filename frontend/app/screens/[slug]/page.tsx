@@ -84,7 +84,10 @@ export default function ScreenDetailPage() {
                 {[
                   ['Results', rows.length],
                   ['Avg score', Math.round(rows.reduce((sum, row) => sum + row.score, 0) / Math.max(rows.length, 1))],
-                  ['Top ROCE', `${Math.max(...rows.map(row => row.roce)).toFixed(1)}%`],
+                  ['Top ROCE', (() => {
+                    const values = rows.map(row => row.roce).filter((value): value is number => typeof value === 'number');
+                    return values.length ? `${Math.max(...values).toFixed(1)}%` : '-';
+                  })()],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 sm:rounded-2xl sm:p-4">
                     <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 sm:text-[10px]">{label}</div>

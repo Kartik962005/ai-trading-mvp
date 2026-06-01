@@ -56,9 +56,9 @@ const examples = [
 function candidateStocksForPrompt(prompt: string) {
   const lower = prompt.toLowerCase();
   if (/\b(us|usa|nasdaq|nyse|america|american)\b/.test(lower)) {
-    return STOCKS.filter(stock => stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE').slice(0, 180);
+    return STOCKS.filter(stock => stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE');
   }
-  return STOCKS.filter(stock => stock.exchange === 'NSE').slice(0, 180);
+  return STOCKS.filter(stock => stock.exchange === 'NSE');
 }
 
 async function runSmartScreener(prompt: string, stocks: Stock[], sectors: ReturnType<typeof getAvailableSectors>) {
@@ -132,47 +132,9 @@ function csvEscape(value: string | number | null | undefined) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function stableTechnicalHash(value: string) {
-  return value.split('').reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
-}
-
-function technicalFallback(row: ScreenMetricRow, index: number, metricId: string, query: string): number | undefined {
-  const hash = stableTechnicalHash(`${row.stock.symbol}:${metricId}`);
-  const lower = query.toLowerCase();
-  const rsiBelow = lower.match(/\brsi\b.{0,32}?(?:<|below|under|less than)\s*(\d+(?:\.\d+)?)/);
-  const mfiBelow = lower.match(/\bmfi\b.{0,32}?(?:<|below|under|less than)\s*(\d+(?:\.\d+)?)/);
-  if (metricId === 'rsi14') {
-    const target = rsiBelow ? Number(rsiBelow[1]) : lower.includes('oversold') ? 30 : null;
-    return target ? Number(Math.max(5, Math.min(target - 0.4, 16 + ((hash + index * 7) % 13))).toFixed(2)) : Number((25 + ((hash + index * 11) % 50)).toFixed(2));
-  }
-  if (metricId === 'mfi14') {
-    const target = mfiBelow ? Number(mfiBelow[1]) : null;
-    return target ? Number(Math.max(4, Math.min(target - 0.4, 12 + ((hash + index * 7) % 14))).toFixed(2)) : Number((18 + ((hash + index * 13) % 64)).toFixed(2));
-  }
-  if (metricId === 'sma20') return Number((row.cmp * (0.94 + ((hash % 12) / 100))).toFixed(2));
-  if (metricId === 'sma50') return Number((row.cmp * (0.9 + ((hash % 16) / 100))).toFixed(2));
-  if (metricId === 'sma200') return Number((row.cmp * (0.82 + ((hash % 28) / 100))).toFixed(2));
-  if (metricId === 'ema20') return Number((row.cmp * (0.95 + ((hash % 10) / 100))).toFixed(2));
-  if (metricId === 'high52Week') return Number((row.cmp * (1.05 + ((hash % 22) / 100))).toFixed(2));
-  if (metricId === 'priceVs52WeekHighPct') {
-    const high: number | undefined = row.technical?.high52Week ?? technicalFallback(row, index, 'high52Week', query);
-    return typeof high === 'number' && high > 0 ? Number((((row.cmp - high) / high) * 100).toFixed(2)) : undefined;
-  }
-  if (metricId === 'todayReturnPct') return Number((((hash % 1200) / 100) - 6).toFixed(2));
-  if (metricId === 'return1wPct') return Number((((hash % 1800) / 100) - 4).toFixed(2));
-  if (metricId === 'return1mPct') return Number((((hash % 3200) / 100) - 8).toFixed(2));
-  if (metricId === 'return3mPct') return Number((((hash % 5200) / 100) - 12).toFixed(2));
-  if (metricId === 'return6mPct') return Number((((hash % 8200) / 100) - 16).toFixed(2));
-  if (metricId === 'return1yPct') return Number((((hash % 12000) / 100) - 20).toFixed(2));
-  if (metricId === 'latestVolume') return 100000 + (hash % 5000000);
-  if (metricId === 'volumeRatio20') return Number((0.5 + ((hash % 350) / 100)).toFixed(2));
-  if (metricId === 'atr14') return Number((row.cmp * (0.01 + ((hash % 4) / 100))).toFixed(2));
-  return undefined;
-}
-
-function technicalValue(row: ScreenMetricRow, index: number, metricId: string, query: string) {
+function technicalValue(row: ScreenMetricRow, metricId: string) {
   const existing = row.technical?.[metricId as keyof NonNullable<ScreenMetricRow['technical']>];
-  return typeof existing === 'number' ? existing : technicalFallback(row, index, metricId, query);
+  return typeof existing === 'number' ? existing : undefined;
 }
 
 function MetricTable({ rows, query, title }: { rows: ScreenMetricRow[]; query: string; title: string }) {
@@ -182,23 +144,23 @@ function MetricTable({ rows, query, title }: { rows: ScreenMetricRow[]; query: s
 
   const columns = useMemo<TableColumn[]>(() => {
     const technicalColumns: Record<string, TableColumn> = {
-      rsi14: { id: 'rsi14', label: 'RSI 14', removable: true, value: (row, index) => technicalValue(row, index, 'rsi14', query) },
-      mfi14: { id: 'mfi14', label: 'MFI 14', removable: true, value: (row, index) => technicalValue(row, index, 'mfi14', query) },
-      sma20: { id: 'sma20', label: 'SMA 20', removable: true, value: (row, index) => technicalValue(row, index, 'sma20', query) },
-      sma50: { id: 'sma50', label: 'SMA 50', removable: true, value: (row, index) => technicalValue(row, index, 'sma50', query) },
-      sma200: { id: 'sma200', label: 'SMA 200', removable: true, value: (row, index) => technicalValue(row, index, 'sma200', query) },
-      ema20: { id: 'ema20', label: 'EMA 20', removable: true, value: (row, index) => technicalValue(row, index, 'ema20', query) },
-      high52Week: { id: 'high52Week', label: '52W High', removable: true, value: (row, index) => technicalValue(row, index, 'high52Week', query) },
-      priceVs52WeekHighPct: { id: 'priceVs52WeekHighPct', label: 'Vs 52W High %', removable: true, value: (row, index) => technicalValue(row, index, 'priceVs52WeekHighPct', query) },
-      todayReturnPct: { id: 'todayReturnPct', label: 'Today %', removable: true, value: (row, index) => technicalValue(row, index, 'todayReturnPct', query) },
-      return1wPct: { id: 'return1wPct', label: '1W %', removable: true, value: (row, index) => technicalValue(row, index, 'return1wPct', query) },
-      return1mPct: { id: 'return1mPct', label: '1M %', removable: true, value: (row, index) => technicalValue(row, index, 'return1mPct', query) },
-      return3mPct: { id: 'return3mPct', label: '3M %', removable: true, value: (row, index) => technicalValue(row, index, 'return3mPct', query) },
-      return6mPct: { id: 'return6mPct', label: '6M %', removable: true, value: (row, index) => technicalValue(row, index, 'return6mPct', query) },
-      return1yPct: { id: 'return1yPct', label: '1Y %', removable: true, value: (row, index) => technicalValue(row, index, 'return1yPct', query) },
-      latestVolume: { id: 'latestVolume', label: 'Volume', removable: true, value: (row, index) => technicalValue(row, index, 'latestVolume', query) },
-      volumeRatio20: { id: 'volumeRatio20', label: 'Vol/20D', removable: true, value: (row, index) => technicalValue(row, index, 'volumeRatio20', query) },
-      atr14: { id: 'atr14', label: 'ATR 14', removable: true, value: (row, index) => technicalValue(row, index, 'atr14', query) },
+      rsi14: { id: 'rsi14', label: 'RSI 14', removable: true, value: row => technicalValue(row, 'rsi14') },
+      mfi14: { id: 'mfi14', label: 'MFI 14', removable: true, value: row => technicalValue(row, 'mfi14') },
+      sma20: { id: 'sma20', label: 'SMA 20', removable: true, value: row => technicalValue(row, 'sma20') },
+      sma50: { id: 'sma50', label: 'SMA 50', removable: true, value: row => technicalValue(row, 'sma50') },
+      sma200: { id: 'sma200', label: 'SMA 200', removable: true, value: row => technicalValue(row, 'sma200') },
+      ema20: { id: 'ema20', label: 'EMA 20', removable: true, value: row => technicalValue(row, 'ema20') },
+      high52Week: { id: 'high52Week', label: '52W High', removable: true, value: row => technicalValue(row, 'high52Week') },
+      priceVs52WeekHighPct: { id: 'priceVs52WeekHighPct', label: 'Vs 52W High %', removable: true, value: row => technicalValue(row, 'priceVs52WeekHighPct') },
+      todayReturnPct: { id: 'todayReturnPct', label: 'Today %', removable: true, value: row => technicalValue(row, 'todayReturnPct') },
+      return1wPct: { id: 'return1wPct', label: '1W %', removable: true, value: row => technicalValue(row, 'return1wPct') },
+      return1mPct: { id: 'return1mPct', label: '1M %', removable: true, value: row => technicalValue(row, 'return1mPct') },
+      return3mPct: { id: 'return3mPct', label: '3M %', removable: true, value: row => technicalValue(row, 'return3mPct') },
+      return6mPct: { id: 'return6mPct', label: '6M %', removable: true, value: row => technicalValue(row, 'return6mPct') },
+      return1yPct: { id: 'return1yPct', label: '1Y %', removable: true, value: row => technicalValue(row, 'return1yPct') },
+      latestVolume: { id: 'latestVolume', label: 'Volume', removable: true, value: row => technicalValue(row, 'latestVolume') },
+      volumeRatio20: { id: 'volumeRatio20', label: 'Vol/20D', removable: true, value: row => technicalValue(row, 'volumeRatio20') },
+      atr14: { id: 'atr14', label: 'ATR 14', removable: true, value: row => technicalValue(row, 'atr14') },
     };
     const activeTechnicalColumns = [...inferRequestedColumns(rows, query)]
       .map(id => technicalColumns[id])
@@ -339,19 +301,19 @@ function MetricTable({ rows, query, title }: { rows: ScreenMetricRow[]; query: s
                     <div className="mt-1 max-w-[300px] text-[10px] leading-relaxed text-slate-500">{row.reason}</div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.cmp.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.pe.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.marketCapCr.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.revenueGrowth3Yr.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.profitGrowth3Yr.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.profitGrowth5Yr.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.roe.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.avgRoce7Yr.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.debtToEquity.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.operatingMargin.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.piotroskiScore}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.divYield.toFixed(2)}</td>
-                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{row.avgDividendPayout3Yr.toFixed(2)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.cmp)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.pe)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.marketCapCr)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.revenueGrowth3Yr)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.profitGrowth3Yr)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.profitGrowth5Yr)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.roe)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.avgRoce7Yr)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.debtToEquity)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.operatingMargin)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.piotroskiScore)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.divYield)}</td>
+                <td className="px-4 py-3 text-xs font-['JetBrains_Mono'] text-slate-700">{formatCellValue(row.avgDividendPayout3Yr)}</td>
                 <td className="px-4 py-3">
                   <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-700">{row.score}</span>
                   {row.technical && (
@@ -399,7 +361,7 @@ export default function ScreensPage() {
 
       if (intent === 'PRE_DEFINED_SCREENER' && live.router?.screener_name) {
         const screen = getScreenBySlug(live.router.screener_name);
-        const rows = screen ? getRowsForScreen(screen.slug) : [];
+        const rows = live.rows.length ? live.rows : screen ? getRowsForScreen(screen.slug) : [];
         setResult({
           title: screen ? screen.title : 'Preset screen',
           query: screen?.query || live.matchedRules?.join('\n') || clean,
@@ -453,7 +415,7 @@ export default function ScreensPage() {
           query: custom.query,
           rows: custom.rows,
           explanation: aiMessage || live.explanation || custom.explanation,
-          source: custom.rows.length ? 'Local deterministic fallback' : live.source,
+          source: custom.rows.length ? 'Local preset metadata fallback' : live.source,
           intent: intent || 'CUSTOM_FILTER',
         });
       }
@@ -463,8 +425,8 @@ export default function ScreensPage() {
         title: `${custom.rows.length} AI screener matches`,
         query: custom.query,
         rows: custom.rows,
-        explanation: custom.explanation || 'Live screener is unavailable, so only supported local fundamentals filters were evaluated.',
-        source: 'Local deterministic fallback',
+        explanation: custom.explanation || 'Live screener is unavailable, so only local preset metadata is available.',
+        source: 'Local preset metadata fallback',
         intent: 'CUSTOM_FILTER',
       });
     } finally {
@@ -531,7 +493,7 @@ export default function ScreensPage() {
                   <div className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-700 sm:mb-3 sm:text-[10px]">Screens</div>
                   <h1 className="font-['Space_Grotesk'] text-2xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Explore category-wise stocks</h1>
                   <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:mt-3 sm:text-base">
-                    Ask in plain English. Price and volume prompts are screened against live daily candles; supported fundamentals use deterministic local filters.
+                    Ask in plain English. Price, volume, technicals, and supported fundamentals are screened against Bullseye's latest backend snapshot.
                   </p>
                 </div>
               </div>

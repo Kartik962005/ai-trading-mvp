@@ -12,11 +12,6 @@ type TableColumn = {
   render?: (row: ScreenMetricRow, index: number) => ReactNode;
 };
 
-type MetricCondition = {
-  operator: string;
-  value: number;
-};
-
 function formatCellValue(value: string | number | null | undefined) {
   if (typeof value === 'number') return Number.isInteger(value) ? value.toLocaleString('en-IN') : value.toFixed(2);
   if (value === null || value === undefined || value === '') return '-';
@@ -28,56 +23,9 @@ function csvEscape(value: string | number | null | undefined) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function stableHash(value: string) {
-  return value.split('').reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
-}
-
-function extractMetricCondition(query: string, metric: 'rsi' | 'mfi'): MetricCondition | null {
-  const match = query.toLowerCase().match(new RegExp(`\\b${metric}\\b.{0,32}?(<=|>=|<|>|=|below|under|less than|above|over|greater than)\\s*(\\d+(?:\\.\\d+)?)`));
-  if (!match) {
-    if (metric === 'rsi' && /\boversold\b/.test(query.toLowerCase())) return { operator: '<', value: 30 };
-    return null;
-  }
-  const operatorMap: Record<string, string> = {
-    below: '<',
-    under: '<',
-    'less than': '<',
-    above: '>',
-    over: '>',
-    'greater than': '>',
-  };
-  return { operator: operatorMap[match[1]] ?? match[1], value: Number(match[2]) };
-}
-
-function fallbackMetricValue(row: ScreenMetricRow, index: number, metricId: string, query: string): number | undefined {
-  const hash = stableHash(`${row.stock.symbol}:${metricId}`);
-  const rsiCondition = extractMetricCondition(query, 'rsi');
-  const mfiCondition = extractMetricCondition(query, 'mfi');
-
-  if (metricId === 'rsi14') {
-    if (rsiCondition?.operator.includes('<')) return Number(Math.max(5, Math.min(rsiCondition.value - 0.4, 16 + ((hash + index * 7) % 13))).toFixed(2));
-    if (rsiCondition?.operator.includes('>')) return Number(Math.min(96, Math.max(rsiCondition.value + 0.4, rsiCondition.value + ((hash + index * 5) % 12))).toFixed(2));
-    return Number((25 + ((hash + index * 11) % 50)).toFixed(2));
-  }
-  if (metricId === 'mfi14') {
-    if (mfiCondition?.operator.includes('<')) return Number(Math.max(4, Math.min(mfiCondition.value - 0.4, 12 + ((hash + index * 7) % 14))).toFixed(2));
-    if (mfiCondition?.operator.includes('>')) return Number(Math.min(96, Math.max(mfiCondition.value + 0.4, mfiCondition.value + ((hash + index * 5) % 14))).toFixed(2));
-    return Number((18 + ((hash + index * 13) % 64)).toFixed(2));
-  }
-  if (metricId === 'sma20') return Number((row.cmp * (0.94 + ((hash % 12) / 100))).toFixed(2));
-  if (metricId === 'sma50') return Number((row.cmp * (0.9 + ((hash % 16) / 100))).toFixed(2));
-  if (metricId === 'ema20') return Number((row.cmp * (0.95 + ((hash % 10) / 100))).toFixed(2));
-  if (metricId === 'high52Week') return Number((row.cmp * (1.05 + ((hash % 22) / 100))).toFixed(2));
-  if (metricId === 'priceVs52WeekHighPct') {
-    const high: number | undefined = row.technical?.high52Week ?? fallbackMetricValue(row, index, 'high52Week', query);
-    return typeof high === 'number' && high > 0 ? Number((((row.cmp - high) / high) * 100).toFixed(2)) : undefined;
-  }
-  return undefined;
-}
-
-function getTechnicalValue(row: ScreenMetricRow, index: number, metricId: string, query: string) {
+function getTechnicalValue(row: ScreenMetricRow, metricId: string) {
   const existing = row.technical?.[metricId as keyof NonNullable<ScreenMetricRow['technical']>];
-  return typeof existing === 'number' ? existing : fallbackMetricValue(row, index, metricId, query);
+  return typeof existing === 'number' ? existing : undefined;
 }
 
 function inferRequestedColumns(rows: ScreenMetricRow[], query: string) {
@@ -105,13 +53,13 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
 
   const columns = useMemo<TableColumn[]>(() => {
     const technicalColumns: Record<string, TableColumn> = {
-      rsi14: { id: 'rsi14', label: 'RSI 14', removable: true, value: (row, index) => getTechnicalValue(row, index, 'rsi14', query) },
-      mfi14: { id: 'mfi14', label: 'MFI 14', removable: true, value: (row, index) => getTechnicalValue(row, index, 'mfi14', query) },
-      sma20: { id: 'sma20', label: 'SMA 20', removable: true, value: (row, index) => getTechnicalValue(row, index, 'sma20', query) },
-      sma50: { id: 'sma50', label: 'SMA 50', removable: true, value: (row, index) => getTechnicalValue(row, index, 'sma50', query) },
-      ema20: { id: 'ema20', label: 'EMA 20', removable: true, value: (row, index) => getTechnicalValue(row, index, 'ema20', query) },
-      high52Week: { id: 'high52Week', label: '52W High', removable: true, value: (row, index) => getTechnicalValue(row, index, 'high52Week', query) },
-      priceVs52WeekHighPct: { id: 'priceVs52WeekHighPct', label: 'Vs 52W High %', removable: true, value: (row, index) => getTechnicalValue(row, index, 'priceVs52WeekHighPct', query) },
+      rsi14: { id: 'rsi14', label: 'RSI 14', removable: true, value: row => getTechnicalValue(row, 'rsi14') },
+      mfi14: { id: 'mfi14', label: 'MFI 14', removable: true, value: row => getTechnicalValue(row, 'mfi14') },
+      sma20: { id: 'sma20', label: 'SMA 20', removable: true, value: row => getTechnicalValue(row, 'sma20') },
+      sma50: { id: 'sma50', label: 'SMA 50', removable: true, value: row => getTechnicalValue(row, 'sma50') },
+      ema20: { id: 'ema20', label: 'EMA 20', removable: true, value: row => getTechnicalValue(row, 'ema20') },
+      high52Week: { id: 'high52Week', label: '52W High', removable: true, value: row => getTechnicalValue(row, 'high52Week') },
+      priceVs52WeekHighPct: { id: 'priceVs52WeekHighPct', label: 'Vs 52W High %', removable: true, value: row => getTechnicalValue(row, 'priceVs52WeekHighPct') },
     };
     const activeTechnicalColumns = [...inferRequestedColumns(rows, query)]
       .map(id => technicalColumns[id])

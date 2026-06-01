@@ -100,6 +100,8 @@ type AskAiResponse = {
   backtest: Backtest | null;
   scan: Scan | MoversScan | null;
   suggestions?: string[];
+  conversation_id?: string;
+  saved?: boolean;
 };
 
 type AppContext = {
@@ -112,8 +114,24 @@ type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  data?: AskAiResponse;
+  data?: Partial<AskAiResponse>;
   error?: boolean;
+};
+
+type ConversationSummary = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+};
+
+type StoredConversationMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  data?: Partial<AskAiResponse> | null;
+  created_at: string;
 };
 
 const EXAMPLES = [
@@ -123,6 +141,24 @@ const EXAMPLES = [
   'Explain the difference between a high win rate and an actually profitable strategy',
   'Scan all NSE stocks: golden cross strategy — which ones beat buy-and-hold?',
 ];
+
+let supabaseClientPromise: Promise<any> | null = null;
+
+async function getSharedSupabaseClient(supabaseUrl: string, supabaseKey: string) {
+  if (typeof window === 'undefined') return null;
+  const globalKey = '__bullseyeSupabaseClient';
+  const browserWindow = window as any;
+  if (browserWindow[globalKey]) return browserWindow[globalKey];
+  if (!supabaseClientPromise) {
+    supabaseClientPromise = import('@supabase/supabase-js').then(({ createClient }) => {
+      if (!browserWindow[globalKey]) {
+        browserWindow[globalKey] = createClient(supabaseUrl, supabaseKey);
+      }
+      return browserWindow[globalKey];
+    });
+  }
+  return supabaseClientPromise;
+}
 
 function pct(value: number | undefined | null) {
   if (value === undefined || value === null || Number.isNaN(value)) return '—';
@@ -405,11 +441,50 @@ export default function AskAiPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [appContext, setAppContext] = useState<AppContext>({ current_page: 'ask-ai' });
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseAvailable = !!(supabaseUrl && supabaseKey);
+
+  async function getAccessToken() {
+    if (!supabaseAvailable) return null;
+    const sb = await getSharedSupabaseClient(supabaseUrl!, supabaseKey!);
+    if (!sb) return null;
+    const result = await sb.auth.getSession();
+    return result?.data?.session?.access_token ?? null;
+  }
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    const token = await getAccessToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async function loadConversations() {
+    const headers = await authHeaders();
+    if (!('Authorization' in headers)) {
+      setConversations([]);
+      return;
+    }
+    const response = await fetch(`${BACKEND}/api/v1/ask-ai/conversations`, { headers, cache: 'no-store' });
+    if (!response.ok) {
+      setConversations([]);
+      return;
+    }
+    const data = await response.json().catch(() => ({}));
+    setConversations(Array.isArray(data.conversations) ? data.conversations : []);
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, loading]);
+
+  useEffect(() => {
+    loadConversations().catch(() => setConversations([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pick up an optional stock the user arrived with (e.g. /ask-ai?ticker=RELIANCE.NS)
   // so answers can use that stock's real context. No-op when none is present.
@@ -435,10 +510,11 @@ export default function AskAiPage() {
     setLoading(true);
 
     try {
+      const tokenHeaders = await authHeaders();
       const response = await fetch(`${BACKEND}/api/v1/ask-ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: trimmed, history, stocks: STOCKS, context: appContext }),
+        headers: { 'Content-Type': 'application/json', ...tokenHeaders },
+        body: JSON.stringify({ prompt: trimmed, history, stocks: STOCKS, context: appContext, conversation_id: conversationId }),
       });
       const raw = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -448,10 +524,16 @@ export default function AskAiPage() {
       if (data.success === false) {
         throw new Error(data.answer || 'The AI engine is unavailable right now. Please try again shortly.');
       }
+      if (data.conversation_id) {
+        setConversationId(data.conversation_id);
+      }
       setMessages((prev) => [
         ...prev,
         { id: `a-${Date.now()}`, role: 'assistant', content: data.answer || 'No answer returned.', data },
       ]);
+      if (data.saved) {
+        loadConversations().catch(() => {});
+      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -472,6 +554,35 @@ export default function AskAiPage() {
       e.preventDefault();
       send(input);
     }
+  }
+
+  async function openConversation(id: string) {
+    if (historyLoading) return;
+    setHistoryLoading(true);
+    try {
+      const headers = await authHeaders();
+      if (!('Authorization' in headers)) return;
+      const response = await fetch(`${BACKEND}/api/v1/ask-ai/conversations/${id}`, { headers, cache: 'no-store' });
+      const raw = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(raw?.detail || 'Could not open that chat.');
+      }
+      const loaded = Array.isArray(raw.messages) ? raw.messages as StoredConversationMessage[] : [];
+      setConversationId(id);
+      setMessages(loaded.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        data: message.role === 'assistant' && message.data ? message.data : undefined,
+      })));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function startNewChat() {
+    setConversationId(null);
+    setMessages([]);
   }
 
   const isEmpty = messages.length === 0;
@@ -514,7 +625,7 @@ export default function AskAiPage() {
             {!isEmpty && (
               <button
                 type="button"
-                onClick={() => setMessages([])}
+                onClick={startNewChat}
                 className="h-9 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-[12px] font-semibold text-slate-600 transition hover:border-cyan-300 hover:text-cyan-700"
               >
                 New chat
@@ -531,6 +642,39 @@ export default function AskAiPage() {
       </header>
 
       <div ref={scrollRef} className="mx-auto w-full max-w-[1100px] flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+        {conversations.length > 0 && (
+          <aside className="mb-5 rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Recent chats</div>
+              <button
+                type="button"
+                onClick={() => loadConversations().catch(() => {})}
+                disabled={historyLoading}
+                className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 transition hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-40"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {conversations.slice(0, 8).map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => openConversation(conversation.id)}
+                  disabled={historyLoading}
+                  className={`min-w-[180px] max-w-[240px] rounded-xl border px-3 py-2 text-left transition disabled:opacity-50 ${
+                    conversation.id === conversationId
+                      ? 'border-cyan-300 bg-cyan-50 text-cyan-900'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-cyan-800'
+                  }`}
+                >
+                  <div className="truncate text-[12px] font-bold">{conversation.title || 'Ask AI chat'}</div>
+                  <div className="mt-1 text-[10px] text-slate-400">{new Date(conversation.updated_at).toLocaleString()}</div>
+                </button>
+              ))}
+            </div>
+          </aside>
+        )}
         {isEmpty ? (
           <div className="mx-auto max-w-2xl py-8 text-center sm:py-14">
             <div className="animate-rise mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-400 text-3xl text-white shadow-[0_22px_55px_rgba(6,182,212,0.4)]">✦</div>
@@ -575,7 +719,7 @@ export default function AskAiPage() {
                       >
                       <div className="prose-sm">{renderMarkdown(message.content)}</div>
                       {message.data?.backtest && (
-                        <BacktestCard data={message.data.backtest} ticker={message.data.target_stock} />
+                        <BacktestCard data={message.data.backtest} ticker={message.data.target_stock ?? null} />
                       )}
                       {message.data?.mode === 'movers' && message.data.scan && (
                         <MoversCard data={message.data.scan as MoversScan} />

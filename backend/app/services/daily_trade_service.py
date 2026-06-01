@@ -20,6 +20,7 @@ from app.services.daily_signal_engine import (
     DEFAULT_CONSENT_VERSION,
     adjusted_win_rate,
     build_feature_frame,
+    build_live_feature_values,
     build_signal_email,
     compute_expected_r,
     compute_final_score,
@@ -483,12 +484,21 @@ def _build_candidate(
 
     relative_strength = _relative_strength(feature_frame, index_frame)
     technical_setup = evaluate_technical_setup(latest.to_dict(), relative_strength, sector_strength)
+    feature_values = build_live_feature_values(
+        latest,
+        technical_setup,
+        regime,
+        relative_strength=relative_strength,
+        sector_strength=sector_strength,
+    )
     probabilities = predict_signal_probabilities(
         technical_setup,
         regime,
         risk_level,
         relative_strength,
         validation["quality_score"],
+        feature_values=feature_values,
+        setup_type=technical_setup.get("setup_type"),
     )
 
     profile = _risk_profile(risk_level)
@@ -837,6 +847,35 @@ def _email_already_sent(user_id: str, run_id: str) -> bool:
     return any(item for item in _MEMORY_EMAIL_LOGS if item["user_id"] == user_id and item["model_run_id"] == run_id and item["email_kind"] == "daily_signal")
 
 
+def _daily_email_already_sent_for_target(user_id: str, target_date: str, email_kind: str = "daily_signal") -> bool:
+    if supabase:
+        try:
+            response = (
+                supabase.table(EMAIL_LOGS_TABLE)
+                .select("id,sent_at")
+                .eq("user_id", user_id)
+                .eq("target_date", target_date)
+                .eq("email_kind", email_kind)
+                .in_("status", ["sent", "queued"])
+                .order("sent_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return bool(getattr(response, "data", None))
+        except Exception as exc:
+            if not _should_use_memory_fallback(exc, EMAIL_LOGS_TABLE):
+                raise
+            print(f"[DailySignals] email logs table missing during target-date duplicate check, using in-memory fallback: {exc}")
+    return any(
+        item
+        for item in _MEMORY_EMAIL_LOGS
+        if item["user_id"] == user_id
+        and item.get("target_date") == target_date
+        and item.get("email_kind") == email_kind
+        and item.get("status") in {"sent", "queued"}
+    )
+
+
 def _log_email(record: dict[str, Any]):
     if supabase:
         try:
@@ -891,6 +930,8 @@ def _send_daily_signal_emails(model_run: dict[str, Any], signals: list[dict[str,
         if preference.get("market") != model_run["market"] or preference.get("risk_level") != model_run["risk_level"] or preference.get("signal_type") != model_run["signal_type"]:
             continue
         if _email_already_sent(preference["user_id"], model_run["id"]):
+            continue
+        if _daily_email_already_sent_for_target(preference["user_id"], model_run["target_date"]):
             continue
         notifications.append(
             _send_signal_email_to_preference(
@@ -947,13 +988,23 @@ def process_scheduled_daily_alerts(force: bool = False) -> dict[str, Any]:
     if _is_market_holiday(now.date()) and not force:
         return {"sent": 0, "reason": "Non-trading day"}
 
+    target_date = _next_trading_day(now.date()).isoformat()
     due_preferences: list[dict[str, Any]] = []
     for preference in _iter_preferences():
         if not preference.get("consent_accepted_at"):
             continue
         preferred_time = _parse_time_string(preference.get("email_time"))
+        if not (force or (now.hour, now.minute) >= (preferred_time.hour, preferred_time.minute)):
+            continue
+        if _daily_email_already_sent_for_target(preference["user_id"], target_date):
+            continue
+        if not preference.get("email"):
+            continue
         if force or (now.hour, now.minute) >= (preferred_time.hour, preferred_time.minute):
             due_preferences.append(preference)
+
+    if not due_preferences:
+        return {"sent": 0, "reason": "No due unsent preferences", "target_date": target_date}
 
     grouped: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for preference in due_preferences:

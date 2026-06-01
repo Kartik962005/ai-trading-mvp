@@ -1,8 +1,18 @@
 import re
+import os
 from typing import Any
 
 import pandas as pd
 import yfinance as yf
+
+from app.services.stock_snapshot_service import frontend_metric_row, snapshot_by_ticker
+
+try:
+    _yf_cache_dir = os.path.join(os.getcwd(), ".yfinance-cache")
+    os.makedirs(_yf_cache_dir, exist_ok=True)
+    yf.set_tz_cache_location(_yf_cache_dir)
+except Exception:
+    pass
 
 _download_cache: dict[str, dict[str, Any]] = {}
 SCREENER_DOWNLOAD_TTL = 900
@@ -690,45 +700,157 @@ def _passes_market_cap(row: dict[str, Any], bucket: str | None) -> bool:
     return _market_cap_bucket(row) == bucket
 
 
+def _metrics_from_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+    price = _clean_number(row.get("price"))
+    high_52 = _clean_number(row.get("high_52w"))
+    low_52 = _clean_number(row.get("low_52w"))
+    return {
+        "latest_close": price,
+        "previous_close": _clean_number(row.get("previous_close")),
+        "latest_date": str(row.get("latest_date") or row.get("updated_at") or "")[:10],
+        "gain_streak_days": 0,
+        "recent_volume_avg": _clean_number(row.get("latest_volume")),
+        "previous_week_volume_avg": 0,
+        "volume_ratio_vs_previous_week": _clean_number(row.get("vol_ratio")),
+        "recent_return_pct": _clean_number(row.get("ret_1w")),
+        "return_1w_pct": _clean_number(row.get("ret_1w")),
+        "return_1m_pct": _clean_number(row.get("ret_1m")),
+        "return_3m_pct": _clean_number(row.get("ret_3m")),
+        "return_6m_pct": _clean_number(row.get("ret_6m")),
+        "return_1y_pct": _clean_number(row.get("ret_1y")),
+        "today_return_pct": _clean_number(row.get("change_pct")),
+        "gap_pct": 0,
+        "high_52_week": high_52,
+        "low_52_week": low_52,
+        "price_vs_52_week_high_pct": _clean_number(((price - high_52) / high_52) * 100 if price and high_52 else 0),
+        "price_vs_52_week_low_pct": _clean_number(((price - low_52) / low_52) * 100 if price and low_52 else 0),
+        "rsi14": _clean_number(row.get("rsi14"), 50),
+        "previous_rsi14": None,
+        "mfi14": _clean_number(row.get("mfi14"), 50),
+        "sma20": _clean_number(row.get("sma20")),
+        "sma50": _clean_number(row.get("sma50")),
+        "sma200": _clean_number(row.get("sma200")),
+        "previous_sma20": None,
+        "previous_sma50": None,
+        "previous_sma200": None,
+        "ema20": _clean_number(row.get("ema20")),
+        "atr14": _clean_number(row.get("atr14")),
+        "atr_change_5d": 0,
+        "volume_sma10": None,
+        "volume_sma20": _clean_number(row.get("volume_sma20")),
+        "latest_volume": _clean_number(row.get("latest_volume")),
+        "volume_ratio_10": None,
+        "volume_ratio_20": _clean_number(row.get("vol_ratio")),
+        "higher_highs_lows_10d": False,
+        "lower_highs_lows_10d": False,
+        "broke_previous_high": False,
+        "broke_previous_low": False,
+        "upper_circuit_proxy": _clean_number(row.get("change_pct")) >= 8,
+        "lower_circuit_proxy": _clean_number(row.get("change_pct")) <= -8,
+    }
+
+
+def _passes_snapshot_rules(metrics: dict[str, Any], rules: dict[str, Any], days: int | None) -> bool:
+    latest_close = float(metrics.get("latest_close") or 0)
+    if latest_close <= 0:
+        return False
+    lookback = int(rules.get("lookback_days") or days or 5)
+    lookback_return = _return_for_lookback(metrics, lookback)
+    if rules.get("direction") == "up" and lookback_return <= 0:
+        return False
+    if rules.get("direction") == "down" and lookback_return >= 0:
+        return False
+    if rules.get("volume_compare_previous_week") or rules.get("volume_above_average"):
+        if float(metrics.get("volume_ratio_20") or metrics.get("volume_ratio_vs_previous_week") or 0) <= 1:
+            return False
+    if rules.get("volume_multiplier"):
+        if float(metrics.get("volume_ratio_20") or 0) < float(rules["volume_multiplier"]):
+            return False
+    if rules.get("rising_price_volume") and not (float(metrics.get("today_return_pct") or 0) > 0 and float(metrics.get("volume_ratio_20") or 0) > 1):
+        return False
+    if rules.get("falling_price_rising_volume") and not (float(metrics.get("today_return_pct") or 0) < 0 and float(metrics.get("volume_ratio_20") or 0) > 1):
+        return False
+    if rules["near_high"] and float(metrics.get("price_vs_52_week_high_pct") or -100) < -10:
+        return False
+    if rules["near_low"] and float(metrics.get("price_vs_52_week_low_pct") or 100) > 15:
+        return False
+    if rules.get("upper_circuit") and float(metrics.get("today_return_pct") or 0) < 8:
+        return False
+    if rules.get("lower_circuit") and float(metrics.get("today_return_pct") or 0) > -8:
+        return False
+    if rules["oversold"] and not _compare_metric(metrics["rsi14"], "<", 30):
+        return False
+    if rules.get("overbought") and not _compare_metric(metrics["rsi14"], ">", 70):
+        return False
+    if rules.get("rsi_condition"):
+        condition = rules["rsi_condition"]
+        if condition["operator"].startswith("cross_"):
+            if not _compare_metric(metrics["rsi14"], ">" if condition["operator"] == "cross_above" else "<", condition["value"]):
+                return False
+        elif not _compare_metric(metrics["rsi14"], condition["operator"], condition["value"]):
+            return False
+    if rules.get("mfi_condition"):
+        condition = rules["mfi_condition"]
+        if not _compare_metric(metrics["mfi14"], condition["operator"], condition["value"]):
+            return False
+    for period in rules.get("ma_periods") or []:
+        key = f"sma{period}"
+        average = float(metrics.get(key) or 0)
+        if rules.get("above_ma") and (average <= 0 or latest_close <= average):
+            return False
+        if rules.get("below_ma") and (average <= 0 or latest_close >= average):
+            return False
+    if rules.get("golden_cross") and not (float(metrics.get("sma50") or 0) > float(metrics.get("sma200") or 0) > 0):
+        return False
+    if rules.get("death_cross") and not (0 < float(metrics.get("sma50") or 0) < float(metrics.get("sma200") or 0)):
+        return False
+    if rules.get("ma_cross_20_50") and not (float(metrics.get("sma20") or 0) > float(metrics.get("sma50") or 0) > 0):
+        return False
+    if rules.get("return_threshold_pct") is not None and not rules.get("rank_by"):
+        threshold = abs(float(rules["return_threshold_pct"]))
+        if rules.get("direction") == "down":
+            if lookback_return > -threshold:
+                return False
+        elif lookback_return < threshold:
+            return False
+    if rules.get("volatility") and float(metrics.get("atr14") or 0) <= 0:
+        return False
+    if rules.get("relative_strength") or rules.get("falling_market"):
+        benchmark_return = rules.get("benchmark_return_pct")
+        if benchmark_return is not None and lookback_return <= float(benchmark_return):
+            return False
+        if benchmark_return is None and lookback_return <= 0:
+            return False
+    if rules.get("positive_multi_period") and not (
+        float(metrics.get("return_1w_pct") or 0) > 0
+        and float(metrics.get("return_1m_pct") or 0) > 0
+        and float(metrics.get("return_3m_pct") or 0) > 0
+    ):
+        return False
+    return True
+
+
 def _build_metric_row(stock: dict[str, Any], ticker: str, metrics: dict[str, Any], rules: dict[str, Any], days: int | None, relaxed: bool = False) -> dict[str, Any]:
     symbol = stock.get("symbol", ticker)
     lookback = int(rules.get("lookback_days") or days or 5)
     ret = _return_for_lookback(metrics, lookback)
     volume_ratio = metrics["volume_ratio_vs_previous_week"]
-    market_cap_cr = _hash_number(f"{symbol}:cap", 250000, 500)
     score = 65 + min(18, int(max(volume_ratio, 0) * 6)) + min(16, int(abs(ret))) + min(8, int(abs(metrics.get("today_return_pct", 0))))
     if rules.get("rank_by") == "return":
         score += int(max(ret, 0))
     if rules.get("rank_by") == "loss":
         score += int(abs(min(ret, 0)))
     reason_prefix = "Closest available proxy match" if relaxed else "Matched live OHLCV screen"
-    return {
-        "stock": stock,
-        "cmp": metrics["latest_close"],
-        "pe": _hash_number(symbol, 28, 7),
-        "marketCapCr": market_cap_cr,
-        "marketCapitalization": market_cap_cr * 10000000,
-        "divYield": round(_hash_number(f"{symbol}:div", 500) / 100, 2),
-        "avgDividendPayout3Yr": _hash_number(f"{symbol}:payout", 45, 10),
-        "qtrSalesCr": _hash_number(f"{symbol}:sales", 120000, 300),
-        "qtrProfitVar": _hash_number(f"{symbol}:profit", 55, -10),
-        "qtrSalesVar": _hash_number(f"{symbol}:qtrsales", 40, -5),
-        "revenueGrowth3Yr": _hash_number(f"{symbol}:rev", 36, 8),
-        "profitGrowth3Yr": _hash_number(f"{symbol}:profit3", 42, 7),
-        "profitGrowth5Yr": _hash_number(f"{symbol}:profit5", 36, 6),
-        "roe": _hash_number(f"{symbol}:roe", 25, 10),
-        "roce": _hash_number(f"{symbol}:roce", 25, 12),
-        "avgRoce7Yr": _hash_number(f"{symbol}:avgroce", 25, 12),
-        "debtToEquity": round(_hash_number(f"{symbol}:debt", 110) / 100, 2),
-        "operatingMargin": _hash_number(f"{symbol}:margin", 28, 8),
-        "piotroskiScore": _hash_number(f"{symbol}:pio", 5, 5),
-        "avgPat10Yrs": _hash_number(f"{symbol}:pat", 600, 80),
-        "score": min(max(score, 50), 99),
-        "reason": (
+    return frontend_metric_row(
+        {"ticker": ticker, "symbol": symbol, "name": stock.get("name"), "price": metrics["latest_close"], "change_pct": metrics["today_return_pct"]},
+        stock,
+        score=min(max(score, 50), 99),
+        reason=(
             f"{reason_prefix}: close {metrics['latest_close']:.2f} on {metrics['latest_date']}; "
             f"{lookback} day return {ret:.2f}%; RSI {metrics['rsi14']:.2f}; "
             f"volume ratio vs previous week {metrics['volume_ratio_vs_previous_week']:.2f}."
         ),
+    ) | {
         "technical": {
             "latestDate": metrics["latest_date"],
             "gainStreakDays": metrics["gain_streak_days"],
@@ -804,7 +926,6 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
         252 if rules["near_high"] or rules["near_low"] else 0,
     )
     period = "1y" if max_window > 90 or rules["oversold"] or rules["requested_metrics"] else "3mo"
-    download = _download_ohlcv(tickers, period)
     if rules.get("relative_strength") or rules.get("falling_market"):
         rules["benchmark_name"] = "Nifty 50"
         rules["benchmark_return_pct"] = _benchmark_return(period, int(rules.get("lookback_days") or 7))
@@ -812,91 +933,52 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
     matched_rows = []
     stock_by_ticker = {stock["ticker"]: stock for stock in stocks if stock.get("ticker")}
     days = rules["consecutive_days"]
+    snapshot_rows = snapshot_by_ticker(tickers)
+    snapshot_used = bool(snapshot_rows) and len(snapshot_rows) >= max(1, min(len(tickers), int(len(tickers) * 0.5)))
+    download = None
 
-    for ticker in tickers:
-        frame = _ticker_frame(download, ticker).dropna()
-        if len(frame) < 8:
-            continue
-        if not _passes_direction(frame, rules["direction"], days):
-            continue
-        if not _passes_volume(frame, rules, days):
-            continue
-        if not _passes_extra_rules(frame, rules):
-            continue
+    if snapshot_used:
+        for ticker in tickers:
+            snapshot = snapshot_rows.get(ticker)
+            if not snapshot:
+                continue
+            metrics = _metrics_from_snapshot(snapshot)
+            if not _passes_snapshot_rules(metrics, rules, days):
+                continue
+            stock = stock_by_ticker[ticker]
+            lookback = int(rules.get("lookback_days") or days or 5)
+            row = frontend_metric_row(
+                snapshot,
+                stock,
+                reason=(
+                    f"Snapshot match: close {metrics['latest_close']:.2f} on {metrics['latest_date']}; "
+                    f"{lookback} day return {_return_for_lookback(metrics, lookback):.2f}%; "
+                    f"RSI {metrics['rsi14']:.2f}; volume ratio {metrics['volume_ratio_20']:.2f}."
+                ),
+            )
+            row["technical"]["requestedMetrics"] = rules["requested_metrics"]
+            if not _passes_market_cap(row, rules.get("cap_bucket")):
+                continue
+            matched_rows.append(row)
+    else:
+        download = _download_ohlcv(tickers, period)
+        for ticker in tickers:
+            frame = _ticker_frame(download, ticker).dropna()
+            if len(frame) < 8:
+                continue
+            if not _passes_direction(frame, rules["direction"], days):
+                continue
+            if not _passes_volume(frame, rules, days):
+                continue
+            if not _passes_extra_rules(frame, rules):
+                continue
 
-        stock = stock_by_ticker[ticker]
-        metrics = _technical_metrics(frame, days)
-        symbol = stock.get("symbol", ticker)
-        volume_ratio = metrics["volume_ratio_vs_previous_week"]
-        score = 70 + min(20, int(volume_ratio * 7)) + min(10, int(abs(metrics["recent_return_pct"])))
-        market_cap_cr = _hash_number(f"{symbol}:cap", 250000, 500)
-        row = {
-            "stock": stock,
-            "cmp": metrics["latest_close"],
-            "pe": _hash_number(symbol, 28, 7),
-            "marketCapCr": market_cap_cr,
-            "marketCapitalization": market_cap_cr * 10000000,
-            "divYield": round(_hash_number(f"{symbol}:div", 500) / 100, 2),
-            "avgDividendPayout3Yr": _hash_number(f"{symbol}:payout", 45, 10),
-            "qtrSalesCr": _hash_number(f"{symbol}:sales", 120000, 300),
-            "qtrProfitVar": _hash_number(f"{symbol}:profit", 55, -10),
-            "qtrSalesVar": _hash_number(f"{symbol}:qtrsales", 40, -5),
-            "revenueGrowth3Yr": _hash_number(f"{symbol}:rev", 36, 8),
-            "profitGrowth3Yr": _hash_number(f"{symbol}:profit3", 42, 7),
-            "profitGrowth5Yr": _hash_number(f"{symbol}:profit5", 36, 6),
-            "roe": _hash_number(f"{symbol}:roe", 25, 10),
-            "roce": _hash_number(f"{symbol}:roce", 25, 12),
-            "avgRoce7Yr": _hash_number(f"{symbol}:avgroce", 25, 12),
-            "debtToEquity": round(_hash_number(f"{symbol}:debt", 110) / 100, 2),
-            "operatingMargin": _hash_number(f"{symbol}:margin", 28, 8),
-            "piotroskiScore": _hash_number(f"{symbol}:pio", 5, 5),
-            "avgPat10Yrs": _hash_number(f"{symbol}:pat", 600, 80),
-            "score": min(score, 99),
-            "reason": (
-                f"Latest close {metrics['latest_close']:.2f} on {metrics['latest_date']}; "
-                f"{metrics['gain_streak_days']} day gain streak; recent average volume "
-                f"{metrics['recent_volume_avg']:,.0f} vs previous week {metrics['previous_week_volume_avg']:,.0f}; "
-                f"{rules.get('lookback_days') or days or 5} day return proxy {_return_for_lookback(metrics, int(rules.get('lookback_days') or days or 5)):.2f}%."
-            ),
-            "technical": {
-                "latestDate": metrics["latest_date"],
-                "gainStreakDays": metrics["gain_streak_days"],
-                "recentVolumeAvg": metrics["recent_volume_avg"],
-                "previousWeekVolumeAvg": metrics["previous_week_volume_avg"],
-                "volumeRatioVsPreviousWeek": metrics["volume_ratio_vs_previous_week"],
-                "recentReturnPct": metrics["recent_return_pct"],
-                "return1wPct": metrics["return_1w_pct"],
-                "return1mPct": metrics["return_1m_pct"],
-                "return3mPct": metrics["return_3m_pct"],
-                "return6mPct": metrics["return_6m_pct"],
-                "return1yPct": metrics["return_1y_pct"],
-                "todayReturnPct": metrics["today_return_pct"],
-                "gapPct": metrics["gap_pct"],
-                "rsi14": metrics["rsi14"],
-                "mfi14": metrics["mfi14"],
-                "sma20": metrics["sma20"],
-                "sma50": metrics["sma50"],
-                "sma200": metrics["sma200"],
-                "ema20": metrics["ema20"],
-                "atr14": metrics["atr14"],
-                "atrChange5d": metrics["atr_change_5d"],
-                "latestVolume": metrics["latest_volume"],
-                "volumeSma10": metrics["volume_sma10"],
-                "volumeSma20": metrics["volume_sma20"],
-                "volumeRatio10": metrics["volume_ratio_10"],
-                "volumeRatio20": metrics["volume_ratio_20"],
-                "high52Week": metrics["high_52_week"],
-                "low52Week": metrics["low_52_week"],
-                "priceVs52WeekHighPct": metrics["price_vs_52_week_high_pct"],
-                "priceVs52WeekLowPct": metrics["price_vs_52_week_low_pct"],
-                "higherHighsLows10d": metrics["higher_highs_lows_10d"],
-                "lowerHighsLows10d": metrics["lower_highs_lows_10d"],
-                "requestedMetrics": rules["requested_metrics"],
-            },
-        }
-        if not _passes_market_cap(row, rules.get("cap_bucket")):
-            continue
-        matched_rows.append(row)
+            stock = stock_by_ticker[ticker]
+            metrics = _technical_metrics(frame, days)
+            row = _build_metric_row(stock, ticker, metrics, rules, days)
+            if not _passes_market_cap(row, rules.get("cap_bucket")):
+                continue
+            matched_rows.append(row)
 
     labels = []
     if rules["direction"] and days:
@@ -987,35 +1069,50 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
     def sort_key(row: dict[str, Any]):
         technical = row.get("technical", {})
         lookback = int(rules.get("lookback_days") or days or 5)
+        def n(value: Any) -> float:
+            try:
+                return float(value or 0)
+            except Exception:
+                return 0.0
         if rules.get("rank_by") == "return":
             return (_return_for_lookback({
-                "return_1w_pct": technical.get("return1wPct", 0),
-                "return_1m_pct": technical.get("return1mPct", 0),
-                "return_3m_pct": technical.get("return3mPct", 0),
-                "return_6m_pct": technical.get("return6mPct", 0),
-                "return_1y_pct": technical.get("return1yPct", 0),
-            }, lookback), technical.get("volumeRatioVsPreviousWeek", 0), row.get("score", 0))
+                "return_1w_pct": n(technical.get("return1wPct")),
+                "return_1m_pct": n(technical.get("return1mPct")),
+                "return_3m_pct": n(technical.get("return3mPct")),
+                "return_6m_pct": n(technical.get("return6mPct")),
+                "return_1y_pct": n(technical.get("return1yPct")),
+            }, lookback), n(technical.get("volumeRatioVsPreviousWeek")), n(row.get("score")))
         if rules.get("rank_by") == "loss":
             return (-_return_for_lookback({
-                "return_1w_pct": technical.get("return1wPct", 0),
-                "return_1m_pct": technical.get("return1mPct", 0),
-                "return_3m_pct": technical.get("return3mPct", 0),
-                "return_6m_pct": technical.get("return6mPct", 0),
-                "return_1y_pct": technical.get("return1yPct", 0),
-            }, lookback), technical.get("volumeRatioVsPreviousWeek", 0), row.get("score", 0))
+                "return_1w_pct": n(technical.get("return1wPct")),
+                "return_1m_pct": n(technical.get("return1mPct")),
+                "return_3m_pct": n(technical.get("return3mPct")),
+                "return_6m_pct": n(technical.get("return6mPct")),
+                "return_1y_pct": n(technical.get("return1yPct")),
+            }, lookback), n(technical.get("volumeRatioVsPreviousWeek")), n(row.get("score")))
         if rules.get("volume_multiplier") or rules.get("volume_above_average") or rules.get("volume_compare_previous_week"):
-            return (technical.get("volumeRatio20", 0), technical.get("volumeRatioVsPreviousWeek", 0), row.get("score", 0))
+            return (n(technical.get("volumeRatio20")), n(technical.get("volumeRatioVsPreviousWeek")), n(row.get("score")))
         if rules.get("near_high"):
-            return (-abs(technical.get("priceVs52WeekHighPct", -100)), technical.get("return1wPct", 0), row.get("score", 0))
+            return (-abs(n(technical.get("priceVs52WeekHighPct"))), n(technical.get("return1wPct")), n(row.get("score")))
         if rules.get("near_low"):
-            return (-abs(technical.get("priceVs52WeekLowPct", 100)), technical.get("todayReturnPct", 0), row.get("score", 0))
+            return (-abs(n(technical.get("priceVs52WeekLowPct"))), n(technical.get("todayReturnPct")), n(row.get("score")))
         if rules.get("relative_strength") or rules.get("falling_market"):
-            return (technical.get("return1wPct", 0), technical.get("return1mPct", 0), technical.get("return3mPct", 0), row.get("score", 0))
-        return (technical.get("volumeRatioVsPreviousWeek", 0), technical.get("recentReturnPct", 0), row.get("score", 0))
+            return (n(technical.get("return1wPct")), n(technical.get("return1mPct")), n(technical.get("return3mPct")), n(row.get("score")))
+        return (n(technical.get("volumeRatioVsPreviousWeek")), n(technical.get("recentReturnPct")), n(row.get("score")))
 
     matched_rows.sort(key=sort_key, reverse=True)
     exact_count = len(matched_rows[:80])
     if not matched_rows:
+        if snapshot_used:
+            return {
+                "rows": [],
+                "matchedRules": labels or ["snapshot screen"],
+                "explanation": (
+                    "Screened the precomputed stock_snapshot table and found no exact matches. "
+                    f"Checked {len(snapshot_rows)} fresh snapshot rows from {len(tickers)} supplied tickers."
+                ),
+                "source": "Supabase stock_snapshot",
+            }
         matched_rows = sorted(_relaxed_rows(download, tickers, stock_by_ticker, rules, days), key=sort_key, reverse=True)[:80]
         return {
             "rows": matched_rows,
@@ -1030,6 +1127,10 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "rows": matched_rows[:80],
         "matchedRules": labels,
-        "explanation": f"Screened {len(tickers)} supplied tickers with live daily OHLCV candles and returned {exact_count} matches.",
-        "source": "Yahoo Finance daily OHLCV via backend",
+        "explanation": (
+            f"Screened {len(snapshot_rows) if snapshot_used else len(tickers)} "
+            f"{'precomputed snapshot rows' if snapshot_used else 'supplied tickers with live daily OHLCV candles'} "
+            f"and returned {exact_count} matches."
+        ),
+        "source": "Supabase stock_snapshot" if snapshot_used else "Yahoo Finance daily OHLCV via backend",
     }

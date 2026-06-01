@@ -39,6 +39,7 @@ _BACKEND = os.path.dirname(_HERE)
 if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
+from app.services import price_store  # noqa: E402
 from app.services.daily_signal_engine.backtest import run_backtest  # noqa: E402
 from app.services.daily_signal_engine.config import (  # noqa: E402
     MARKET_INDEX,
@@ -64,7 +65,11 @@ def _connect():
 
 
 def _fetch_all(sb, ticker: str) -> pd.DataFrame:
-    """Fetch full history for one ticker, paging past the 1000-row limit."""
+    """Fetch full history for one ticker, using Storage first during cutover."""
+    stored = price_store.read_prices(ticker)
+    if stored is not None and not stored.empty:
+        return stored
+
     rows: list[dict] = []
     page = 0
     page_size = 1000

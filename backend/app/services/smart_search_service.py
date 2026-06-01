@@ -3,11 +3,72 @@ import os
 import re
 from typing import Any
 
+from pydantic import BaseModel, Field, ValidationError, validator
+
 from app.services.data_service import get_latest_quote
+from app.services.llm_client import chat as llm_chat
 from app.services.screener_service import screen_stocks
+from app.services.stock_snapshot_service import frontend_metric_row, snapshot_by_ticker
 
 
 INTENTS = {"CUSTOM_FILTER", "PRE_DEFINED_SCREENER", "STOCK_INFO", "SECTOR_FILTER", "GENERAL_CHAT"}
+SNAPSHOT_FILTER_FIELDS = {
+    "price": "cmp",
+    "change_pct": "technical.todayReturnPct",
+    "trailing_pe": "pe",
+    "market_cap_cr": "marketCapCr",
+    "roe": "roe",
+    "roce": "roce",
+    "debt_to_equity": "debtToEquity",
+    "revenue_growth": "revenueGrowth3Yr",
+    "profit_growth": "profitGrowth3Yr",
+    "dividend_yield": "divYield",
+    "rsi14": "technical.rsi14",
+    "ret_1w": "technical.return1wPct",
+    "ret_1m": "technical.return1mPct",
+    "ret_3m": "technical.return3mPct",
+    "ret_1y": "technical.return1yPct",
+    "vol_ratio": "technical.volumeRatio20",
+    "high_52w": "technical.high52Week",
+    "low_52w": "technical.low52Week",
+}
+FILTER_OPERATORS = {"<", "<=", ">", ">=", "=", "!="}
+
+
+class SnapshotFilterCondition(BaseModel):
+    field: str
+    operator: str
+    value: float
+
+    @validator("field")
+    def _field_allowed(cls, value: str) -> str:
+        if value not in SNAPSHOT_FILTER_FIELDS:
+            raise ValueError(f"unsupported field: {value}")
+        return value
+
+    @validator("operator")
+    def _operator_allowed(cls, value: str) -> str:
+        if value not in FILTER_OPERATORS:
+            raise ValueError(f"unsupported operator: {value}")
+        return value
+
+
+class SmartRouterSchema(BaseModel):
+    intent: str
+    screener_name: str | None = None
+    stock_symbol: str | None = None
+    sector: str | None = None
+    custom_query_parameters: dict[str, Any] = Field(default_factory=dict)
+    filters: list[SnapshotFilterCondition] = Field(default_factory=list)
+    ai_response_message: str
+    clarifying_question: str | None = None
+
+    @validator("intent")
+    def _intent_allowed(cls, value: str) -> str:
+        upper = value.upper()
+        if upper not in INTENTS:
+            raise ValueError(f"unsupported intent: {value}")
+        return upper
 
 SECTOR_RULES: list[tuple[str, list[str]]] = [
     ("Banks", ["bank", "banks", "banking", "lender", "lenders", "sbi", "hdfc", "icici", "axis", "kotak", "indusind", "federal", "canara", "pnb"]),
@@ -77,32 +138,39 @@ def _stock_sector(stock: dict[str, Any]) -> str:
     return "Diversified"
 
 
-def _make_row(stock: dict[str, Any], index: int, reason: str, quote: dict[str, Any] | None = None) -> dict[str, Any]:
+def _make_row(
+    stock: dict[str, Any],
+    index: int,
+    reason: str,
+    quote: dict[str, Any] | None = None,
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if snapshot:
+        return frontend_metric_row(snapshot, stock, reason=reason, score=max(55, 92 - index))
     symbol = str(stock.get("symbol") or stock.get("ticker") or "STOCK")
     price = quote.get("price") if quote else None
-    cmp = float(price) if isinstance(price, (int, float)) else 82 + index * 47.35
-    market_cap_cr = _hash_number(f"{symbol}:cap", 250000, 500)
+    cmp = float(price) if isinstance(price, (int, float)) else None
     return {
         "stock": stock,
-        "cmp": round(cmp, 2),
-        "pe": _hash_number(symbol, 28, 7),
-        "marketCapCr": market_cap_cr,
-        "marketCapitalization": market_cap_cr * 10000000,
-        "divYield": round(_hash_number(f"{symbol}:div", 500) / 100, 2),
-        "avgDividendPayout3Yr": _hash_number(f"{symbol}:payout", 45, 10),
-        "qtrSalesCr": _hash_number(f"{symbol}:sales", 120000, 300),
-        "qtrProfitVar": _hash_number(f"{symbol}:profit", 55, -10),
-        "qtrSalesVar": _hash_number(f"{symbol}:qtrsales", 40, -5),
-        "revenueGrowth3Yr": _hash_number(f"{symbol}:rev", 36, 8),
-        "profitGrowth3Yr": _hash_number(f"{symbol}:profit3", 42, 7),
-        "profitGrowth5Yr": _hash_number(f"{symbol}:profit5", 36, 6),
-        "roe": _hash_number(f"{symbol}:roe", 25, 10),
-        "roce": _hash_number(f"{symbol}:roce", 25, 12),
-        "avgRoce7Yr": _hash_number(f"{symbol}:avgroce", 25, 12),
-        "debtToEquity": round(_hash_number(f"{symbol}:debt", 110) / 100, 2),
-        "operatingMargin": _hash_number(f"{symbol}:margin", 28, 8),
-        "piotroskiScore": _hash_number(f"{symbol}:pio", 5, 5),
-        "avgPat10Yrs": _hash_number(f"{symbol}:pat", 600, 80),
+        "cmp": round(cmp, 2) if cmp is not None else None,
+        "pe": None,
+        "marketCapCr": None,
+        "marketCapitalization": None,
+        "divYield": None,
+        "avgDividendPayout3Yr": None,
+        "qtrSalesCr": None,
+        "qtrProfitVar": None,
+        "qtrSalesVar": None,
+        "revenueGrowth3Yr": None,
+        "profitGrowth3Yr": None,
+        "profitGrowth5Yr": None,
+        "roe": None,
+        "roce": None,
+        "avgRoce7Yr": None,
+        "debtToEquity": None,
+        "operatingMargin": None,
+        "piotroskiScore": None,
+        "avgPat10Yrs": None,
         "score": max(55, 92 - index),
         "reason": reason,
     }
@@ -221,8 +289,115 @@ def _has_fundamental_filter(prompt: str, params: dict[str, Any]) -> bool:
     clean = prompt.lower()
     return bool(
         {"valuation", "roce", "roe", "debt", "dividend", "growth"} & set(params.keys())
-        or re.search(r"\b(undervalued|cheap|value|valuation|roce|roe|debt|dividend|growth|piotroski)\b", clean)
+        or re.search(r"\b(pe|p/e|price.?to.?earnings|market cap|roce|roe|debt|dividend|growth|piotroski|undervalued|cheap|value|valuation)\b", clean)
     )
+
+
+def _extract_number_condition(prompt: str, names: list[str]) -> dict[str, Any] | None:
+    name_pattern = "|".join(re.escape(name) for name in names)
+    operator_words = {
+        "below": "<",
+        "under": "<",
+        "less than": "<",
+        "lower than": "<",
+        "above": ">",
+        "over": ">",
+        "more than": ">",
+        "greater than": ">",
+        "at least": ">=",
+        "minimum": ">=",
+        "max": "<=",
+        "maximum": "<=",
+    }
+    operator_pattern = r"<=|>=|<|>|=|below|under|less than|lower than|above|over|greater than|more than|at least|minimum|max|maximum"
+    for pattern in [
+        rf"\b(?:{name_pattern})\b(?:\s+ratio|\s+yield|\s+growth)?\s*(?:is|are|of|at)?\s*({operator_pattern})\s*(-?\d+(?:\.\d+)?)",
+        rf"\b(?:{name_pattern})\b.{0,24}?({operator_pattern})\s*(-?\d+(?:\.\d+)?)",
+    ]:
+        match = re.search(pattern, prompt.lower())
+        if match:
+            operator = operator_words.get(match.group(1), match.group(1))
+            return {"operator": operator, "value": float(match.group(2))}
+    return None
+
+
+def _fundamental_conditions(prompt: str, params: dict[str, Any]) -> list[tuple[str, str, float, str]]:
+    condition_specs = [
+        ("pe", ["pe", "p/e", "price to earnings", "price earnings"], "P/E"),
+        ("roe", ["roe", "return on equity"], "ROE"),
+        ("roce", ["roce", "return on capital employed", "return on capital"], "ROCE"),
+        ("debtToEquity", ["debt to equity", "debt equity", "debt"], "Debt / equity"),
+        ("divYield", ["dividend yield", "dividend"], "Dividend yield"),
+        ("revenueGrowth3Yr", ["revenue growth", "sales growth", "growth"], "Revenue growth"),
+        ("profitGrowth3Yr", ["profit growth", "earnings growth"], "Profit growth"),
+        ("marketCapCr", ["market cap", "market capitalization", "market capitalisation"], "Market cap"),
+    ]
+    conditions: list[tuple[str, str, float, str]] = []
+    for field, names, label in condition_specs:
+        parsed = _extract_number_condition(prompt, names)
+        if parsed:
+            conditions.append((field, parsed["operator"], parsed["value"], f"{label} {parsed['operator']} {parsed['value']:g}"))
+    if params.get("valuation") == "undervalued" and not any(item[0] == "pe" for item in conditions):
+        conditions.append(("pe", "<=", 24, "P/E <= 24"))
+    if params.get("roce") == "strong" and not any(item[0] == "roce" for item in conditions):
+        conditions.append(("roce", ">=", 20, "ROCE >= 20"))
+    if params.get("roe") == "strong" and not any(item[0] == "roe" for item in conditions):
+        conditions.append(("roe", ">=", 18, "ROE >= 18"))
+    if params.get("debt") == "low" and not any(item[0] == "debtToEquity" for item in conditions):
+        conditions.append(("debtToEquity", "<", 1, "Debt / equity < 1"))
+    if params.get("dividend") == "positive" and not any(item[0] == "divYield" for item in conditions):
+        conditions.append(("divYield", ">", 0, "Dividend yield > 0"))
+    if params.get("growth") == "strong" and not any(item[0] == "revenueGrowth3Yr" for item in conditions):
+        conditions.append(("revenueGrowth3Yr", ">", 10, "Revenue growth > 10"))
+    return conditions
+
+
+def _compare_number(value: Any, operator: str, target: float) -> bool:
+    if value is None:
+        return False
+    try:
+        numeric = float(value)
+    except Exception:
+        return False
+    if operator == "<":
+        return numeric < target
+    if operator == "<=":
+        return numeric <= target
+    if operator == ">":
+        return numeric > target
+    if operator == ">=":
+        return numeric >= target
+    if operator == "!=":
+        return numeric != target
+    return numeric == target
+
+
+def _row_value(row: dict[str, Any], field: str) -> Any:
+    mapped = SNAPSHOT_FILTER_FIELDS.get(field, field)
+    value: Any = row
+    for part in mapped.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _schema_conditions(router: dict[str, Any]) -> list[tuple[str, str, float, str]]:
+    filters = router.get("filters")
+    if not isinstance(filters, list):
+        return []
+    conditions: list[tuple[str, str, float, str]] = []
+    for item in filters:
+        if not isinstance(item, dict):
+            continue
+        field = item.get("field")
+        operator = item.get("operator")
+        value = item.get("value")
+        if field not in SNAPSHOT_FILTER_FIELDS or operator not in FILTER_OPERATORS:
+            continue
+        label = f"{field} {operator} {float(value):g}"
+        conditions.append((field, operator, float(value), label))
+    return conditions
 
 
 def _fundamental_filter_rows(
@@ -234,64 +409,74 @@ def _fundamental_filter_rows(
     params = router.get("custom_query_parameters") if isinstance(router.get("custom_query_parameters"), dict) else {}
     sector = _find_sector(str(router.get("sector") or prompt), sectors) or _find_sector(prompt, sectors)
     candidate_stocks = [stock for stock in stocks if not sector or _stock_sector(stock) == sector]
-
+    snapshots = snapshot_by_ticker([stock["ticker"] for stock in candidate_stocks if stock.get("ticker")])
     rows = [
-        _make_row(stock, index, "Matched local Bullseye fundamentals and sector filters.")
+        _make_row(stock, index, "Matched real Bullseye stock_snapshot fundamentals.", snapshot=snapshots.get(stock.get("ticker")))
         for index, stock in enumerate(candidate_stocks)
+        if snapshots.get(stock.get("ticker"))
     ]
 
-    labels: list[str] = []
-    strict_rows = rows
-    if params.get("valuation") == "undervalued":
-        labels.append("valuation: lower P/E preference")
-        strict_rows = [row for row in strict_rows if row["pe"] <= 24 or row["divYield"] >= 2]
-    if params.get("roce") == "strong":
-        labels.append("ROCE: at least 20")
-        strict_rows = [row for row in strict_rows if row["roce"] >= 20 or row["avgRoce7Yr"] >= 20]
-    if params.get("roe") == "strong":
-        labels.append("ROE: at least 18")
-        strict_rows = [row for row in strict_rows if row["roe"] >= 18]
-    if params.get("debt") == "low":
-        labels.append("debt to equity: below 1")
-        strict_rows = [row for row in strict_rows if row["debtToEquity"] < 1]
-    if params.get("dividend") == "positive":
-        labels.append("dividend yield: positive")
-        strict_rows = [row for row in strict_rows if row["divYield"] > 0]
-    if params.get("growth") == "strong":
-        labels.append("growth: revenue growth above 10")
-        strict_rows = [row for row in strict_rows if row["revenueGrowth3Yr"] > 10]
+    schema_conditions = _schema_conditions(router)
+    conditions = schema_conditions or _fundamental_conditions(prompt, params)
+    labels = [condition[3] for condition in conditions]
+    strict_rows = [
+        row for row in rows
+        if all(_compare_number(_row_value(row, field), operator, target) for field, operator, target, _label in conditions)
+    ] if conditions else rows
     if sector:
         labels.append(f"sector: {sector}")
 
+    if not rows:
+        router["ai_response_message"] = (
+            "The stock_snapshot dataset is not available yet, so I cannot honestly answer this fundamentals filter."
+        )
+        return {
+            "router": router,
+            "rows": [],
+            "matchedRules": labels or ["real fundamentals filter"],
+            "explanation": router["ai_response_message"],
+            "source": "Supabase stock_snapshot",
+            "unavailable_data": ["stock_snapshot"],
+        }
+
+    closest_only = bool(conditions and not strict_rows)
     selected_rows = strict_rows if strict_rows else rows
     selected_rows = sorted(
         selected_rows,
         key=lambda row: (
-            row["roce"],
-            row["roe"],
-            -row["pe"],
-            row["score"],
+            row.get("roce") or 0,
+            row.get("roe") or 0,
+            -(row.get("pe") or 9999),
+            row.get("score") or 0,
         ),
         reverse=True,
     )[:80]
 
     for row in selected_rows:
         row["reason"] = (
-            f"Local match for {sector or 'loaded universe'}: P/E {row['pe']}, "
-            f"ROCE {row['roce']}, ROE {row['roe']}, debt/equity {row['debtToEquity']}."
+            f"Snapshot match for {sector or 'loaded universe'}: P/E {row.get('pe') if row.get('pe') is not None else '-'}, "
+            f"ROCE {row.get('roce') if row.get('roce') is not None else '-'}, "
+            f"ROE {row.get('roe') if row.get('roe') is not None else '-'}, "
+            f"debt/equity {row.get('debtToEquity') if row.get('debtToEquity') is not None else '-'}."
         )
 
     router["sector"] = sector
     router["ai_response_message"] = (
-        f"Found {len(selected_rows)} local fundamental matches"
-        f"{' in ' + sector if sector else ''} for your valuation and quality query."
+        (
+            "No exact snapshot rows matched every requested condition; returning clearly labeled closest matches"
+            if closest_only
+            else f"Found {len(selected_rows)} real snapshot fundamental matches"
+        )
+        + (f" in {sector}" if sector else "")
+        + " for your valuation and quality query."
     )
     return {
         "router": router,
         "rows": selected_rows,
-        "matchedRules": labels or ["local fundamentals filter"],
+        "matchedRules": labels or ["real fundamentals filter"],
         "explanation": router["ai_response_message"],
-        "source": "Groq JSON router + local Bullseye fundamentals cache",
+        "source": "LLM JSON router + Supabase stock_snapshot",
+        "closest_matches": closest_only,
     }
 
 
@@ -346,14 +531,8 @@ def _extract_json(text: str) -> dict[str, Any] | None:
         return None
 
 
-def _groq_router(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict[str, Any]], sectors: list[dict[str, Any]] | list[str]) -> dict[str, Any] | None:
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return None
-
+def _llm_router(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict[str, Any]], sectors: list[dict[str, Any]] | list[str]) -> dict[str, Any] | None:
     try:
-        from groq import Groq
-
         screen_names = [
             {"slug": item.get("slug"), "title": item.get("title"), "tags": item.get("tags", [])}
             for item in screeners[:80]
@@ -363,39 +542,80 @@ def _groq_router(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
             for item in stocks[:500]
         ]
         sector_names = [item.get("name") if isinstance(item, dict) else item for item in sectors]
+        field_whitelist = sorted(SNAPSHOT_FILTER_FIELDS)
         system = (
             "You are a JSON router for a stock prediction analysis website. "
             "Return ONLY valid JSON with exactly this shape: "
             '{"intent":"CUSTOM_FILTER|PRE_DEFINED_SCREENER|STOCK_INFO|SECTOR_FILTER|GENERAL_CHAT",'
             '"screener_name":"string or null","stock_symbol":"string or null","sector":"string or null",'
-            '"custom_query_parameters":{},"ai_response_message":"string"}. '
+            '"custom_query_parameters":{},"filters":[{"field":"string","operator":"<|<=|>|>=|=|!=","value":number}],'
+            '"ai_response_message":"string","clarifying_question":"string or null"}. '
             "Do not add markdown, comments, prose, or extra keys. "
             "Use PRE_DEFINED_SCREENER only when the query clearly matches one supplied screener. "
             "Use STOCK_INFO for one specific ticker/company lookup. "
             "Use SECTOR_FILTER for sector or industry lists. "
-            "Use CUSTOM_FILTER for technical/price/volume/indicator conditions. "
-            "Use GENERAL_CHAT for educational/help questions."
+            "Use CUSTOM_FILTER for technical, price, volume, indicator, valuation, growth, debt, and quality conditions. "
+            "For CUSTOM_FILTER, emit filters only from the supplied stock_snapshot_field_whitelist. "
+            "If a requested metric is not in the whitelist, set clarifying_question and do not invent a proxy. "
+            "Use GENERAL_CHAT for educational/help questions. "
+            "Examples: 'PE under 20 and ROE above 15' -> filters trailing_pe < 20 and roe > 15. "
+            "'profitable midcaps with low debt and rising 3-month momentum' -> filters market_cap_cr >= 5000, "
+            "market_cap_cr <= 50000, debt_to_equity < 1, ret_3m > 0."
         )
         user_payload = {
             "query": prompt,
             "available_screeners": screen_names,
             "available_sectors": sector_names,
             "known_stocks": stock_names,
+            "stock_snapshot_field_whitelist": field_whitelist,
         }
-        client = Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
-            temperature=0,
-            max_tokens=500,
-            messages=[
+        response = llm_chat(
+            [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(user_payload)},
             ],
+            temperature=0,
+            max_tokens=500,
         )
-        content = response.choices[0].message.content or ""
-        return _extract_json(content)
+        content = response["text"]
+        parsed = _extract_json(content)
+        if parsed is None:
+            return {
+                "intent": "GENERAL_CHAT",
+                "screener_name": None,
+                "stock_symbol": None,
+                "sector": None,
+                "custom_query_parameters": {},
+                "filters": [],
+                "ai_response_message": "I need a valid structured screen before I can run that filter.",
+                "clarifying_question": "Please restate the screen using supported fields such as P/E, ROE, debt, market cap, RSI, volume, or 3-month return.",
+                "router_error": "schema_validation_failed: non_json_output",
+                "llm_provider": response.get("model"),
+            }
+        try:
+            validated = SmartRouterSchema(**parsed)
+        except ValidationError as exc:
+            return {
+                "intent": "GENERAL_CHAT",
+                "screener_name": None,
+                "stock_symbol": None,
+                "sector": None,
+                "custom_query_parameters": {},
+                "filters": [],
+                "ai_response_message": "I need a supported stock_snapshot field before I can run that screen.",
+                "clarifying_question": (
+                    "Which available metric should I use: "
+                    + ", ".join(field_whitelist[:12])
+                    + "?"
+                ),
+                "router_error": f"schema_validation_failed: {exc.errors()[0].get('msg') if exc.errors() else exc}",
+            }
+        router = validated.dict()
+        router["filters"] = [item.dict() for item in validated.filters]
+        router["llm_provider"] = response.get("model")
+        return router
     except Exception as exc:
-        print(f"[SmartSearch] Groq router failed: {exc}")
+        print(f"[SmartSearch] LLM router failed: {exc}")
         return None
 
 
@@ -427,7 +647,11 @@ def _sanitize_router(router: dict[str, Any], prompt: str, stocks: list[dict[str,
         "stock_symbol": stock_symbol,
         "sector": sector,
         "custom_query_parameters": params,
+        "filters": router.get("filters") if isinstance(router.get("filters"), list) else [],
         "ai_response_message": message,
+        "clarifying_question": router.get("clarifying_question"),
+        "router_error": router.get("router_error"),
+        "llm_provider": router.get("llm_provider"),
     }
 
 
@@ -439,9 +663,19 @@ def _filter_stocks_for_sector(stocks: list[dict[str, Any]], sector: str | None) 
 
 
 def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict[str, Any]], sectors: list[dict[str, Any]] | list[str]) -> dict[str, Any]:
-    router = _groq_router(prompt, stocks, screeners, sectors) or _heuristic_router(prompt, stocks, screeners, sectors)
+    router = _llm_router(prompt, stocks, screeners, sectors) or _heuristic_router(prompt, stocks, screeners, sectors)
     router = _sanitize_router(router, prompt, stocks, screeners, sectors)
     intent = router["intent"]
+
+    if router.get("clarifying_question"):
+        return {
+            "router": router,
+            "rows": [],
+            "matchedRules": [],
+            "explanation": router["clarifying_question"],
+            "source": "LLM schema router",
+            "needs_clarification": True,
+        }
 
     if intent == "PRE_DEFINED_SCREENER":
         screener = _find_screener(str(router.get("screener_name") or prompt), screeners) or _find_screener(prompt, screeners)
@@ -453,7 +687,7 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
             "rows": [],
             "matchedRules": [f"Preset screen: {router.get('screener_name')}"],
             "explanation": router["ai_response_message"],
-            "source": "Groq JSON router + local preset screen data",
+            "source": "LLM JSON router + local preset screen data",
         }
 
     if intent == "STOCK_INFO":
@@ -464,29 +698,32 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
                 "rows": [],
                 "matchedRules": [],
                 "explanation": "I could not match that stock symbol to the loaded Bullseye universe.",
-                "source": "Groq JSON router",
+                "source": "LLM JSON router",
             }
         quote = None
         try:
             quote = get_latest_quote(str(stock.get("ticker")))
         except Exception:
             quote = None
+        snapshot = snapshot_by_ticker([str(stock.get("ticker"))]).get(str(stock.get("ticker")))
         router["stock_symbol"] = stock.get("symbol")
         router["ai_response_message"] = f"Fetched the latest available Bullseye data for {stock.get('symbol')}."
         return {
             "router": router,
-            "rows": [_make_row(stock, 0, f"Specific stock lookup for {stock.get('name')}.", quote)],
+            "rows": [_make_row(stock, 0, f"Specific stock lookup for {stock.get('name')}.", quote, snapshot)],
             "matchedRules": [f"Stock lookup: {stock.get('symbol')}"],
             "explanation": router["ai_response_message"],
-            "source": "Groq JSON router + free quote cache",
+            "source": "LLM JSON router + Supabase stock_snapshot" if snapshot else "LLM JSON router + free quote cache",
         }
 
     if intent == "SECTOR_FILTER":
         sector = _find_sector(str(router.get("sector") or prompt), sectors) or _find_sector(prompt, sectors)
+        sector_stocks = [stock for stock in stocks if sector and _stock_sector(stock) == sector]
+        snapshots = snapshot_by_ticker([stock["ticker"] for stock in sector_stocks if stock.get("ticker")])
         rows = [
-            _make_row(stock, index, f"Included in {sector} from the loaded Bullseye universe.")
-            for index, stock in enumerate(stocks)
-            if sector and _stock_sector(stock) == sector
+            _make_row(stock, index, f"Included in {sector} from the loaded Bullseye universe.", snapshot=snapshots.get(stock.get("ticker")))
+            for index, stock in enumerate(sector_stocks)
+            if snapshots.get(stock.get("ticker"))
         ][:80]
         router["sector"] = sector
         router["ai_response_message"] = f"Loaded {len(rows)} stocks from the {sector} sector." if sector else "I could not match that sector yet."
@@ -495,12 +732,12 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
             "rows": rows,
             "matchedRules": [f"Sector: {sector}"] if sector else [],
             "explanation": router["ai_response_message"],
-            "source": "Groq JSON router + local sector rules",
+            "source": "LLM JSON router + Supabase stock_snapshot",
         }
 
     if intent == "CUSTOM_FILTER":
         params = router.get("custom_query_parameters")
-        if isinstance(params, dict) and _has_fundamental_filter(prompt, params):
+        if (isinstance(params, dict) and _has_fundamental_filter(prompt, params)) or router.get("filters"):
             return _fundamental_filter_rows(prompt, stocks, sectors, router)
 
         sector = _find_sector(str(router.get("sector") or prompt), sectors) or _find_sector(prompt, sectors)
@@ -517,7 +754,7 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
             + (" " + str(live.get("explanation", "")))
             + (f" Sector scope: {sector}." if sector else "")
         )
-        live["source"] = "Groq JSON router + cached Yahoo Finance OHLCV"
+        live["source"] = "LLM JSON router + cached Yahoo Finance OHLCV"
         return live
 
     return {
@@ -525,7 +762,7 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
         "rows": [],
         "matchedRules": [],
         "explanation": router["ai_response_message"],
-        "source": "Groq JSON router",
+        "source": "LLM JSON router",
     }
 
 

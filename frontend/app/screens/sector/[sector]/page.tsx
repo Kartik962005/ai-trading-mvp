@@ -12,7 +12,8 @@ export default function SectorDetailPage() {
   const sector = decodeURIComponent(params.sector);
   const rows = useMemo(() => getRowsForSector(sector), [sector]);
   const averageScore = Math.round(rows.reduce((sum, row) => sum + row.score, 0) / Math.max(rows.length, 1));
-  const topRoce = rows.length ? Math.max(...rows.map(row => row.roce)).toFixed(1) : '0.0';
+  const roceValues = rows.map(row => row.roce).filter((value): value is number => typeof value === 'number');
+  const topRoce = roceValues.length ? Math.max(...roceValues).toFixed(1) : '-';
 
   return (
     <main className="min-h-screen bg-[#f8fcff] text-slate-950 font-['Inter'] selection:bg-cyan-500/20">

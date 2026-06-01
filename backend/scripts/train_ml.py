@@ -32,6 +32,7 @@ import math
 import os
 import sys
 
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -62,6 +63,14 @@ except Exception:
 FRAMES_CACHE = os.path.join(_HERE, "frames_5y.pkl")
 DATASET_CACHE = os.path.join(_HERE, "ml_dataset.pkl")
 OOS_CACHE = os.path.join(_HERE, "ml_oos.pkl")
+MODEL_ARTIFACT = os.path.join(
+    _BACKEND,
+    "app",
+    "services",
+    "daily_signal_engine",
+    "artifacts",
+    "win_probability_model.joblib",
+)
 
 
 def get_frames(rebuild: bool):
@@ -124,6 +133,64 @@ def _calibrate(base, X_cal, y_cal):
     if _HAS_FROZEN:
         return CalibratedClassifierCV(FrozenEstimator(base), method="isotonic").fit(X_cal, y_cal)
     return CalibratedClassifierCV(base, method="isotonic", cv="prefit").fit(X_cal, y_cal)
+
+
+def _train_final_model(df: pd.DataFrame):
+    ordered = df.sort_values("date").reset_index(drop=True)
+    dates = sorted(ordered["date"].unique())
+    if len(dates) < 20:
+        raise RuntimeError("Not enough dates to train the final runtime model.")
+    cut = dates[int(len(dates) * 0.85)]
+    train = ordered[ordered["date"] < cut]
+    cal = ordered[ordered["date"] >= cut]
+    if train.empty or cal["label_win"].nunique() < 2:
+        train, cal = ordered, ordered
+    base = _make_model().fit(train[FEATURE_COLUMNS], train["label_win"])
+    try:
+        return _calibrate(base, cal[FEATURE_COLUMNS], cal["label_win"])
+    except Exception as exc:
+        print(f"Final calibration failed ({exc}); saving the raw classifier.")
+        return base
+
+
+def _return_calibration(oos: pd.DataFrame, bins: int = 8) -> list[dict[str, float]]:
+    rows = oos[["p_win", "realized_r"]].dropna().copy()
+    if rows.empty:
+        return []
+    q = min(bins, int(rows["p_win"].nunique()))
+    if q < 2:
+        return [{
+            "p_min": round(float(rows["p_win"].min()), 6),
+            "p_max": round(float(rows["p_win"].max()), 6),
+            "mean_p_win": round(float(rows["p_win"].mean()), 6),
+            "mean_realized_r": round(float(rows["realized_r"].mean()), 6),
+            "samples": int(len(rows)),
+        }]
+    rows["bucket"] = pd.qcut(rows["p_win"], q=q, duplicates="drop")
+    calibration: list[dict[str, float]] = []
+    for bucket, sub in rows.groupby("bucket", observed=True):
+        calibration.append({
+            "p_min": round(float(bucket.left), 6),
+            "p_max": round(float(bucket.right), 6),
+            "mean_p_win": round(float(sub["p_win"].mean()), 6),
+            "mean_realized_r": round(float(sub["realized_r"].mean()), 6),
+            "samples": int(len(sub)),
+        })
+    return calibration
+
+
+def save_runtime_artifact(df: pd.DataFrame, oos: pd.DataFrame, output_path: str) -> None:
+    artifact = {
+        "model": _train_final_model(df),
+        "feature_columns": list(FEATURE_COLUMNS),
+        "hold_days": 5,
+        "return_calibration": _return_calibration(oos),
+        "created_by": "backend/scripts/train_ml.py",
+        "model_family": "HistGradientBoostingClassifier",
+    }
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    joblib.dump(artifact, output_path)
+    print(f"\nSaved runtime model artifact: {output_path}")
 
 
 def walk_forward(df: pd.DataFrame, hold_days: int, initial_days: int, step_days: int):
@@ -228,6 +295,7 @@ def main() -> None:
     ap.add_argument("--cost", type=float, default=0.05)
     ap.add_argument("--initial-days", type=int, default=500, help="warm-up days before first OOS")
     ap.add_argument("--step-days", type=int, default=60, help="OOS window / retrain cadence")
+    ap.add_argument("--model-out", default=MODEL_ARTIFACT, help="runtime joblib artifact path")
     args = ap.parse_args()
 
     df = get_dataset(args.rebuild or args.rebuild_dataset, args.rebuild, args.hold)
@@ -285,6 +353,8 @@ def main() -> None:
         print(f"  ML does NOT clear the bar: decisive R {dec}. Honest result — do "
               f"not ship as a 'winning' model. Next: better features / labels / horizon, "
               f"not a confident rollout.")
+
+    save_runtime_artifact(df, oos, args.model_out)
 
 
 def _n(v) -> str:

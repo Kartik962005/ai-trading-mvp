@@ -5,6 +5,14 @@ import time
 import os
 import threading
 
+try:
+    from app.services import price_store
+    PRICE_STORE_OK = True
+except Exception as e:
+    print(f"[PriceStore] not available: {e}. Running without Storage cache.")
+    price_store = None
+    PRICE_STORE_OK = False
+
 # ── Safe Supabase import ───────────────────────────────────────────────────────
 try:
     from app.core.supabase_client import supabase
@@ -48,6 +56,34 @@ YAHOO_HEADERS = {
     "Accept": "application/json,text/plain,*/*",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+
+def _required_history_rows(days: int) -> int:
+    return max(50, min(days, int(days * 0.55)))
+
+
+def _normalize_cached_history(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out['date'] = pd.to_datetime(out['date'], errors='coerce')
+    for col in ['open', 'high', 'low', 'close', 'volume']:
+        out[col] = pd.to_numeric(out[col], errors='coerce')
+    return out.dropna().sort_values('date').reset_index(drop=True)
+
+
+def _cache_status(df: pd.DataFrame, ticker: str, days: int, source: str) -> tuple[bool, int]:
+    required_rows = _required_history_rows(days)
+    if len(df) < required_rows:
+        print(f"[Cache] {source} data for {ticker} is too short ({len(df)} rows, need {required_rows}) - refreshing from Yahoo.")
+        return False, 0
+
+    latest_cached = df['date'].max()
+    stale_days = (pd.Timestamp.now().normalize() - latest_cached.normalize()).days
+    if stale_days <= CACHE_MAX_STALE_DAYS:
+        print(f"[Cache] {source} hit for {ticker} ({len(df)} rows, latest {latest_cached.date()})")
+        return True, stale_days
+
+    print(f"[Cache] {source} data for {ticker} is stale (latest {latest_cached.date()}, {stale_days}d old) - refreshing from Yahoo.")
+    return False, stale_days
 
 
 def _clean_scalar(value):
@@ -368,7 +404,9 @@ def get_fundamentals_data(ticker: str):
             "price_to_book": _clean_scalar(info.get("priceToBook")),
             "dividend_yield": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None,
             "return_on_equity": _clean_scalar((info.get("returnOnEquity") or 0) * 100) if info.get("returnOnEquity") is not None else None,
+            "return_on_capital": _clean_scalar((info.get("returnOnCapital") or info.get("returnOnCapitalEmployed") or 0) * 100) if _first_non_null(info.get("returnOnCapital"), info.get("returnOnCapitalEmployed")) is not None else None,
             "return_on_assets": _clean_scalar((info.get("returnOnAssets") or 0) * 100) if info.get("returnOnAssets") is not None else None,
+            "debt_to_equity": _clean_scalar(info.get("debtToEquity")),
             "profit_margins": _clean_scalar((info.get("profitMargins") or 0) * 100) if info.get("profitMargins") is not None else None,
             "operating_margins": _clean_scalar((info.get("operatingMargins") or 0) * 100) if info.get("operatingMargins") is not None else None,
             "revenue_growth": _clean_scalar((info.get("revenueGrowth") or 0) * 100) if info.get("revenueGrowth") is not None else None,
@@ -393,7 +431,9 @@ def get_fundamentals_data(ticker: str):
             {"label": "Price / Book", "value": _clean_scalar(info.get("priceToBook")), "kind": "number"},
             {"label": "Dividend Yield", "value": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None, "kind": "percent"},
             {"label": "ROE", "value": _clean_scalar((info.get("returnOnEquity") or 0) * 100) if info.get("returnOnEquity") is not None else None, "kind": "percent"},
+            {"label": "ROCE", "value": _clean_scalar((info.get("returnOnCapital") or info.get("returnOnCapitalEmployed") or 0) * 100) if _first_non_null(info.get("returnOnCapital"), info.get("returnOnCapitalEmployed")) is not None else None, "kind": "percent"},
             {"label": "ROA", "value": _clean_scalar((info.get("returnOnAssets") or 0) * 100) if info.get("returnOnAssets") is not None else None, "kind": "percent"},
+            {"label": "Debt / Equity", "value": _clean_scalar(info.get("debtToEquity")), "kind": "number"},
             {"label": "Profit Margin", "value": _clean_scalar((info.get("profitMargins") or 0) * 100) if info.get("profitMargins") is not None else None, "kind": "percent"},
             {"label": "Operating Margin", "value": _clean_scalar((info.get("operatingMargins") or 0) * 100) if info.get("operatingMargins") is not None else None, "kind": "percent"},
         ],
@@ -493,12 +533,25 @@ def get_historical_data(ticker: str, days: int = 365):
     now = time.time()
     if ticker in _hist_cache and now - _hist_cache[ticker]['ts'] < HIST_TTL:
         cached_df = _hist_cache[ticker]['df'].copy()
-        required_rows = max(50, min(days, int(days * 0.55)))
+        required_rows = _required_history_rows(days)
         if len(cached_df) >= required_rows:
             return cached_df
 
     # ── Layer 2: Supabase database (simplified — single table, no asset_id) ───
     stale_cache_df = None  # kept as a last-resort fallback if a Yahoo refresh fails
+    if PRICE_STORE_OK and price_store is not None:
+        try:
+            stored_df = price_store.read_prices(ticker)
+            if stored_df is not None and len(stored_df) > 50:
+                df = _normalize_cached_history(stored_df)
+                is_usable, _ = _cache_status(df, ticker, days, "Supabase Storage")
+                if is_usable:
+                    _hist_cache[ticker] = {'df': df.copy(), 'ts': time.time()}
+                    return df
+                stale_cache_df = df
+        except Exception as e:
+            print(f"[Cache] Supabase Storage read failed for {ticker}: {e}")
+
     if SUPABASE_OK and supabase:
         try:
             db_data = supabase.table("stock_prices") \
@@ -508,21 +561,11 @@ def get_historical_data(ticker: str, days: int = 365):
                 .execute()
 
             if db_data.data and len(db_data.data) > 50:
-                df = pd.DataFrame(db_data.data)
-                df['date'] = pd.to_datetime(df['date'])
-                for col in ['open','high','low','close','volume']:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                df = df.dropna()
-                latest_cached = df['date'].max()
-                stale_days = (pd.Timestamp.now().normalize() - latest_cached.normalize()).days
-                # Only trust the cache when its newest row is recent enough. A
-                # cache that ends months ago must be refreshed so date-sensitive
-                # lookups (today, last Friday, movers) see real recent sessions.
-                if stale_days <= CACHE_MAX_STALE_DAYS:
-                    print(f"[Cache] Supabase hit for {ticker} ({len(df)} rows, latest {latest_cached.date()})")
+                df = _normalize_cached_history(pd.DataFrame(db_data.data))
+                is_usable, _ = _cache_status(df, ticker, days, "Supabase Postgres")
+                if is_usable:
                     _hist_cache[ticker] = {'df': df.copy(), 'ts': time.time()}
                     return df
-                print(f"[Cache] Supabase data for {ticker} is stale (latest {latest_cached.date()}, {stale_days}d old) - refreshing from Yahoo.")
                 stale_cache_df = df
         except Exception as e:
             print(f"[Cache] Supabase read failed for {ticker}: {e}")
@@ -551,6 +594,12 @@ def get_historical_data(ticker: str, days: int = 365):
             _hist_cache[ticker] = {'df': stale_cache_df.copy(), 'ts': time.time()}
             return stale_cache_df
         raise ValueError(f"No valid OHLCV data for ticker '{ticker}'.")
+
+    if PRICE_STORE_OK and price_store is not None and SUPABASE_WRITES_OK:
+        try:
+            price_store.write_prices(ticker, df)
+        except Exception as e:
+            print(f"[Cache] Supabase Storage save failed for {ticker}: {e}")
 
     # ── Save to Supabase ───────────────────────────────────────────────────────
     if SUPABASE_OK and supabase and SUPABASE_WRITES_OK:
