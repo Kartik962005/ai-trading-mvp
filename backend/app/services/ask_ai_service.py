@@ -28,6 +28,11 @@ import pandas as pd
 from app.services import llm_client
 from app.services.data_service import get_historical_data
 from app.services.stock_ai_service import run_stock_ai_search
+
+try:  # Persistent precomputed market snapshot (built off-server, read here).
+    from app.services import stock_snapshot_service
+except Exception:  # noqa: BLE001 - degrade to live scans if unavailable
+    stock_snapshot_service = None
 from app.strategies.nlp_backtester import (
     _prepare_df,
     _rule_engine_fallback,
@@ -470,7 +475,9 @@ def _cross_scan(
     known_stocks: list[dict[str, Any]] | None,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    universe = _pick_universe(prompt, known_stocks)
+    # Prefer the precomputed snapshot's top liquid names (stable, relevant, and
+    # restart-proof); fall back to the catalog head only when it's unavailable.
+    universe = _snapshot_candidate_stocks(prompt, known_stocks, SCAN_LIMIT) or _pick_universe(prompt, known_stocks)
     if not universe:
         raise ValueError("No stocks available to scan.")
     strategy = _translate_once(prompt)
@@ -738,7 +745,192 @@ def _move_from_series(series: list[tuple[str, float]], target: dt.date | None) -
     }
 
 
+_LOSERS_RE = re.compile(
+    r"\b(loser|losers|lower circuit|fell|fall|declin|worst|dropped|drop|down the most|"
+    r"went down|crash|crashed|tank|tanked|plunge|plunged|slump|slumped|"
+    r"tumble|tumbled|nosedive|nosedived|sank|sunk)\b"
+)
+
+
+def _snapshot_rows_for_group(group: str) -> list[dict[str, Any]]:
+    """Fresh precomputed snapshot rows for the market group, or [] if unavailable.
+    The snapshot is built from the NSE universe, so it only serves NSE queries."""
+    if group != "NSE" or stock_snapshot_service is None:
+        return []
+    try:
+        return stock_snapshot_service.get_snapshot_rows() or []
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AskAI] snapshot read failed: {exc}")
+        return []
+
+
+def _market_movers_from_snapshot(
+    prompt: str,
+    rows_raw: list[dict[str, Any]],
+    history: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Rank movers instantly from the persistent snapshot (no live universe scan)."""
+    lower = prompt.lower()
+    losers = bool(_LOSERS_RE.search(lower))
+    if re.search(r"\b(week|weekly|7\s*day|past week|this week|last week)\b", lower):
+        metric_key, window_label = "ret_1w", "the past week"
+    elif re.search(r"\b(month|monthly|30\s*day|past month|this month|last month)\b", lower):
+        metric_key, window_label = "ret_1m", "the past month"
+    else:
+        metric_key, window_label = "change_pct", "the latest trading session"
+
+    rows: list[dict[str, Any]] = []
+    for r in rows_raw:
+        try:
+            change = round(float(r.get(metric_key)), 2)
+        except (TypeError, ValueError):
+            continue
+        close = r.get("price")
+        rows.append({
+            "ticker": r.get("ticker"),
+            "symbol": r.get("symbol"),
+            "name": r.get("name"),
+            "change_pct": change,
+            "close": round(float(close), 2) if close not in (None, "") else None,
+            "date": str(r.get("latest_date") or "")[:10] or None,
+        })
+    if not rows:
+        return None
+
+    rows.sort(key=lambda x: x["change_pct"], reverse=not losers)
+    top = rows[:15]
+    direction = "biggest decliners" if losers else "biggest gainers"
+    date_counts = Counter(r["date"] for r in rows if r["date"])
+    session_date = max(date_counts, key=lambda d: (date_counts[d], d)) if date_counts else None
+
+    header = (
+        f"The {direction} over {window_label} (ranked across {len(rows)} NSE stocks "
+        "from precomputed Bullseye market data"
+        + (f", session dated {session_date}" if metric_key == "change_pct" and session_date else "")
+        + "):"
+    )
+    data_lines = [header, "Format - symbol: % change, latest close:"] + [
+        f"  - {r['symbol'] or r['ticker']}: {r['change_pct']:+.2f}%"
+        + (f", close {r['close']}" if r["close"] is not None else "")
+        for r in top
+    ]
+    fallback = f"The {direction} over {window_label}:\n" + "\n".join(
+        f"- {r['symbol'] or r['ticker']}: {r['change_pct']:+.2f}%"
+        + (f" (close {r['close']})" if r["close"] is not None else "")
+        for r in top
+    )
+    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, MOVERS_SYSTEM_PROMPT, history)
+    return {
+        "answer": answer,
+        "mode": "movers",
+        "success": True,
+        "model_used": model_used,
+        "target_stock": None,
+        "backtest": None,
+        "scan": {
+            "session_date": session_date,
+            "direction": direction,
+            "coverage": len(rows),
+            "universe": len(rows_raw),
+            "ready": True,
+            "rows": top,
+        },
+        "suggestions": [
+            "Show me the biggest gainers instead" if losers else "Show me the biggest losers instead",
+            "Best stocks to invest in right now",
+            "Backtest a momentum strategy on the top mover",
+        ],
+    }
+
+
+def _movers_unavailable_message(prompt: str) -> dict[str, Any]:
+    """Returned for NSE movers when the snapshot isn't populated yet. We do NOT
+    fall back to an in-process 2,142-stock scan — that is what exhausts small
+    hosts. The daily off-server snapshot build keeps this table fresh."""
+    losers = bool(_LOSERS_RE.search(prompt.lower()))
+    direction = "biggest decliners" if losers else "biggest gainers"
+    return {
+        "answer": (
+            "I don't have today's full-market scan ready yet — the daily market snapshot "
+            "hasn't been built. Once it's populated I can instantly rank the top movers "
+            "across every NSE stock. Please try again shortly."
+        ),
+        "mode": "movers",
+        "success": True,
+        "model_used": "local",
+        "target_stock": None,
+        "backtest": None,
+        "scan": {
+            "session_date": None,
+            "direction": direction,
+            "coverage": 0,
+            "universe": 0,
+            "ready": False,
+            "rows": [],
+        },
+        "suggestions": [
+            "Best stocks to invest in right now",
+            "Analyze RELIANCE",
+            "Backtest a momentum strategy on TCS",
+        ],
+    }
+
+
+def _snapshot_candidate_stocks(
+    prompt: str,
+    known_stocks: list[dict[str, Any]] | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Top liquid NSE names from the snapshot (by market cap), mapped back to
+    catalog stock dicts, to ground cross-scans without fetching the whole
+    universe live. Empty when the snapshot is unavailable (caller falls back)."""
+    group = _detect_group(prompt)
+    rows = _snapshot_rows_for_group(group)
+    if not rows:
+        return []
+    by_ticker = {str(s.get("ticker")): s for s in (known_stocks or [])}
+
+    def _mcap(r: dict[str, Any]) -> float:
+        try:
+            return float(r.get("market_cap") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    rows.sort(key=_mcap, reverse=True)
+    out: list[dict[str, Any]] = []
+    for r in rows[:limit]:
+        ticker = str(r.get("ticker") or "")
+        if not ticker:
+            continue
+        out.append(by_ticker.get(ticker) or {
+            "ticker": ticker,
+            "symbol": r.get("symbol"),
+            "name": r.get("name"),
+            "exchange": "NSE",
+            "currency": "₹",
+        })
+    return out
+
+
 def _market_movers(
+    prompt: str,
+    known_stocks: list[dict[str, Any]] | None,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Movers from the persistent snapshot (instant, restart-proof). Small
+    universes (e.g. US) still scan live in memory."""
+    group = _detect_group(prompt)
+    rows_raw = _snapshot_rows_for_group(group)
+    if rows_raw:
+        result = _market_movers_from_snapshot(prompt, rows_raw, history)
+        if result is not None:
+            return result
+    if group == "NSE" and stock_snapshot_service is not None:
+        return _movers_unavailable_message(prompt)
+    return _market_movers_inmemory(prompt, known_stocks, history)
+
+
+def _market_movers_inmemory(
     prompt: str,
     known_stocks: list[dict[str, Any]] | None,
     history: list[dict[str, Any]] | None = None,
