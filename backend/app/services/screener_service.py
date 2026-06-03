@@ -59,6 +59,9 @@ def _normalize_prompt(prompt: str) -> str:
         "greather": "greater",
         "grater": "greater",
         "higer": "higher",
+        "small-cap": "small cap",
+        "mid-cap": "mid cap",
+        "large-cap": "large cap",
         "geenral": "general",
         "questipons": "questions",
     }
@@ -115,6 +118,96 @@ def _extract_percent(prompt: str, default: float | None = None) -> float | None:
     return default
 
 
+def _extract_metric_conditions(prompt: str) -> dict[str, dict[str, Any]]:
+    aliases = {
+        "trailing_pe": [r"p\/?e", r"pe ratio", r"\bpe\b", r"historical pe"],
+        "roe": [r"return on equity", r"\broe\b"],
+        "roce": [r"return on capital(?: employed)?", r"\broce\b"],
+        "debt_to_equity": [r"debt[-\s]?to[-\s]?equity", r"debt equity", r"\bd\/e\b"],
+        "operating_margin": [r"operating margins?", r"opm"],
+        "revenue_growth": [r"revenue growth", r"sales growth", r"\brevenue\b", r"\bsales\b"],
+        "profit_growth": [r"profit growth", r"earnings growth", r"eps growth"],
+        "dividend_yield": [r"dividend yield"],
+        "market_cap_cr": [r"market cap(?:italization|italisation)?", r"mcap"],
+    }
+    operator_words = {
+        "below": "<",
+        "under": "<",
+        "less than": "<",
+        "lower than": "<",
+        "above": ">",
+        "over": ">",
+        "greater than": ">",
+        "more than": ">",
+        "at least": ">=",
+        "minimum": ">=",
+        "max": "<=",
+        "maximum": "<=",
+    }
+    operator_pattern = r"<=|>=|<|>|=|below|under|less than|lower than|above|over|greater than|more than|at least|minimum|max|maximum"
+    conditions: dict[str, dict[str, Any]] = {}
+    sqlish_metric_names = [
+        ("market_cap_cr", r"market\s+cap(?:italization|italisation)?|mcap"),
+        ("revenue_growth", r"sales\s+growth(?:\s*3\s*years?)?|revenue\s+growth(?:\s*3\s*years?)?"),
+        ("profit_growth", r"profit\s+growth(?:\s*3\s*years?)?|earnings\s+growth(?:\s*3\s*years?)?"),
+        ("roce", r"roce|return\s+on\s+capital(?:\s+employed)?"),
+        ("roe", r"roe|return\s+on\s+equity"),
+        ("debt_to_equity", r"debt\s+to\s+equity|debt[-\s]?equity|d\/e"),
+        ("dividend_yield", r"dividend\s+yield"),
+        ("operating_margin", r"operating\s+margins?"),
+        ("trailing_pe", r"p\/?e|pe\s+ratio|\bpe\b"),
+    ]
+    for clause in re.split(r"\bAND\b|,", prompt, flags=re.IGNORECASE):
+        for key, metric_pattern in sqlish_metric_names:
+            match = re.search(
+                rf"\b(?:{metric_pattern})\b\s*(?:3\s*years?)?\s*({operator_pattern})\s*(?:rs\.?|inr)?\s*(\d+(?:,\d+)*(?:\.\d+)?)",
+                clause,
+                re.IGNORECASE,
+            )
+            if not match:
+                continue
+            operator = operator_words.get(match.group(1), match.group(1))
+            conditions[key] = {"operator": operator, "value": float(match.group(2).replace(",", ""))}
+            break
+    for key, names in aliases.items():
+        if key in conditions:
+            continue
+        name_pattern = "|".join(names)
+        patterns = [
+            rf"\b(?:{name_pattern})\b.{0,28}?({operator_pattern})\s*(?:rs\.?|inr)?\s*(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:%|percent|crore|cr)?",
+            rf"({operator_pattern})\s*(?:rs\.?|inr)?\s*(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:%|percent|crore|cr)?.{0,28}\b(?:{name_pattern})\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, prompt)
+            if not match:
+                continue
+            groups = [group for group in match.groups() if group]
+            raw_operator = next(
+                (group for group in groups if group in operator_words or group in {"<", "<=", ">", ">=", "="}),
+                None,
+            )
+            raw_value = next((group for group in reversed(groups) if re.fullmatch(r"\d+(?:,\d+)*(?:\.\d+)?", group)), None)
+            if raw_operator is None or raw_value is None:
+                continue
+            operator = operator_words.get(raw_operator, raw_operator)
+            conditions[key] = {"operator": operator, "value": float(raw_value.replace(",", ""))}
+            break
+
+    if re.search(r"\b(zero debt|debt[-\s]?free|no debt)\b", prompt):
+        conditions["debt_to_equity"] = {"operator": "<=", "value": 0.05}
+    elif re.search(r"\b(low debt|lower debt|conservative debt)\b", prompt):
+        conditions["debt_to_equity"] = {"operator": "<=", "value": 0.5}
+    if re.search(r"\b(increasing|expanding|improving|strong|high)\s+operating margins?\b|\boperating margins?\b", prompt):
+        conditions.setdefault("operating_margin", {"operator": ">", "value": 12.0})
+    if re.search(r"\b(high|strong|growing|consistent)\s+(profit|earnings|eps) growth\b|\bprofit growth\b|\bearnings growth\b", prompt):
+        conditions.setdefault("profit_growth", {"operator": ">", "value": 15.0})
+    if re.search(r"\b(high|strong|growing)\s+revenue\b|\brevenue growth\b|\bsales growth\b", prompt):
+        conditions.setdefault("revenue_growth", {"operator": ">", "value": 20.0})
+    if "below book" in prompt or "below book value" in prompt:
+        conditions.setdefault("trailing_pe", {"operator": "<", "value": 15})
+    return conditions
+
+
 def _parse_rules(prompt: str) -> dict[str, Any]:
     clean = _normalize_prompt(prompt)
     direction = None
@@ -161,6 +254,7 @@ def _parse_rules(prompt: str) -> dict[str, Any]:
     resistance = "resistance" in clean
     rsi_condition = _extract_indicator_condition(clean, ["rsi", "relative strength index"])
     mfi_condition = _extract_indicator_condition(clean, ["mfi", "money flow index"])
+    metric_conditions = _extract_metric_conditions(clean)
     oversold = bool("oversold" in clean or (rsi_condition and rsi_condition["operator"] in {"<", "<="} and rsi_condition["value"] <= 35))
     overbought = bool("overbought" in clean or (rsi_condition and rsi_condition["operator"] in {">", ">="} and rsi_condition["value"] >= 70))
     rsi_cross_above = re.search(r"\brsi\b.{0,24}?cross(?:ing|ed)?\s+above\s+(\d+(?:\.\d+)?)", clean)
@@ -241,7 +335,7 @@ def _parse_rules(prompt: str) -> dict[str, Any]:
         if re.search(pattern, clean):
             unavailable_data.append(label)
     fundamental_proxy = bool(re.search(
-        r"\b(undervalued|valuation|cheap|low pe|pe ratio|p/e|pb ratio|p/b|peg|book value|below book|debt free|debt-free|low debt|profit growth|sales growth|revenue growth|eps growth|roe|roce|margin|cash flow|dividend yield|quality|fundamentals?)\b",
+        r"\b(undervalued|valuation|cheap|low pe|pe ratio|p/e|pb ratio|p/b|peg|book value|below book|debt free|debt-free|low debt|profit growth|sales growth|revenue growth|eps growth|roe|roce|margins?|cash flows?|dividend yield|quality|fundamentals?)\b",
         clean,
     ))
 
@@ -270,6 +364,7 @@ def _parse_rules(prompt: str) -> dict[str, Any]:
         "overbought": overbought,
         "rsi_condition": rsi_condition,
         "mfi_condition": mfi_condition,
+        "metric_conditions": metric_conditions,
         "ma_periods": sorted(set(ma_periods or ([20, 50, 200] if "moving average" in clean or "dma" in clean else []))),
         "above_ma": above_ma,
         "below_ma": below_ma,
@@ -313,6 +408,7 @@ def _parse_rules(prompt: str) -> dict[str, Any]:
         or overbought
         or rsi_condition
         or mfi_condition
+        or metric_conditions
         or ma_periods
         or above_ma
         or below_ma
@@ -747,6 +843,15 @@ def _metrics_from_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         "broke_previous_low": False,
         "upper_circuit_proxy": _clean_number(row.get("change_pct")) >= 8,
         "lower_circuit_proxy": _clean_number(row.get("change_pct")) <= -8,
+        "trailing_pe": _clean_number(row.get("trailing_pe")),
+        "roe": _clean_number(row.get("roe")),
+        "roce": _clean_number(row.get("roce")),
+        "debt_to_equity": _clean_number(row.get("debt_to_equity")),
+        "operating_margin": _clean_number(row.get("operating_margin")),
+        "revenue_growth": _clean_number(row.get("revenue_growth")),
+        "profit_growth": _clean_number(row.get("profit_growth")),
+        "dividend_yield": _clean_number(row.get("dividend_yield")),
+        "market_cap_cr": _clean_number(row.get("market_cap_cr")),
     }
 
 
@@ -827,6 +932,10 @@ def _passes_snapshot_rules(metrics: dict[str, Any], rules: dict[str, Any], days:
         and float(metrics.get("return_3m_pct") or 0) > 0
     ):
         return False
+    for key, condition in (rules.get("metric_conditions") or {}).items():
+        value = metrics.get(key)
+        if value is None or not _compare_metric(float(value), condition["operator"], float(condition["value"])):
+            return False
     return True
 
 
@@ -1065,6 +1174,9 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
         labels.append("Proxy used for unavailable live data: " + ", ".join(rules["unavailable_data"]))
     if rules.get("fundamental_proxy"):
         labels.append("fundamental proxy: valuation, growth, debt, ROE/ROCE, margin, cash-flow, or dividend language detected")
+    for field, condition in (rules.get("metric_conditions") or {}).items():
+        label = field.replace("_", " ").upper() if field in {"roe", "roce"} else field.replace("_", " ")
+        labels.append(f"{label} {condition['operator']} {condition['value']:g}")
 
     def sort_key(row: dict[str, Any]):
         technical = row.get("technical", {})

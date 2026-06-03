@@ -64,6 +64,8 @@ type Scan = {
   sell_expr?: string;
   mode?: string;
   scanned: number;
+  universe?: number;
+  partial?: boolean;
   traded: number;
   profitable: number;
   beat_buy_hold: number;
@@ -90,6 +92,38 @@ type MoversScan = {
   rows: MoversRow[];
 };
 
+type ScreenerRow = {
+  stock?: {
+    symbol?: string;
+    ticker?: string;
+    name?: string;
+  };
+  cmp?: number | null;
+  pe?: number | null;
+  marketCapCr?: number | null;
+  divYield?: number | null;
+  revenueGrowth3Yr?: number | null;
+  profitGrowth3Yr?: number | null;
+  roe?: number | null;
+  roce?: number | null;
+  avgRoce7Yr?: number | null;
+  debtToEquity?: number | null;
+  operatingMargin?: number | null;
+  score?: number | null;
+  reason?: string;
+  technical?: {
+    return1mPct?: number | null;
+    return1yPct?: number | null;
+  };
+};
+
+type ScreenerResult = {
+  rows: ScreenerRow[];
+  matchedRules?: string[];
+  explanation?: string;
+  source?: string;
+};
+
 type AskAiResponse = {
   answer: string;
   mode: string;
@@ -99,6 +133,7 @@ type AskAiResponse = {
   context_used?: boolean;
   backtest: Backtest | null;
   scan: Scan | MoversScan | null;
+  screener?: ScreenerResult | null;
   suggestions?: string[];
   conversation_id?: string;
   saved?: boolean;
@@ -125,6 +160,7 @@ type ChatMessage = {
   content: string;
   data?: Partial<AskAiResponse>;
   error?: boolean;
+  thoughtMs?: number;
 };
 
 type ConversationSummary = {
@@ -182,8 +218,31 @@ function toneClass(value: number | undefined | null) {
   return 'text-slate-600';
 }
 
+function formatDuration(ms?: number | null) {
+  if (ms === undefined || ms === null || ms < 0) return '';
+  const totalSeconds = Math.max(1, Math.round(ms / 1000));
+  if (totalSeconds < 60) {
+    return `${totalSeconds} second${totalSeconds === 1 ? '' : 's'}`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds ? `${minutes} min ${seconds} sec` : `${minutes} min`;
+}
+
+// A backticked snippet is "runnable" when it reads like a question/command the
+// assistant could answer — so we render it as a tap-to-run chip instead of inert
+// code. This is what lets a user tap an example the answer suggested (e.g.
+// `backtest: buy NET when RSI crosses above 30…`) instead of copy-pasting it.
+function looksRunnable(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (t.length < 8 || t.length > 220 || !t.includes(' ')) return false;
+  const startsWithVerb = /^(backtest|back test|scan|screen|show|find|which|what|explain|analyze|analyse|compare|buy|sell|test|rank|list)\b/.test(t);
+  const hasStrategyPhrase = /\b(crosses?|golden cross|death cross|gap up|gap down|moving average|stop[- ]?loss|breakout|mean[- ]reversion|momentum|rsi|macd|buy and hold|buy-and-hold)\b/.test(t);
+  return startsWithVerb || hasStrategyPhrase;
+}
+
 // ── Minimal markdown rendering (no extra deps) ────────────────────────────────
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
+function renderInline(text: string, keyPrefix: string, onRun?: (prompt: string) => void): ReactNode[] {
   const nodes: ReactNode[] = [];
   const regex = /(\*\*[^*]+\*\*|`[^`]+`)/g;
   let lastIndex = 0;
@@ -197,11 +256,27 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     if (token.startsWith('**')) {
       nodes.push(<strong key={`${keyPrefix}-b-${i}`} className="font-bold text-slate-900">{token.slice(2, -2)}</strong>);
     } else {
-      nodes.push(
-        <code key={`${keyPrefix}-c-${i}`} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-cyan-700">
-          {token.slice(1, -1)}
-        </code>
-      );
+      const code = token.slice(1, -1);
+      if (onRun && looksRunnable(code)) {
+        nodes.push(
+          <button
+            key={`${keyPrefix}-r-${i}`}
+            type="button"
+            onClick={() => onRun(code)}
+            title="Tap to run this"
+            className="group/run mx-0.5 inline rounded bg-cyan-50 px-1.5 py-0.5 text-left font-mono text-[0.85em] text-cyan-700 underline decoration-cyan-300 decoration-dotted underline-offset-2 transition hover:bg-cyan-100 hover:text-cyan-900 hover:decoration-solid"
+          >
+            {code}
+            <span className="ml-1 text-cyan-400 transition group-hover/run:text-cyan-600" aria-hidden="true">↵</span>
+          </button>
+        );
+      } else {
+        nodes.push(
+          <code key={`${keyPrefix}-c-${i}`} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-cyan-700">
+            {code}
+          </code>
+        );
+      }
     }
     lastIndex = regex.lastIndex;
     i += 1;
@@ -210,7 +285,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
-function renderMarkdown(text: string): ReactNode[] {
+function renderMarkdown(text: string, onRun?: (prompt: string) => void): ReactNode[] {
   const lines = text.split('\n');
   const blocks: ReactNode[] = [];
   let bullets: string[] = [];
@@ -223,7 +298,7 @@ function renderMarkdown(text: string): ReactNode[] {
     blocks.push(
       <ul key={`ul-${key++}`} className="my-2 list-disc space-y-1 pl-5">
         {items.map((item, idx) => (
-          <li key={idx}>{renderInline(item, `li-${key}-${idx}`)}</li>
+          <li key={idx}>{renderInline(item, `li-${key}-${idx}`, onRun)}</li>
         ))}
       </ul>
     );
@@ -241,7 +316,7 @@ function renderMarkdown(text: string): ReactNode[] {
     if (headingMatch) {
       blocks.push(
         <p key={`h-${key++}`} className="mt-3 mb-1 text-sm font-black uppercase tracking-wide text-slate-900">
-          {renderInline(headingMatch[1], `h-${key}`)}
+          {renderInline(headingMatch[1], `h-${key}`, onRun)}
         </p>
       );
     } else if (line.trim() === '') {
@@ -249,7 +324,7 @@ function renderMarkdown(text: string): ReactNode[] {
     } else {
       blocks.push(
         <p key={`p-${key++}`} className="my-2 leading-relaxed">
-          {renderInline(line, `p-${key}`)}
+          {renderInline(line, `p-${key}`, onRun)}
         </p>
       );
     }
@@ -353,12 +428,17 @@ function ScanCard({ data }: { data: Scan }) {
         </div>
       )}
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCell label="Scanned" value={String(data.scanned)} />
+        <StatCell label="Scanned" value={data.universe ? `${data.scanned} / ${data.universe}` : String(data.scanned)} />
         <StatCell label="Traded" value={String(data.traded)} />
         <StatCell label="Profitable" value={`${data.profitable}/${data.traded}`} tone="text-emerald-600" />
         <StatCell label="Beat B&H" value={`${data.beat_buy_hold}/${data.traded}`} />
         <StatCell label="Avg return" value={pct(data.avg_total_return_pct)} tone={toneClass(data.avg_total_return_pct)} />
       </div>
+      {data.partial && (
+        <p className="mt-2 text-[10px] text-slate-400">
+          Scanned {data.scanned} of {data.universe} stocks within the time budget. Ask again to continue the scan.
+        </p>
+      )}
 
       {data.rows.length > 0 && (
         <div className="mt-3 overflow-x-auto">
@@ -444,18 +524,95 @@ function MoversCard({ data }: { data: MoversScan }) {
   );
 }
 
+function num(value: number | undefined | null, digits = 2) {
+  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function ScreenerCard({ data }: { data: ScreenerResult }) {
+  const rows = data.rows || [];
+  return (
+    <div className="mt-3 rounded-2xl border border-cyan-200/70 bg-cyan-50/40 p-3 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs font-black uppercase tracking-wider text-cyan-800">Screener matches</div>
+        {data.source && (
+          <span className="rounded-full bg-white/80 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            {data.source}
+          </span>
+        )}
+      </div>
+      {data.matchedRules && data.matchedRules.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {data.matchedRules.slice(0, 6).map((rule) => (
+            <span key={rule} className="rounded-full border border-cyan-100 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+              {rule}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {rows.length > 0 ? (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-[11px]">
+            <thead>
+              <tr className="text-slate-400">
+                <th className="py-1 pr-3 font-bold uppercase">#</th>
+                <th className="py-1 pr-3 font-bold uppercase">Stock</th>
+                <th className="py-1 pr-3 font-bold uppercase">MCap Cr</th>
+                <th className="py-1 pr-3 font-bold uppercase">Sales Gr</th>
+                <th className="py-1 pr-3 font-bold uppercase">Profit Gr</th>
+                <th className="py-1 pr-3 font-bold uppercase">ROCE</th>
+                <th className="py-1 pr-3 font-bold uppercase">D/E</th>
+                <th className="py-1 pr-3 font-bold uppercase">PE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 20).map((row, idx) => {
+                const symbol = row.stock?.symbol || row.stock?.ticker || `match-${idx}`;
+                return (
+                  <tr key={`${symbol}-${idx}`} className="border-t border-slate-100">
+                    <td className="py-1 pr-3 text-slate-400 tabular-nums">{idx + 1}</td>
+                    <td className="py-1 pr-3">
+                      <div className="font-bold text-slate-700">{symbol}</div>
+                      {row.stock?.name && <div className="max-w-[180px] truncate text-[10px] text-slate-400">{row.stock.name}</div>}
+                    </td>
+                    <td className="py-1 pr-3 text-slate-600 tabular-nums">{num(row.marketCapCr, 0)}</td>
+                    <td className={`py-1 pr-3 font-bold tabular-nums ${toneClass(row.revenueGrowth3Yr)}`}>{pct(row.revenueGrowth3Yr)}</td>
+                    <td className={`py-1 pr-3 font-bold tabular-nums ${toneClass(row.profitGrowth3Yr)}`}>{pct(row.profitGrowth3Yr)}</td>
+                    <td className="py-1 pr-3 font-bold text-slate-700 tabular-nums">{pct(row.roce ?? row.avgRoce7Yr)}</td>
+                    <td className="py-1 pr-3 text-slate-600 tabular-nums">{num(row.debtToEquity)}</td>
+                    <td className="py-1 pr-3 text-slate-600 tabular-nums">{num(row.pe)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          No exact matches were found for this screen.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AskAiPage() {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [appContext, setAppContext] = useState<AppContext>({ current_page: 'ask-ai' });
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const autoOpenedRef = useRef(false);
+  const activeAbortRef = useRef<AbortController | null>(null);
+  const thinkingStartedAtRef = useRef<number | null>(null);
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabaseAvailable = !!(supabaseUrl && supabaseKey);
@@ -509,35 +666,51 @@ export default function AskAiPage() {
   }
 
   function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
-    requestAnimationFrame(() => {
+    const scroll = () => {
       bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
       if (typeof window !== 'undefined') {
         window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
       }
-    });
+    };
+    requestAnimationFrame(scroll);
+    window.setTimeout(scroll, 80);
   }
 
   async function loadConversations(): Promise<ConversationSummary[]> {
+    setConversationsLoading(true);
     const headers = await authHeaders();
     if (!('Authorization' in headers)) {
       setConversations([]);
+      setConversationsLoading(false);
       return [];
     }
-    const response = await fetch(`${BACKEND}/api/v1/ask-ai/conversations`, { headers, cache: 'no-store' });
-    if (!response.ok) {
-      setConversations([]);
-      return [];
+    try {
+      const response = await fetch(`${BACKEND}/api/v1/ask-ai/conversations`, { headers, cache: 'no-store' });
+      if (!response.ok) {
+        setConversations([]);
+        return [];
+      }
+      const data = await response.json().catch(() => ({}));
+      const rows = Array.isArray(data.conversations) ? data.conversations : [];
+      setConversations(rows);
+      return rows;
+    } finally {
+      setConversationsLoading(false);
     }
-    const data = await response.json().catch(() => ({}));
-    const rows = Array.isArray(data.conversations) ? data.conversations : [];
-    setConversations(rows);
-    return rows;
   }
 
   useEffect(() => {
     scrollToBottom('smooth');
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (!loading || thinkingStartedAtRef.current === null) return;
+    const timer = window.setInterval(() => {
+      setElapsedMs(Date.now() - (thinkingStartedAtRef.current ?? Date.now()));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   useEffect(() => {
     let active = true;
@@ -603,6 +776,10 @@ export default function AskAiPage() {
 
     const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: trimmed };
     const history = messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
+    const controller = new AbortController();
+    activeAbortRef.current = controller;
+    thinkingStartedAtRef.current = Date.now();
+    setElapsedMs(0);
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
@@ -613,6 +790,7 @@ export default function AskAiPage() {
       const response = await fetch(`${BACKEND}/api/v1/ask-ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...tokenHeaders },
+        signal: controller.signal,
         body: JSON.stringify({ prompt: trimmed, history, stocks: STOCKS, context: appContext, conversation_id: conversationId }),
       });
       const raw = await response.json().catch(() => ({}));
@@ -626,26 +804,39 @@ export default function AskAiPage() {
       if (data.conversation_id) {
         setConversationId(data.conversation_id);
       }
+      const thoughtMs = Date.now() - (thinkingStartedAtRef.current ?? Date.now());
       setMessages((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, role: 'assistant', content: data.answer || 'No answer returned.', data },
+        { id: `a-${Date.now()}`, role: 'assistant', content: data.answer || 'No answer returned.', data, thoughtMs },
       ]);
       if (data.saved) {
         loadConversations().catch(() => {});
       }
     } catch (err) {
+      const thoughtMs = Date.now() - (thinkingStartedAtRef.current ?? Date.now());
+      const stopped = err instanceof Error && err.name === 'AbortError';
       setMessages((prev) => [
         ...prev,
         {
           id: `e-${Date.now()}`,
           role: 'assistant',
-          content: err instanceof Error ? err.message : 'Something went wrong. Please try again.',
-          error: true,
+          content: stopped
+            ? 'Stopped. You can ask a different question now.'
+            : err instanceof Error ? err.message : 'Something went wrong. Please try again.',
+          error: !stopped,
+          thoughtMs,
         },
       ]);
     } finally {
+      activeAbortRef.current = null;
+      thinkingStartedAtRef.current = null;
+      setElapsedMs(0);
       setLoading(false);
     }
+  }
+
+  function stopThinking() {
+    activeAbortRef.current?.abort();
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -740,40 +931,55 @@ export default function AskAiPage() {
         </div>
       </header>
 
-      <div ref={scrollRef} className="mx-auto w-full max-w-[1100px] flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        {conversations.length > 0 && (
-          <aside className="mb-5 rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-            <div className="mb-2 flex items-center justify-between gap-3">
+      <div className="w-full flex-1 px-4 py-6 sm:px-6 lg:ml-[292px] lg:w-[calc(100%-292px)]">
+        <aside className="mb-4 h-fit rounded-2xl border border-slate-200/80 bg-white/82 p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl lg:fixed lg:bottom-0 lg:left-0 lg:top-[85px] lg:z-30 lg:mb-0 lg:w-[292px] lg:overflow-y-auto lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/88 lg:px-4 lg:py-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
               <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Recent chats</div>
-              <button
-                type="button"
-                onClick={() => loadConversations().catch(() => {})}
-                disabled={historyLoading}
-                className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 transition hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-40"
-              >
-                Refresh
-              </button>
+              <div className="mt-0.5 text-[11px] text-slate-400">Last 48 hours</div>
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {conversations.slice(0, 8).map((conversation) => (
+            <button
+              type="button"
+              onClick={() => loadConversations().catch(() => {})}
+              disabled={historyLoading || conversationsLoading}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 transition hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-40"
+            >
+              Refresh
+            </button>
+          </div>
+          <div className="space-y-2">
+            {conversationsLoading && conversations.length === 0 ? (
+              <>
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="h-[54px] animate-pulse rounded-xl border border-slate-100 bg-slate-100/70" />
+                ))}
+              </>
+            ) : conversations.length > 0 ? (
+              conversations.slice(0, 12).map((conversation) => (
                 <button
                   key={conversation.id}
                   type="button"
                   onClick={() => openConversation(conversation.id)}
                   disabled={historyLoading}
-                  className={`min-w-[180px] max-w-[240px] rounded-xl border px-3 py-2 text-left transition disabled:opacity-50 ${
+                  className={`w-full rounded-xl border px-3 py-2 text-left transition disabled:opacity-50 ${
                     conversation.id === conversationId
                       ? 'border-cyan-300 bg-cyan-50 text-cyan-900'
                       : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-cyan-800'
                   }`}
                 >
                   <div className="truncate text-[12px] font-bold">{conversation.title || 'Ask AI chat'}</div>
-                  <div className="mt-1 text-[10px] text-slate-400">{new Date(conversation.updated_at).toLocaleString()}</div>
+                  <div className="mt-1 truncate text-[10px] text-slate-400">{new Date(conversation.updated_at).toLocaleString()}</div>
                 </button>
-              ))}
-            </div>
-          </aside>
-        )}
+              ))
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-[12px] leading-5 text-slate-400">
+                {signedInUser ? 'No saved chats yet.' : 'Sign in to save Ask AI history.'}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div ref={scrollRef} className="mx-auto min-h-0 w-full max-w-[1040px] overflow-y-auto">
         {isEmpty ? (
           <div className="mx-auto max-w-2xl py-8 text-center sm:py-14">
             <div className="animate-rise mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-400 text-3xl text-white shadow-[0_22px_55px_rgba(6,182,212,0.4)]">✦</div>
@@ -816,7 +1022,12 @@ export default function AskAiPage() {
                           message.error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-white/70 bg-white/90 text-slate-700 backdrop-blur-sm'
                         }`}
                       >
-                      <div className="prose-sm">{renderMarkdown(message.content)}</div>
+                      {message.thoughtMs !== undefined && (
+                        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          Thought for {formatDuration(message.thoughtMs)}
+                        </div>
+                      )}
+                      <div className="prose-sm">{renderMarkdown(message.content, message.error ? undefined : send)}</div>
                       {message.data?.backtest && (
                         <BacktestCard data={message.data.backtest} ticker={message.data.target_stock ?? null} />
                       )}
@@ -871,6 +1082,9 @@ export default function AskAiPage() {
                       {message.data?.mode === 'cross_scan' && message.data.scan && (
                         <ScanCard data={message.data.scan as Scan} />
                       )}
+                      {message.data?.mode === 'screener' && message.data.screener && (
+                        <ScreenerCard data={message.data.screener} />
+                      )}
                       {message.data?.model_used && message.data.model_used !== 'local' && (
                         <div className="mt-2 text-[9px] font-bold uppercase tracking-widest text-slate-300">
                           via {message.data.model_used}
@@ -878,17 +1092,24 @@ export default function AskAiPage() {
                       )}
                     </div>
                       {message.data?.suggestions && message.data.suggestions.length > 0 && (
-                        <div className="mt-2.5 flex flex-wrap gap-2">
-                          {message.data.suggestions.map((suggestion) => (
-                            <button
-                              key={suggestion}
-                              type="button"
-                              onClick={() => send(suggestion)}
-                              className="rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[11px] font-medium text-slate-500 transition hover:border-cyan-300 hover:bg-white hover:text-cyan-700"
-                            >
-                              {suggestion}
-                            </button>
-                          ))}
+                        <div className="mt-2.5">
+                          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                            Tap to ask next
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {message.data.suggestions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onClick={() => send(suggestion)}
+                                disabled={loading}
+                                className="group/sg inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[11px] font-medium text-slate-500 transition hover:border-cyan-300 hover:bg-white hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <span className="text-cyan-400 transition group-hover/sg:text-cyan-600" aria-hidden="true">→</span>
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -899,25 +1120,37 @@ export default function AskAiPage() {
             {loading && (
               <div className="flex justify-start gap-2.5">
                 <div className="mt-0.5 hidden h-8 w-8 shrink-0 animate-pulse items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-400 text-sm text-white sm:flex" aria-hidden="true">✦</div>
-                <div className="rounded-2xl rounded-tl-md border border-white/70 bg-white/90 px-4 py-3 text-[14px] text-slate-400 shadow-[0_16px_44px_rgba(15,23,42,0.07)] backdrop-blur-sm">
-                  <span className="inline-flex items-center gap-2">
-                    Crunching the numbers
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl rounded-tl-md border border-white/70 bg-white/90 px-4 py-3 text-[14px] text-slate-500 shadow-[0_16px_44px_rgba(15,23,42,0.07)] backdrop-blur-sm">
+                  <div className="inline-flex items-center gap-2">
+                    <span>Crunching the numbers</span>
+                    <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-700">
+                      {formatDuration(elapsedMs)}
+                    </span>
                     <span className="inline-flex gap-1">
                       <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 [animation:dot-bounce_1.2s_ease-in-out_infinite]" />
                       <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 [animation:dot-bounce_1.2s_ease-in-out_0.2s_infinite]" />
                       <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 [animation:dot-bounce_1.2s_ease-in-out_0.4s_infinite]" />
                     </span>
-                  </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={stopThinking}
+                    className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-600 transition hover:border-rose-300 hover:bg-rose-100"
+                  >
+                    <span className="mr-1 text-sm leading-none" aria-hidden="true">×</span>
+                    Stop
+                  </button>
                 </div>
               </div>
             )}
             <div ref={bottomRef} aria-hidden="true" />
           </div>
         )}
+        </div>
       </div>
 
-      <div className="sticky bottom-0 border-t border-white/60 bg-white/70 backdrop-blur-xl">
-        <div className="mx-auto w-full max-w-[1100px] px-4 py-3 sm:px-6 sm:py-4">
+      <div className="sticky bottom-0 border-t border-white/60 bg-white/70 backdrop-blur-xl lg:ml-[292px]">
+        <div className="mx-auto w-full max-w-[1040px] px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-end gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_48px_rgba(8,145,178,0.12)] transition focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100/70">
             <textarea
               value={input}
@@ -927,18 +1160,30 @@ export default function AskAiPage() {
               placeholder="Ask a question or describe a strategy to backtest…"
               className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] text-slate-900 outline-none placeholder:text-slate-400"
             />
-            <button
-              type="button"
-              onClick={() => send(input)}
-              disabled={loading || !input.trim()}
-              aria-label="Send message"
-              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-br from-cyan-600 to-emerald-500 px-4 text-[12px] font-bold uppercase tracking-wider text-white shadow-[0_10px_26px_rgba(6,182,212,0.32)] transition hover:from-cyan-500 hover:to-emerald-400 hover:shadow-[0_12px_30px_rgba(6,182,212,0.42)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-            >
-              Send
-              <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
-                <path d="M4 10h11M10.5 5.5L15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            {loading ? (
+              <button
+                type="button"
+                onClick={stopThinking}
+                aria-label="Stop generating answer"
+                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-rose-500 px-4 text-[12px] font-bold uppercase tracking-wider text-white shadow-[0_10px_26px_rgba(244,63,94,0.24)] transition hover:bg-rose-400"
+              >
+                <span className="text-base leading-none" aria-hidden="true">×</span>
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => send(input)}
+                disabled={!input.trim()}
+                aria-label="Send message"
+                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-br from-cyan-600 to-emerald-500 px-4 text-[12px] font-bold uppercase tracking-wider text-white shadow-[0_10px_26px_rgba(6,182,212,0.32)] transition hover:from-cyan-500 hover:to-emerald-400 hover:shadow-[0_12px_30px_rgba(6,182,212,0.42)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+              >
+                Send
+                <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                  <path d="M4 10h11M10.5 5.5L15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
           </div>
           <p className="mt-2.5 text-center text-[10px] text-slate-400">
             Educational analysis on historical data, not financial advice. Past performance does not predict future results.

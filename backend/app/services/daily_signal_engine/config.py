@@ -28,6 +28,7 @@ RISK_PROFILES = {
     "Conservative": {
         "confidence_threshold": 0.61,
         "min_risk_reward": 1.4,
+        "min_final_score": float(os.getenv("CONSERVATIVE_MIN_FINAL_SCORE", "0.50")),
         "target_atr_multiplier": 0.85,
         "stop_atr_multiplier": 0.55,
         "max_atr_pct": 5.0,
@@ -36,6 +37,7 @@ RISK_PROFILES = {
     "Balanced": {
         "confidence_threshold": 0.58,
         "min_risk_reward": 1.25,
+        "min_final_score": float(os.getenv("BALANCED_MIN_FINAL_SCORE", "0.48")),
         "target_atr_multiplier": 1.0,
         "stop_atr_multiplier": 0.72,
         "max_atr_pct": 6.4,
@@ -44,6 +46,7 @@ RISK_PROFILES = {
     "Aggressive": {
         "confidence_threshold": 0.55,
         "min_risk_reward": 1.2,
+        "min_final_score": float(os.getenv("AGGRESSIVE_MIN_FINAL_SCORE", "0.46")),
         "target_atr_multiplier": 1.18,
         "stop_atr_multiplier": 0.82,
         "max_atr_pct": 7.2,

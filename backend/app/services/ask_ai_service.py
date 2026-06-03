@@ -27,6 +27,7 @@ import pandas as pd
 
 from app.services import llm_client
 from app.services.data_service import get_historical_data
+from app.services.screener_service import screen_stocks
 from app.services.stock_ai_service import run_stock_ai_search
 
 try:  # Persistent precomputed market snapshot (built off-server, read here).
@@ -38,6 +39,7 @@ from app.strategies.nlp_backtester import (
     _rule_engine_fallback,
     _run_crossover,
     _run_simple,
+    _run_stop_loss,
     _run_target_exit,
     _summary,
     _eval_safe,
@@ -45,7 +47,14 @@ from app.strategies.nlp_backtester import (
     translate_strategy,
 )
 
-SCAN_LIMIT = max(5, min(int(os.getenv("ASK_AI_SCAN_LIMIT", "40")), 120))
+# How many stocks a cross-universe scan covers. Default to the whole NSE universe
+# (~2,150 names) — the daily GitHub snapshot keeps OHLCV warm in storage, so the
+# scan reads cache, not live Yahoo. A wall-clock budget (below) still guards the
+# request: we scan as many as we can within the budget and report honest coverage,
+# rather than silently looking at a tiny head of the list.
+SCAN_LIMIT = max(5, min(int(os.getenv("ASK_AI_SCAN_LIMIT", "2400")), 5000))
+_SCAN_WORKERS = max(4, min(int(os.getenv("ASK_AI_SCAN_WORKERS", "16")), 48))
+_SCAN_BUDGET_SEC = max(5.0, float(os.getenv("ASK_AI_SCAN_BUDGET_SEC", "22")))
 
 # ── Full-universe daily-moves snapshot config ────────────────────────────────
 # Market-wide movers/circuit questions must see EVERY stock, not a small head.
@@ -143,6 +152,21 @@ Honesty and safety rules (always follow):
   do their own research. State this briefly when you give an actual recommendation or market outlook.
 """.strip()
 
+SCREENER_SYSTEM_PROMPT = """
+You are Bullseye's stock screener assistant. The user asked for stocks matching
+fundamental, technical, momentum, sector, dividend, quality, or valuation criteria.
+You will be handed computed screener rows from Bullseye's market snapshot.
+
+How to answer:
+- Lead with a direct shortlist, not a lecture.
+- Use only the rows and metrics supplied. Never invent companies or numbers.
+- Mention when a metric is a proxy because the exact requested field is not in
+  the snapshot.
+- Keep the tone practical: what matched, why it matched, and one sensible next
+  step such as opening the screener or backtesting the shortlist.
+- Do not say you lack market data when rows are supplied.
+""".strip()
+
 
 # ── Ticker resolution ────────────────────────────────────────────────────────
 # Tokens that are far more often used as exchange/index references than as the
@@ -220,6 +244,34 @@ _STRATEGY_PATTERNS = re.compile(
     r".*\b(when|if|below|above|under|over|cross|crosses|gap|rsi|vwap|sma|ema|percent|%|"
     r"down|up|drop|drops|fall|falls|rise|rises|gain|gains|dip|dips)\b",
 )
+_STRATEGY_IDEA_PATTERNS = re.compile(
+    r"(?is)\b(buy|enter|ride|trade)\b.*\b(stock|stocks|names?)\b.*"
+    r"\b(jump|jumps|jumped|spike|spikes|spiked|surge|surges|surged|rally|bounce|recovery|recover)\b.*"
+    r"\b(weak|oversold|fallen|down|dip|dipped|loss|pullback|recently weak)\b|"
+    r"\b(recently weak|oversold|fallen|down|pullback)\b.*"
+    r"\b(jump|jumps|jumped|spike|spikes|spiked|surge|surges|surged|rally|bounce|recovery|recover)\b.*"
+    r"\b(safety net|stop loss|stop-loss|limit losses|risk)\b",
+)
+
+
+def _is_recovery_strategy_idea(prompt: str) -> bool:
+    """Detect natural-language recovery strategy ideas and route them to data.
+
+    This catches prompts like "buy a stock that jumps after being weak, with a
+    safety net" so the app runs a scan instead of asking the user to rephrase.
+    """
+    clean = (prompt or "").lower()
+    has_entry = re.search(r"\b(buy|enter|ride|trade)\b", clean)
+    has_stock = re.search(r"\b(stock|stocks|names?|shares?)\b", clean)
+    has_jump = re.search(
+        r"\b(jump|jumps|jumped|spike|spikes|spiked|surge|surges|surged|rally|bounce|recovery|recover)\b",
+        clean,
+    )
+    has_weak = re.search(r"\b(weak|oversold|fallen|down|dip|dipped|loss|pullback|recently weak)\b", clean)
+    has_risk = re.search(r"\b(safety net|stop loss|stop-loss|limit losses|risk)\b", clean)
+    return bool(has_entry and has_stock and has_jump and has_weak and has_risk)
+
+
 # Market-data lookups: biggest movers / gainers / losers / circuit hits for a
 # day. Answered by computing daily moves across the universe from our data.
 # Kept deliberately broad ("user can ask anything") -- explicit ranking nouns,
@@ -239,6 +291,27 @@ _MOVERS_PATTERNS = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_SCREEN_PATTERNS = re.compile(
+    r"\b("
+    r"find|show|which|what are|list|screen|scan|rank|filter|shortlist|"
+    r"best stocks|stocks to invest|consider|opportunities|hidden gems|multibaggers?|"
+    r"undervalued|overvalued|quality stocks|buffett|peter lynch|boring businesses|moats?|"
+    r"roce|roe|return on equity|return on capital|debt[-\s]?to[-\s]?equity|zero debt|debt[-\s]?free|"
+    r"pe ratio|p\/e|below book|book value|cash flows?|operating margins?|profit growth|"
+    r"revenue growth|earnings growth|dividend yield|52[-\s]?week highs?|breakout|"
+    r"momentum|rising volumes?|outperformed|small[-\s]?cap|mid[-\s]?cap|market caps?|"
+    r"banking|defense|defence|renewable|railway|manufacturing|china\+1|sector"
+    r")\b",
+    re.IGNORECASE,
+)
+_SCREEN_COMPARISON_PATTERNS = re.compile(
+    r"\b("
+    r"market\s+cap(?:italization|italisation)?|mcap|sales\s+growth|revenue\s+growth|"
+    r"profit\s+growth|earnings\s+growth|roce|roe|debt\s+to\s+equity|"
+    r"dividend\s+yield|operating\s+margins?|pe|p\/e"
+    r")\b.{0,40}(<=|>=|<|>|=)",
+    re.IGNORECASE,
+)
 # Words that signal a market-wide list rather than one specific stock.
 _UNIVERSE_WORDS = re.compile(
     r"\b(stocks?|shares?|which|list|top|best|worst|all|nse|bse|nifty|market|"
@@ -253,21 +326,20 @@ def _classify(prompt: str, ticker: str | None) -> str:
     cross = _CROSS_PATTERNS.search(prompt)
     backtest_kw = _BACKTEST_PATTERNS.search(prompt)
     movers = _MOVERS_PATTERNS.search(prompt)
+    screen = _SCREEN_PATTERNS.search(prompt) or _SCREEN_COMPARISON_PATTERNS.search(prompt)
 
     # Conceptual questions are answered directly, unless they also describe a
     # concrete rule or explicitly ask to backtest/scan something.
     if explain and not action:
         return "GENERAL"
 
+    if not ticker and _is_recovery_strategy_idea(prompt):
+        return "CROSS_SCAN"
+
     # A market-wide buy/sell rule (no specific ticker) => structured strategy that
     # can be backtested and offered as a recurring daily alert.
     if not ticker and _STRATEGY_PATTERNS.search(prompt):
         return "STRATEGY"
-
-    # Market-data lookup: biggest movers / circuit / gainers / losers across the
-    # market (or whenever the phrasing is about a list rather than one stock).
-    if movers and (not ticker or _UNIVERSE_WORDS.search(prompt)):
-        return "MOVERS"
 
     # Cross-universe backtest/scan: a strategy framed against many stocks.
     if cross and (action or backtest_kw):
@@ -282,6 +354,18 @@ def _classify(prompt: str, ticker: str | None) -> str:
         backtest_kw and re.search(r"\b(buy|sell|enter|exit|cross|backtest|simulate|strateg)\b", prompt, re.IGNORECASE)
     ):
         return "BACKTEST" if ticker else "CROSS_SCAN"
+
+    # Market-data lookup: biggest movers / circuit / gainers / losers across the
+    # market. Keep this below explicit backtests so "backtest the top mover" does
+    # not loop back into the movers answer.
+    if movers and (not ticker or _UNIVERSE_WORDS.search(prompt)):
+        return "MOVERS"
+
+    if _SCREEN_COMPARISON_PATTERNS.search(prompt):
+        return "SCREENER"
+
+    if screen and (not ticker or _UNIVERSE_WORDS.search(prompt) or re.search(r"\b(stocks?|companies|sector)\b", prompt, re.IGNORECASE)):
+        return "SCREENER"
 
     # Single-stock reads only when the user actually asks about price/indicators.
     if ticker and _ROI_PATTERNS.search(prompt):
@@ -382,6 +466,16 @@ def _narrate(
 # ── Strategy translation (once) + reuse across stocks ─────────────────────────
 def _translate_once(prompt: str) -> dict[str, Any]:
     clean = prompt.lower()
+    if _is_recovery_strategy_idea(prompt):
+        return {
+            "buy_expr": (
+                "(df['week_return'].shift(1) < -5.0) & "
+                "(df['day_return'] > 5.0) & "
+                "(df['RSI_14'] > 30)"
+            ),
+            "sell_expr": "(df['close'] < df['EMA_20']) | (df['RSI_14'] > 70)",
+            "mode": "crossover",
+        }
     week_drop = re.search(r"(?:falls?|drops?|down)\s+(\d+(?:\.\d+)?)\s*%\s+in\s+a\s+week", clean)
     delay = re.search(r"(\d+)\s+days?\s+after", clean)
     bounce = re.search(r"(\d+(?:\.\d+)?)\s*%\s+bounce", clean)
@@ -407,7 +501,12 @@ def _simulate(df: pd.DataFrame, strategy: dict[str, Any]) -> tuple[dict | None, 
     sell_expr = strategy.get("sell_expr", "")
     mode = strategy.get("mode", "crossover")
     try:
-        if mode == "target_exit":
+        if mode == "stop_loss":
+            trades, open_trade = _run_stop_loss(
+                prepared, buy_expr, strategy.get("stop_pct") or 10,
+                strategy.get("trailing", False), strategy.get("take_profit_pct"),
+            )
+        elif mode == "target_exit":
             trades, open_trade = _run_target_exit(
                 prepared, buy_expr, strategy.get("target_pct") or 0, strategy.get("target_direction", "up")
             )
@@ -444,7 +543,22 @@ def _strategy_alert_payload(prompt: str) -> dict[str, Any] | None:
 
 
 # ── Mode: single-stock backtest ───────────────────────────────────────────────
-def _single_backtest(prompt: str, ticker: str, history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _company_name(ticker: str | None, known_stocks: list[dict[str, Any]] | None) -> str | None:
+    t = (ticker or "").upper()
+    bare = t.replace(".NS", "").replace(".BO", "")
+    for stock in known_stocks or []:
+        if str(stock.get("ticker") or "").upper() == t or str(stock.get("symbol") or "").upper() == bare:
+            name = str(stock.get("name") or "").strip()
+            return name or None
+    return None
+
+
+def _single_backtest(
+    prompt: str,
+    ticker: str,
+    history: list[dict[str, Any]] | None = None,
+    known_stocks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     df = get_historical_data(ticker, days=1825)
     if df is None or len(df) < 30:
         raise ValueError(f"Not enough price history for {ticker}.")
@@ -455,9 +569,16 @@ def _single_backtest(prompt: str, ticker: str, history: list[dict[str, Any]] | N
     buy_hold = _buy_and_hold_pct(_prepare_df(df))
     summary = result.get("summary") or {}
     window = _window_label(_prepare_df(df))
+    name = _company_name(ticker, known_stocks)
+    stock_label = f"{ticker} ({name})" if name else ticker
 
     data_lines = [
-        f"Stock: {ticker}",
+        f"This backtest was run on exactly ONE stock: {stock_label}. The ticker comes from the user's own "
+        f"request. Open your answer by naming the stock — make clear that {ticker} is the ticker"
+        + (f" for {name}" if name else "")
+        + " — and state the exact entry and exit rule that was actually tested (below), so the reader knows "
+        "precisely what was simulated and on which stock.",
+        f"Stock: {stock_label}",
         f"Window: {window}",
         f"Strategy rules: BUY when `{result.get('buy_expr')}`, SELL when `{result.get('sell_expr')}` (mode: {result.get('mode')})",
         f"Buy-and-hold return over the same window: {round(buy_hold, 2)}%",
@@ -550,25 +671,38 @@ def _cross_scan(
     known_stocks: list[dict[str, Any]] | None,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    # Prefer the precomputed snapshot's top liquid names (stable, relevant, and
-    # restart-proof); fall back to the catalog head only when it's unavailable.
+    # Scan the precomputed snapshot universe (the full NSE list, ordered by
+    # liquidity); fall back to the catalog head only when the snapshot is absent.
     universe = _snapshot_candidate_stocks(prompt, known_stocks, SCAN_LIMIT) or _pick_universe(prompt, known_stocks)
     if not universe:
         raise ValueError("No stocks available to scan.")
+    total_universe = len(universe)
     strategy = _translate_once(prompt)
 
+    # Run all stocks concurrently but stop accepting new results once the wall-clock
+    # budget is hit, so a full-universe scan never hangs the request. Unfinished
+    # work is cancelled rather than awaited.
     rows: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    attempted = 0
+    deadline = time.time() + _SCAN_BUDGET_SEC
+    executor = ThreadPoolExecutor(max_workers=_SCAN_WORKERS)
+    try:
         futures = [executor.submit(_scan_one, stock, strategy) for stock in universe]
         for future in as_completed(futures):
+            attempted += 1
             row = future.result()
             if row is not None:
                 rows.append(row)
+            if time.time() > deadline:
+                break
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
+    partial = attempted < total_universe
     traded = [r for r in rows if r["total_trades"] > 0]
     traded.sort(key=lambda r: r["total_return_pct"], reverse=True)
 
-    scanned = len(rows)
+    scanned = attempted
     avg_win = round(float(np.mean([r["win_rate"] for r in traded])), 2) if traded else 0.0
     avg_return = round(float(np.mean([r["total_return_pct"] for r in traded])), 2) if traded else 0.0
     beat_bh = sum(1 for r in traded if r["alpha_pct"] > 0)
@@ -585,9 +719,14 @@ def _cross_scan(
             for r in rows_subset
         )
 
+    coverage_line = (
+        f"Universe scanned: {scanned} of {total_universe} NSE stocks"
+        + (" (stopped at the time budget — ask again to continue)" if partial else " (full universe)")
+        + f"; {len(traded)} produced at least one trade."
+    )
     data_lines = [
         f"Strategy rules: BUY `{strategy.get('buy_expr')}`, SELL `{strategy.get('sell_expr')}` (mode: {strategy.get('mode')})",
-        f"Universe scanned: {scanned} stocks; {len(traded)} produced at least one trade.",
+        coverage_line,
         f"Across stocks that traded: {profitable} were net profitable, {beat_bh} beat their own buy-and-hold.",
         f"Average win rate: {avg_win}% | Average total return: {avg_return}%",
         "Top performers:",
@@ -597,7 +736,7 @@ def _cross_scan(
         data_lines += ["Worst performers:", _fmt(bottom)]
 
     fallback = (
-        f"Scanned {scanned} stocks. {len(traded)} traded, {profitable} were profitable, "
+        f"Scanned {scanned} of {total_universe} NSE stocks. {len(traded)} traded, {profitable} were profitable, "
         f"and {beat_bh} beat buy-and-hold. Average win rate {avg_win}%, average return {avg_return}%."
     )
     answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, history=history)
@@ -614,6 +753,8 @@ def _cross_scan(
             "sell_expr": strategy.get("sell_expr"),
             "mode": strategy.get("mode"),
             "scanned": scanned,
+            "universe": total_universe,
+            "partial": partial,
             "traded": len(traded),
             "profitable": profitable,
             "beat_buy_hold": beat_bh,
@@ -670,6 +811,65 @@ def _group_universe(group: str, fallback: list[dict[str, Any]] | None = None) ->
     else:
         pool = [s for s in stocks if str(s.get("exchange")) == "NSE"]
     return pool or stocks
+
+
+def _ticker_lookup(stocks: list[dict[str, Any]] | None) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for stock in stocks or []:
+        ticker = str(stock.get("ticker") or "").upper()
+        symbol = str(stock.get("symbol") or "").upper()
+        name = str(stock.get("name") or "").upper()
+        if ticker:
+            lookup[ticker] = ticker
+        if symbol and ticker:
+            lookup[symbol] = ticker
+        if name and ticker:
+            lookup[name] = ticker
+    return lookup
+
+
+def _resolve_recent_stock_reference(
+    prompt: str,
+    history: list[dict[str, Any]] | None,
+    stocks: list[dict[str, Any]] | None,
+) -> str | None:
+    if not re.search(r"\b(top mover|top gainer|top loser|first stock|best stock|that stock|this stock|these names|the top)\b", prompt, re.IGNORECASE):
+        return None
+    lookup = _ticker_lookup(stocks)
+    if not lookup:
+        return None
+    skip = {
+        "BUY", "SELL", "HOLD", "NSE", "BSE", "AI", "RSI", "MACD", "EMA", "SMA",
+        "PE", "ROE", "ROCE", "THE", "AND", "FOR", "TOP", "BEST", "BIGGEST",
+    }
+    for turn in reversed(history or []):
+        if turn.get("role") != "assistant":
+            continue
+        content = str(turn.get("content") or "").upper()
+        for symbol in re.findall(r"\b[A-Z][A-Z0-9&-]{1,14}(?:\.NS|\.BO)?\b", content):
+            clean = symbol.replace(".NS", "").replace(".BO", "")
+            if clean in skip:
+                continue
+            ticker = lookup.get(symbol) or lookup.get(clean)
+            if ticker:
+                return ticker
+    return None
+
+
+def _rewrite_suggestion(prompt: str) -> str:
+    clean = re.sub(r"\s+", " ", prompt.strip())
+    lower = clean.lower()
+    if "operating margin" in lower:
+        return "Show NSE companies with operating margin above 15% and positive 1-year returns."
+    if "roce" in lower or "debt" in lower:
+        return "Find Indian stocks with ROCE above 20% and debt-to-equity below 0.5."
+    if "dividend" in lower:
+        return "Find NSE stocks with dividend yield above 4%."
+    if "52" in lower or "momentum" in lower:
+        return "Show NSE stocks near their 52-week highs with strong 1-month momentum."
+    if "backtest" in lower or "strategy" in lower:
+        return "Backtest: buy RELIANCE when RSI crosses above 50, sell when RSI crosses below 45."
+    return "Show quality NSE stocks with ROE above 15%, low debt, and positive 1-year momentum."
 
 
 # ── Mode: market movers / circuit lookup ──────────────────────────────────────
@@ -1004,9 +1204,17 @@ def _market_movers(
         result = _market_movers_from_snapshot(prompt, rows_raw, history)
         if result is not None:
             return result
-    if group == "NSE" and stock_snapshot_service is not None:
+    # The precomputed snapshot is empty (e.g. the daily off-server build hasn't run).
+    # The old behaviour dead-ended here with a static "try again shortly" message that
+    # never actually started a build — so it stayed broken forever. Instead, fall
+    # through to the in-memory mover scan: it kicks off a background full-universe
+    # build, caches/persists it, waits briefly, and returns best-effort results with
+    # live progress. Subsequent asks then return the complete ranking.
+    try:
+        return _market_movers_inmemory(prompt, known_stocks, history)
+    except ValueError:
+        # Genuinely nothing to scan (no catalog yet) — surface the honest message.
         return _movers_unavailable_message(prompt)
-    return _market_movers_inmemory(prompt, known_stocks, history)
 
 
 def _market_movers_inmemory(
@@ -1191,6 +1399,120 @@ def _single_stock_reuse(
     }
 
 
+def _screening_answer(
+    prompt: str,
+    known_stocks: list[dict[str, Any]] | None,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    group = _detect_group(prompt)
+    universe = _group_universe(group, known_stocks)
+    if not universe:
+        raise ValueError("No stocks available to screen.")
+
+    result = screen_stocks(prompt, universe)
+    rows = result.get("rows") or []
+    matched_rules = result.get("matchedRules") or []
+    explanation = result.get("explanation") or ""
+    source = result.get("source") or "Bullseye screener"
+    rewritten_prompt = None
+    if not rows:
+        candidate_prompt = _rewrite_suggestion(prompt)
+        if candidate_prompt and candidate_prompt.lower() != prompt.lower():
+            retry = screen_stocks(candidate_prompt, universe)
+            retry_rows = retry.get("rows") or []
+            if retry_rows:
+                rewritten_prompt = candidate_prompt
+                result = retry
+                rows = retry_rows
+                matched_rules = retry.get("matchedRules") or []
+                explanation = retry.get("explanation") or ""
+                source = retry.get("source") or source
+
+    if not rows:
+        suggestion = _rewrite_suggestion(prompt)
+        answer = (
+            "I could not return a reliable shortlist for that exact wording from the current snapshot, "
+            "so I did not invent results.\n\n"
+            f"Try this instead: `{suggestion}`\n\n"
+            f"What I understood: {', '.join(matched_rules) if matched_rules else 'no supported numeric screen'}."
+        )
+        return {
+            "answer": answer,
+            "mode": "screener",
+            "success": True,
+            "model_used": "local",
+            "target_stock": None,
+            "backtest": None,
+            "scan": None,
+            "screener": {"rows": [], "matchedRules": matched_rules, "explanation": explanation, "source": source},
+            "suggestions": [
+                suggestion,
+                "Show NSE stocks near their 52-week highs with rising volume",
+                "Backtest a momentum strategy on the first result",
+            ],
+        }
+
+    top = rows[:12]
+
+    def n(value: Any, digits: int = 2) -> str:
+        try:
+            if value is None:
+                return "n/a"
+            return f"{float(value):.{digits}f}"
+        except Exception:
+            return "n/a"
+
+    data_lines = [
+        f"User prompt: {prompt}",
+        f"Computed screen used: {rewritten_prompt or prompt}",
+        f"Source: {source}",
+        f"Matched rules: {', '.join(matched_rules) if matched_rules else 'broad Bullseye screen'}",
+        f"Explanation: {explanation}",
+        "Rows:",
+    ]
+    for index, row in enumerate(top, 1):
+        stock = row.get("stock") or {}
+        technical = row.get("technical") or {}
+        data_lines.append(
+            f"{index}. {stock.get('symbol') or stock.get('ticker')} - {stock.get('name') or ''}; "
+            f"price {n(row.get('cmp'))}; PE {n(row.get('pe'))}; ROE {n(row.get('roe'))}%; "
+            f"ROCE {n(row.get('roce') or row.get('avgRoce7Yr'))}%; debt/equity {n(row.get('debtToEquity'))}; "
+            f"operating margin {n(row.get('operatingMargin'))}%; dividend yield {n(row.get('divYield'))}%; "
+            f"1M return {n(technical.get('return1mPct'))}%; 1Y return {n(technical.get('return1yPct'))}%; "
+            f"reason: {row.get('reason') or ''}"
+        )
+
+    fallback_lines = ["Here are the best matches I found:"]
+    if rewritten_prompt:
+        fallback_lines.append(f"I interpreted your question as: {rewritten_prompt}")
+    for row in top[:8]:
+        stock = row.get("stock") or {}
+        technical = row.get("technical") or {}
+        fallback_lines.append(
+            f"- {stock.get('symbol') or stock.get('ticker')}: PE {n(row.get('pe'))}, "
+            f"ROE {n(row.get('roe'))}%, ROCE {n(row.get('roce') or row.get('avgRoce7Yr'))}%, "
+            f"1Y return {n(technical.get('return1yPct'))}%."
+        )
+    fallback = "\n".join(fallback_lines)
+    answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, SCREENER_SYSTEM_PROMPT, history)
+
+    return {
+        "answer": answer,
+        "mode": "screener",
+        "success": True,
+        "model_used": model_used,
+        "target_stock": None,
+        "backtest": None,
+        "scan": None,
+        "screener": {"rows": top, "matchedRules": matched_rules, "explanation": explanation, "source": source},
+        "suggestions": [
+            "Backtest a momentum strategy on the first result",
+            "Show only low-debt names from this list",
+            "Find similar stocks with stronger 1-year momentum",
+        ],
+    }
+
+
 # ── App context enrichment (don't send Groq just the bare question) ────────────
 def _stock_snapshot(ticker: str) -> tuple[dict[str, Any] | None, str | None]:
     """Compute a real technical snapshot for a resolved ticker from our OHLCV
@@ -1318,7 +1640,7 @@ def _general_chat(
                 "\"which NSE stocks work best with a gap-up momentum strategy?\""
             ),
             "mode": "general",
-            "success": False,
+            "success": True,
             "model_used": "local",
             "target_stock": None,
             "context_used": False,
@@ -1465,6 +1787,56 @@ def _strategy_alert(prompt: str, history: list[dict[str, Any]] | None = None) ->
     }
 
 
+# ── Reply-derived follow-up chips ──────────────────────────────────────────────
+# The "Tap to ask next" chips should reflect what THIS answer proposed, not a fixed
+# list. We lift the runnable commands the answer quoted (in "quotes" or `backticks`)
+# and surface those first, so a tap re-runs exactly the idea the answer suggested.
+_RUNNABLE_VERB_RE = re.compile(
+    r"^(backtest|back test|scan|screen|show|find|which|what|explain|analy[sz]e|compare|buy|sell|test|rank|list)\b",
+    re.IGNORECASE,
+)
+_RUNNABLE_PHRASE_RE = re.compile(
+    r"\b(crosses?|golden cross|death cross|gap up|gap down|moving average|stop[- ]?loss|trailing stop|"
+    r"breakout|mean[- ]reversion|momentum|rsi|macd|buy[- ]and[- ]hold)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_runnable(text: str) -> bool:
+    t = (text or "").strip()
+    if not (8 <= len(t) <= 200) or " " not in t:
+        return False
+    return bool(_RUNNABLE_VERB_RE.search(t) or _RUNNABLE_PHRASE_RE.search(t))
+
+
+def _runnable_examples_from_text(answer: str | None) -> list[str]:
+    if not answer:
+        return []
+    snippets = re.findall(r'"([^"\n]{8,200})"', answer) + re.findall(r"`([^`\n]{8,200})`", answer)
+    out: list[str] = []
+    for raw in snippets:
+        s = raw.strip().strip("\"'` ").rstrip(".")
+        if _looks_runnable(s) and s not in out:
+            out.append(s)
+    return out[:4]
+
+
+def _augment_suggestions(result: dict[str, Any]) -> dict[str, Any]:
+    """Front-load the answer's own proposed commands as tappable follow-ups."""
+    if not isinstance(result, dict):
+        return result
+    extracted = _runnable_examples_from_text(result.get("answer"))
+    if not extracted:
+        return result
+    merged: list[str] = []
+    for s in extracted + list(result.get("suggestions") or []):
+        s = (s or "").strip()
+        if s and s not in merged:
+            merged.append(s)
+    result["suggestions"] = merged[:4]
+    return result
+
+
 def run_ask_ai(
     prompt: str,
     history: list[dict[str, Any]] | None = None,
@@ -1482,33 +1854,43 @@ def run_ask_ai(
     _remember_universe(known_stocks)
     universe = _all_known_stocks(known_stocks)
 
-    ticker = _resolve_ticker(prompt, universe)
+    referenced_ticker = _resolve_recent_stock_reference(prompt, history, universe)
+    ticker = _resolve_ticker(prompt, universe) or referenced_ticker
+    if referenced_ticker and not _resolve_ticker(prompt, universe):
+        prompt = f"{prompt} on {referenced_ticker}"
     # If the prompt itself names no stock, fall back to whatever the UI says is
     # currently selected so general questions still get real context.
-    if not ticker and context:
+    if not ticker and context and not _is_recovery_strategy_idea(prompt):
         selected = str(context.get("selected_ticker") or context.get("selected_symbol") or "").upper()
         if selected:
             ticker = selected if "." in selected else (_resolve_ticker(selected, universe) or selected)
     intent = _classify(prompt, ticker)
 
+    result: dict[str, Any] | None = None
     try:
         if intent == "STRATEGY":
-            return _strategy_alert(prompt, history)
-        if intent == "MOVERS":
-            return _market_movers(prompt, universe, history)
-        if intent == "CROSS_SCAN":
-            return _cross_scan(prompt, universe, history)
-        if intent == "BACKTEST" and ticker:
-            return _single_backtest(prompt, ticker, history)
-        if intent in {"TECHNICAL", "ROI"} and ticker:
-            return _single_stock_reuse(prompt, ticker, universe, history)
+            result = _strategy_alert(prompt, history)
+        elif intent == "MOVERS":
+            result = _market_movers(prompt, universe, history)
+        elif intent == "SCREENER":
+            result = _screening_answer(prompt, universe, history)
+        elif intent == "CROSS_SCAN":
+            result = _cross_scan(prompt, universe, history)
+        elif intent == "BACKTEST" and ticker:
+            result = _single_backtest(prompt, ticker, history, universe)
+        elif intent in {"TECHNICAL", "ROI"} and ticker:
+            result = _single_stock_reuse(prompt, ticker, universe, history)
     except Exception as exc:  # noqa: BLE001 - degrade gracefully to a chat answer
         print(f"[AskAI] {intent} handler failed, falling back to chat: {exc}")
         fallback = _general_chat(prompt, history, ticker, context)
         fallback["answer"] = (
             f"I tried to run the numbers for that but hit a snag ({exc}). "
-            f"Here's what I can tell you generally:\n\n{fallback['answer']}"
+            f"Here's what I can tell you generally:\n\n{fallback['answer']}\n\n"
+            f"Try this prompt for a computable result: `{_rewrite_suggestion(prompt)}`"
         )
-        return fallback
+        fallback["success"] = True
+        return _augment_suggestions(fallback)
 
-    return _general_chat(prompt, history, ticker, context)
+    if result is None:
+        result = _general_chat(prompt, history, ticker, context)
+    return _augment_suggestions(result)

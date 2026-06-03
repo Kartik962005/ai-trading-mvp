@@ -170,6 +170,26 @@ User: "RSI below 30"
 Output: {"buy_expr": "df['RSI_14'] < 30", "sell_expr": "df['RSI_14'] > 70", "mode": "simple"}
 """
 
+_NUMBER_WORDS = {
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+}
+
+
+def _apply_number_words(text: str) -> str:
+    for word, value in _NUMBER_WORDS.items():
+        text = re.sub(rf"\b{word}\b", value, text)
+    return re.sub(r"(\d+(?:\.\d+)?)\s*(?:percent|pct)\b", r"\1%", text)
+
+
 def _normalise_prompt(user_prompt: str) -> str:
     p = user_prompt.lower()
     replacements = {
@@ -190,22 +210,15 @@ def _normalise_prompt(user_prompt: str) -> str:
     }
     for src, dst in replacements.items():
         p = p.replace(src, dst)
-    number_words = {
-        "one": "1",
-        "two": "2",
-        "three": "3",
-        "four": "4",
-        "five": "5",
-        "six": "6",
-        "seven": "7",
-        "eight": "8",
-        "nine": "9",
-        "ten": "10",
-    }
-    for word, value in number_words.items():
-        p = re.sub(rf"\b{word}\b", value, p)
-    p = re.sub(r"(\d+(?:\.\d+)?)\s*(?:percent|pct)\b", r"\1%", p)
+    p = _apply_number_words(p)
     return re.sub(r"\s+", " ", p).strip()
+
+
+def _light_norm(text: str) -> str:
+    """Lowercase + spell out numbers + normalise percents, WITHOUT the aggressive
+    word swaps in ``_normalise_prompt`` (which rewrite "sold"->"sell" and
+    "oversold"->"oversell"). Used by the clause parser so indicator words survive."""
+    return _apply_number_words(re.sub(r"\s+", " ", text.lower()).strip())
 
 
 def _consecutive_return_expr(direction: str, pct: float, days: int) -> str:
@@ -277,6 +290,248 @@ def _parse_lookback_days(user_prompt: str) -> int | None:
         return None
     days = int(match.group(1))
     return days if days > 0 else None
+
+
+# ── Clause-level natural-language strategy parsing ───────────────────────────
+# The canned RULE_PATTERNS table below matches a whole strategy by its BUY phrase
+# and substitutes a FIXED exit. That silently discarded an explicit, different exit
+# the user actually typed — e.g. "buy when RSI crosses above 30, sell when price
+# falls below the 20-day support" was backtested as "sell when RSI crosses 70".
+# The clause parser fixes that: it splits the request into its buy and sell halves
+# and translates each half on its own, so the rule we backtest is the rule asked for.
+_SELL_SPLIT_RE = re.compile(r"\b(?:and\s+)?(?:then\s+)?(?:sell|sold|exit|book|square\s*off|squareoff|close\s+position)\b")
+_KNOWN_SMA = {5, 10, 20, 50, 200}
+_KNOWN_EMA = {9, 20, 50}
+
+
+def _ma_col(kind: str, period: int) -> str:
+    kind = "EMA" if kind.lower().startswith("e") else "SMA"
+    known = _KNOWN_EMA if kind == "EMA" else _KNOWN_SMA
+    if period in known:
+        return f"df['{kind}_{period}']"
+    if kind == "EMA":
+        return f"df['close'].ewm(span={period}, adjust=False).mean()"
+    return f"df['close'].rolling({period}).mean()"
+
+
+def _split_strategy_clauses(prompt: str) -> tuple[str, str | None]:
+    p = _light_norm(prompt)
+    parts = _SELL_SPLIT_RE.split(p, maxsplit=1)
+    buy_part = parts[0]
+    sell_part = parts[1] if len(parts) > 1 else None
+    # Drop everything up to and including the entry verb so the buy clause is just
+    # the condition (e.g. "backtest: buy net when rsi..." -> "rsi...").
+    buy_part = re.sub(r"^.*?\b(?:buy|bought|enter|entry|go\s+long|long)\b", "", buy_part, count=1)
+    return buy_part.strip(" ,.:;-"), (sell_part.strip(" ,.:;-") if sell_part else None)
+
+
+def _clause_to_expr(clause: str | None, default_indicator: str | None = None) -> str | None:
+    """Translate ONE buy- or sell-side condition into a pandas boolean expression.
+    Returns None when the clause isn't confidently understood (caller then defers
+    to the LLM translator rather than fabricating a rule).
+
+    ``default_indicator`` lets a bare follow-on clause ("...sell when IT crosses 70")
+    inherit the indicator named on the other side of the rule (here, RSI)."""
+    if not clause:
+        return None
+    c = clause.lower()
+    # Drop indicator period qualifiers so "rsi(14)", "rsi 14", "macd(12,26,9)" don't
+    # wedge a stray number between the indicator name and its condition.
+    c = re.sub(r"\(\s*\d+(?:\s*,\s*\d+)*\s*\)", "", c)
+    c = re.sub(r"\b(rsi|sma|ema|macd|stoch|atr|adx|cci|wr|williams_r)\s*-?\s*\d{1,3}\b(?=\s*(?:cross|above|below|over|under|>|<|reaches?|hits?))", r"\1", c)
+
+    # RSI crosses above/below a level.
+    m = re.search(r"rsi[^\d]*?cross\w*\s*(above|over|up|below|under|down)?[^\d]*?(\d+(?:\.\d+)?)", c)
+    if m:
+        direction = m.group(1) or "above"
+        n = float(m.group(2))
+        if direction in ("below", "under", "down"):
+            return f"(df['RSI_14'] < {n}) & (df['RSI_14'].shift(1) >= {n})"
+        return f"(df['RSI_14'] > {n}) & (df['RSI_14'].shift(1) <= {n})"
+
+    # RSI above/below a level (no crossing).
+    m = re.search(r"rsi[^\d]*?(above|over|greater than|>|below|under|less than|<)[^\d]*?(\d+(?:\.\d+)?)", c)
+    if m:
+        op = m.group(1)
+        n = float(m.group(2))
+        if op in ("below", "under", "less than", "<"):
+            return f"df['RSI_14'] < {n}"
+        return f"df['RSI_14'] > {n}"
+    if re.search(r"oversold", c):
+        return "df['RSI_14'] < 30"
+    if re.search(r"overbought", c):
+        return "df['RSI_14'] > 70"
+
+    down_words = r"\b(fall|falls|fell|drop|drops|break|breaks|broke|below|under|breakdown|loses|lose)\b"
+    up_words = r"\b(rise|rises|rose|break|breaks|broke|above|over|breakout|cross|crosses|reclaim)\b"
+
+    # N-day support / resistance (or N-day low / high).
+    m = re.search(r"(\d+)\s*[- ]?days?[^.]*?(support|low)", c)
+    if m and re.search(down_words, c):
+        n = int(m.group(1))
+        return f"df['close'] < df['low'].rolling({n}).min().shift(1)"
+    m = re.search(r"(\d+)\s*[- ]?days?[^.]*?(resistance|high)", c)
+    if m and re.search(up_words, c):
+        n = int(m.group(1))
+        return f"df['close'] > df['high'].rolling({n}).max().shift(1)"
+    # Support / resistance without an explicit period -> default to 20 sessions.
+    if re.search(r"\bsupport\b", c) and re.search(down_words, c):
+        return "df['close'] < df['low'].rolling(20).min().shift(1)"
+    if re.search(r"\bresistance\b", c) and re.search(up_words, c):
+        return "df['close'] > df['high'].rolling(20).max().shift(1)"
+
+    # Price relative to a moving average. Two phrasings: "N-day moving average"
+    # (period only) or "sma/ema N" (kind + period).
+    kind = period = None
+    m = re.search(r"\b(sma|ema)\s*-?\s*(\d+)\b", c)
+    if m:
+        kind, period = m.group(1), int(m.group(2))
+    else:
+        m = re.search(r"(\d+)\s*[- ]?day\s*(?:simple |exponential )?(?:moving average|ma)\b", c)
+        if m:
+            period = int(m.group(1))
+            kind = "ema" if "exponential" in c else "sma"
+    if period is not None:
+        col = _ma_col(kind or "sma", period)
+        if re.search(r"\b(below|under|falls?|fell|drops?|breakdown)\b", c):
+            return f"df['close'] < {col}"
+        if re.search(r"\b(above|over|rises?|rose|reclaim|crosses?|breakout)\b", c):
+            return f"df['close'] > {col}"
+
+    # MACD signal cross.
+    if "macd" in c:
+        if re.search(r"(bear|below|down|negative)", c):
+            return "(df['MACD'] < df['MACD_signal']) & (df['MACD'].shift(1) >= df['MACD_signal'].shift(1))"
+        return "(df['MACD'] > df['MACD_signal']) & (df['MACD'].shift(1) <= df['MACD_signal'].shift(1))"
+
+    if "golden cross" in c:
+        return "(df['SMA_50'] > df['SMA_200']) & (df['SMA_50'].shift(1) <= df['SMA_200'].shift(1))"
+    if "death cross" in c:
+        return "(df['SMA_50'] < df['SMA_200']) & (df['SMA_50'].shift(1) >= df['SMA_200'].shift(1))"
+
+    if re.search(r"gap\s*up", c):
+        return "df['gap_up'] == True"
+    if re.search(r"gap\s*down", c):
+        return "df['gap_down'] == True"
+
+    if re.search(r"(volume\s*spike|spike\s*in\s*volume|vol\w*\s*2x|volume surge|high volume)", c):
+        return "df['vol_ratio'] > 2.0"
+
+    if "bollinger" in c:
+        if re.search(r"(below|lower)", c):
+            return "df['close'] < df['BBL']"
+        return "df['close'] > df['BBU']"
+
+    # Single-period % move, only when a day/week/month qualifier is explicit (so we
+    # don't hijack the more careful percent/consecutive parser for ambiguous wording).
+    m = re.search(r"(up|down|rise|rises|gain|gains|fall|falls|drop|drops)\s*(?:by\s*)?(\d+(?:\.\d+)?)%", c) or re.search(
+        r"(\d+(?:\.\d+)?)%\s*(up|down|rise|gain|fall|drop)", c
+    )
+    if m:
+        a, b = m.group(1), m.group(2)
+        if a.replace(".", "", 1).isdigit():
+            value, word = float(a), b
+        else:
+            word, value = a, float(b)
+        up = word in ("up", "rise", "rises", "gain", "gains")
+        if re.search(r"week", c):
+            colname = "week_return"
+        elif re.search(r"month", c):
+            colname = "month_return"
+        elif re.search(r"\b(day|today|session|daily|intraday)\b", c):
+            colname = "day_return"
+        else:
+            colname = None
+        if colname:
+            return f"df['{colname}'] > {value}" if up else f"df['{colname}'] < {-value}"
+
+    # Bare level/cross with no named indicator — only when the other clause told us
+    # which indicator "it" refers to (e.g. buy used RSI -> "sell when it crosses 70").
+    if default_indicator:
+        m = re.search(r"cross\w*\s*(above|over|up|below|under|down)?[^\d]*?(\d+(?:\.\d+)?)", c)
+        if m:
+            d = m.group(1) or "above"
+            n = float(m.group(2))
+            if d in ("below", "under", "down"):
+                return f"({default_indicator} < {n}) & ({default_indicator}.shift(1) >= {n})"
+            return f"({default_indicator} > {n}) & ({default_indicator}.shift(1) <= {n})"
+        m = re.search(r"\b(above|over|greater than|>|below|under|less than|<)\b[^\d]*?(\d+(?:\.\d+)?)", c)
+        if m:
+            op = m.group(1)
+            n = float(m.group(2))
+            if op in ("below", "under", "less than", "<"):
+                return f"{default_indicator} < {n}"
+            return f"{default_indicator} > {n}"
+
+    return None
+
+
+_STOP_LOSS_RE = re.compile(
+    r"(?:stop[\s-]?loss|stop|sl|trailing\s+stop)\D{0,25}?(\d+(?:\.\d+)?)\s*%"
+    r"|(\d+(?:\.\d+)?)\s*%\D{0,25}?(?:stop[\s-]?loss|trailing\s+stop|below\s+(?:the\s+)?(?:purchase|buy|entry|cost))"
+)
+# Only match a % that the take-profit keyword introduces (keyword then number).
+# The reverse "N% then keyword" form is avoided: with "...stop 8%, take profit 20%"
+# it would wrongly grab the stop's 8%.
+_TAKE_PROFIT_RE = re.compile(
+    r"(?:take[\s-]?profit|profit\s+target|profit\s+booking|tp)\D{0,15}?(\d+(?:\.\d+)?)\s*%"
+)
+
+
+def _parse_stop_loss_strategy(user_prompt: str) -> dict | None:
+    """A buy signal protected by a stop-loss (the "safety net" people ask for).
+    Exit is the stop — not a canned RSI level. Supports a trailing stop and an
+    optional take-profit. Returns None when no stop-loss is described."""
+    p = _light_norm(user_prompt)
+    sl = _STOP_LOSS_RE.search(p)
+    if not sl:
+        return None
+    stop_pct = float(sl.group(1) or sl.group(2))
+    trailing = bool(re.search(r"trailing", p))
+    tp_match = _TAKE_PROFIT_RE.search(p)
+    take_profit_pct = float(tp_match.group(1)) if tp_match else None
+
+    # The entry condition is whatever precedes the stop-loss / risk wording.
+    buy_part, _ = _split_strategy_clauses(user_prompt)
+    buy_part = re.split(
+        r"\b(?:stop[\s-]?loss|stop|trailing|take[\s-]?profit|profit\s+target|safety\s+net|with\s+a|with)\b",
+        buy_part,
+        maxsplit=1,
+    )[0]
+    buy_expr = _clause_to_expr(buy_part)
+    if not buy_expr:
+        return None
+
+    label = f"{'trailing ' if trailing else ''}stop-loss {stop_pct:g}% below {'the peak' if trailing else 'entry'}"
+    if take_profit_pct:
+        label += f", or take-profit at {take_profit_pct:g}%"
+    return {
+        "buy_expr": buy_expr,
+        "sell_expr": label,
+        "mode": "stop_loss",
+        "stop_pct": stop_pct,
+        "trailing": trailing,
+        "take_profit_pct": take_profit_pct,
+    }
+
+
+def _parse_compound_strategy(user_prompt: str) -> dict | None:
+    """Honour an explicit two-sided rule by translating the buy and sell halves
+    independently. Returns None (so specialised parsers / the LLM take over) for
+    consecutive-day and profit-target wording, or when either half is unclear."""
+    p = _light_norm(user_prompt)
+    if re.search(r"consecutive|in a row|profit target|target of|book\s+profit", p):
+        return None
+    buy_part, sell_part = _split_strategy_clauses(user_prompt)
+    buy_expr = _clause_to_expr(buy_part)
+    if not buy_expr:
+        return None
+    default_ind = "df['RSI_14']" if "RSI_14" in buy_expr else None
+    sell_expr = _clause_to_expr(sell_part, default_ind) if sell_part else None
+    if not sell_expr:
+        # Entry understood but exit isn't (or wasn't given) — don't fabricate one.
+        return None
+    return {"buy_expr": buy_expr, "sell_expr": sell_expr, "mode": "crossover"}
 
 
 def translate_strategy(user_prompt: str) -> dict:
@@ -376,6 +631,18 @@ RULE_PATTERNS = [
 ]
 
 def _rule_engine_fallback(user_prompt: str) -> dict | None:
+    # A stop-loss / trailing-stop ("safety net") is a real exit — honour it before
+    # the canned table below substitutes an RSI exit the user never asked for.
+    stop_loss = _parse_stop_loss_strategy(user_prompt)
+    if stop_loss:
+        return stop_loss
+
+    # An explicit two-sided rule wins next, so the exit the user typed is the exit
+    # we actually backtest (not a canned one from the pattern table below).
+    compound = _parse_compound_strategy(user_prompt)
+    if compound:
+        return compound
+
     percent_strategy = _parse_percent_strategy(user_prompt)
     if percent_strategy:
         return percent_strategy
@@ -517,6 +784,92 @@ def _run_target_exit(df, buy_expr, target_pct, target_direction):
                 "unrealised_pnl": round((cur - buy_price) * 100, 2),
                 "return_pct": round((cur - buy_price) / buy_price * 100, 2),
                 "exit_reason": f"Still open; {target_pct:g}% target not touched yet",
+            }
+            break
+
+    return trades, open_trade
+
+
+def _run_stop_loss(df, buy_expr, stop_pct, trailing=False, take_profit_pct=None):
+    """Enter on the buy signal, then ride the position until a stop-loss (fixed or
+    trailing) — or an optional take-profit — is touched. This is the "buy and ride
+    the recovery with a safety net" pattern, simulated literally."""
+    buy_sig = _eval_safe(buy_expr, df)
+    stop_pct = abs(float(stop_pct))
+    tp = abs(float(take_profit_pct)) if take_profit_pct else None
+
+    trades = []
+    open_trade = None
+    i = 2
+    while i < len(df) - 1:
+        if not bool(buy_sig.iloc[i]):
+            i += 1
+            continue
+
+        buy_row = df.iloc[i]
+        buy_date = buy_row["date"]
+        buy_price = float(buy_row["close"])
+        peak = buy_price
+        exited = False
+
+        for j in range(i + 1, len(df)):
+            row = df.iloc[j]
+            hi, lo = float(row["high"]), float(row["low"])
+            if trailing and hi > peak:
+                peak = hi
+            stop_level = (peak if trailing else buy_price) * (1 - stop_pct / 100)
+            tp_level = buy_price * (1 + tp / 100) if tp else None
+
+            hit_stop = lo <= stop_level
+            hit_tp = tp_level is not None and hi >= tp_level
+            if not hit_stop and not hit_tp:
+                continue
+
+            # If both are touched in the same candle, assume the stop hit first
+            # (conservative — we cannot see intrabar order).
+            if hit_stop:
+                sell_price = stop_level
+                exit_reason = f"{stop_pct:g}% {'trailing ' if trailing else ''}stop-loss hit"
+            else:
+                sell_price = tp_level
+                exit_reason = f"{tp:g}% take-profit hit"
+
+            pnl_pct = (sell_price - buy_price) / buy_price * 100
+            trades.append({
+                "buy_date": str(buy_date.date()),
+                "buy_day": _weekday_name(buy_date),
+                "buy_price": round(buy_price, 2),
+                "buy_rsi": round(float(buy_row.get("RSI_14", np.nan)), 1) if not pd.isna(buy_row.get("RSI_14", np.nan)) else None,
+                "sell_date": str(row["date"].date()),
+                "sell_day": _weekday_name(row["date"]),
+                "sell_price": round(sell_price, 2),
+                "sell_rsi": round(float(row.get("RSI_14", np.nan)), 1) if not pd.isna(row.get("RSI_14", np.nan)) else None,
+                "holding_days": (row["date"] - buy_date).days,
+                "pnl_per_share": round(sell_price - buy_price, 2),
+                "pnl_100shares": round((sell_price - buy_price) * 100, 2),
+                "return_pct": round(pnl_pct, 2),
+                "result": "WIN" if pnl_pct > 0 else "LOSS",
+                "entry_reason": "Buy signal triggered",
+                "exit_reason": exit_reason,
+            })
+            i = j + 1
+            exited = True
+            break
+
+        if not exited:
+            last = df.iloc[-1]
+            cur = float(last["close"])
+            open_trade = {
+                "buy_date": str(buy_date.date()),
+                "buy_day": _weekday_name(buy_date),
+                "buy_price": round(buy_price, 2),
+                "stop_price": round((peak if trailing else buy_price) * (1 - stop_pct / 100), 2),
+                "current_price": round(cur, 2),
+                "current_rsi": round(float(last.get("RSI_14", np.nan)), 1) if not pd.isna(last.get("RSI_14", np.nan)) else None,
+                "holding_days": (last["date"] - buy_date).days,
+                "unrealised_pnl": round((cur - buy_price) * 100, 2),
+                "return_pct": round((cur - buy_price) / buy_price * 100, 2),
+                "exit_reason": f"Still open; {stop_pct:g}% {'trailing ' if trailing else ''}stop not hit yet",
             }
             break
 
@@ -666,7 +1019,12 @@ def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
 
         # Run simulation
         try:
-            if mode == "target_exit":
+            if mode == "stop_loss":
+                trades, open_trade = _run_stop_loss(
+                    df, buy_expr, strategy.get("stop_pct") or 10,
+                    strategy.get("trailing", False), strategy.get("take_profit_pct"),
+                )
+            elif mode == "target_exit":
                 trades, open_trade = _run_target_exit(df, buy_expr, target_pct or 0, target_direction)
             elif mode == "crossover":
                 trades, open_trade = _run_crossover(df, buy_expr, sell_expr)
@@ -686,11 +1044,15 @@ def run_custom_backtest(df: pd.DataFrame, user_prompt: str):
 
         summary = _summary(trades)
 
-        # Current signal
+        # Current signal. For stop_loss / target_exit the "sell" is a price level,
+        # not a boolean expression — only the buy side is a Series there.
         try:
-            bs = _eval_safe(buy_expr,  df)
-            ss = _eval_safe(sell_expr, df)
-            current_signal = "BUY" if bool(bs.iloc[-1]) else "SELL" if bool(ss.iloc[-1]) else "HOLD"
+            bs = _eval_safe(buy_expr, df)
+            if mode in ("stop_loss", "target_exit"):
+                current_signal = "BUY" if bool(bs.iloc[-1]) else "HOLD"
+            else:
+                ss = _eval_safe(sell_expr, df)
+                current_signal = "BUY" if bool(bs.iloc[-1]) else "SELL" if bool(ss.iloc[-1]) else "HOLD"
         except Exception:
             current_signal = "HOLD"
 

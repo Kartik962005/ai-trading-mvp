@@ -343,3 +343,38 @@ Verification:
 
 Owner note:
 - Apply the updated `backend/supabase_ask_ai.sql` default in production Supabase so new conversations default to 48-hour expiry. Existing conversations will use the backend-updated 48-hour expiry the next time a turn is saved.
+
+## 2026-06-03 - Ask-AI Capability + Daily Alert Reliability
+
+Status: done.
+
+Done:
+- Added a deterministic Ask-AI route for natural-language recovery strategy ideas, such as buying stocks that jump after recent weakness with a stop/safety net, so the app runs the scan instead of telling the user to rephrase.
+- Added Ask-AI request cancellation with a visible `Stop` control, live research timer, and `Thought for ...` timing shown above completed answers.
+- Added an Ask-AI screener mode for broad stock-discovery questions, including fundamentals, valuation, growth, dividend, sector, 52-week-high, and momentum prompts.
+- Fixed routing priority so prompts such as "Backtest a momentum strategy on the top mover" no longer loop back into the top-movers answer.
+- Added follow-up ticker resolution from recent assistant output, so "top mover", "first stock", and similar references can resolve to the actual ticker from the previous response.
+- Added deterministic prompt rewrites for unsupported/broad Ask-AI prompts, returning a computable prompt suggestion instead of the generic "AI engine could not answer" failure.
+- Added real metric filtering in the screener for PE, ROE, ROCE, debt-to-equity, operating margin, revenue growth, profit growth, dividend yield, and market cap conditions.
+- Moved Ask-AI recent chats into a separate side column, added a visible loading state, and strengthened auto-scroll when sending from higher in the conversation.
+- Enabled the in-process daily stock email scheduler by default. It can still be disabled with `DAILY_UPDATES_ENABLED=false`.
+- Tightened daily signal quality by applying the already-computed final score gate, requiring minimum chart quality, and defaulting daily stock emails to long-only signals unless `DAILY_SIGNALS_ALLOW_SELL=true`.
+
+Files changed:
+- `backend/app/services/ask_ai_service.py`
+- `backend/app/services/screener_service.py`
+- `backend/app/services/daily_signal_engine/config.py`
+- `backend/app/services/daily_trade_service.py`
+- `backend/main.py`
+- `frontend/app/ask-ai/page.tsx`
+- `REBUILD_PROGRESS.md`
+
+Verification:
+- `python -m compileall backend\app backend\main.py` passed.
+- `python -m pytest backend\tests` passed: 5 tests.
+- `npm.cmd --prefix frontend run build` passed.
+- Direct router smoke test confirmed: `top movers today -> MOVERS`, `Backtest a momentum strategy on the top mover -> BACKTEST`, `Best stocks to invest in right now -> SCREENER`, `Show companies with increasing operating margins over the last 3 years -> SCREENER`, `Scan all NSE stocks for a momentum strategy -> CROSS_SCAN`.
+- Direct parser smoke test confirmed ROCE/debt, dividend yield, operating margin, zero-debt/profit-growth, and small-cap revenue-growth prompts produce real metric conditions.
+
+Known note:
+- `npm.cmd --prefix frontend run lint` still fails on pre-existing project-wide lint issues in `frontend/app/page.tsx`, `frontend/app/screens/page.tsx`, and old `any` usage. The production Next build passes.

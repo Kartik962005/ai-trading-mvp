@@ -560,7 +560,16 @@ def _build_candidate(
         risk_penalties=penalties,
     )
 
-    if expected_r <= 0 or confidence < profile["confidence_threshold"] or risk_reward < profile["min_risk_reward"]:
+    allow_sell_signals = os.getenv("DAILY_SIGNALS_ALLOW_SELL", "false").lower() in {"1", "true", "yes"}
+    if technical_setup["direction"] == "SELL" and not allow_sell_signals:
+        return None
+    if (
+        expected_r <= 0
+        or confidence < profile["confidence_threshold"]
+        or risk_reward < profile["min_risk_reward"]
+        or final_score < float(profile.get("min_final_score", 0.0))
+        or technical_setup["chart_setup_quality"] < 0.5
+    ):
         return None
 
     returns = feature_frame["close"].pct_change().dropna().tail(90).tolist()

@@ -142,7 +142,7 @@ async def start_alert_checker():
 
 @app.on_event("startup")
 async def start_daily_trade_updates():
-    if os.getenv("DAILY_UPDATES_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+    if os.getenv("DAILY_UPDATES_ENABLED", "true").lower() not in {"1", "true", "yes"}:
         print("[DailyTrade] in-process scheduler disabled; use external cron on /api/v1/daily-updates/run-forecast and /api/v1/daily-updates/run-review.")
         return
 
