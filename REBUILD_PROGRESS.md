@@ -349,6 +349,13 @@ Owner note:
 Status: done.
 
 Done:
+- Hardened the stock-detail FISO analysis engine so a displayed buy/sell requires clear directional edge, data quality, risk/reward, expected-R, confidence, chart-quality, and final-score gates. Failed setups now return `Hold` / `no_trade` instead of a weak directional call.
+- Changed the frontend stock-detail presentation so `Hold` / `no_trade` cannot be recolored into a buy/sell just because research price bands have target/stop geometry.
+- Removed target, stop-loss, risk/reward, expected-move, and target-date UI from `Hold` stock pages; hold now shows a no-trade explanation instead.
+- Removed the stock-specific news panel from stock detail pages.
+- Tightened daily-signal defaults and expected-R math, using a conservative loss probability and higher risk/reward, confidence, chart-quality, and final-score thresholds.
+- Fixed scheduled daily emails for legacy enabled preferences where `daily_stock_email_enabled=true` but `consent_accepted_at` was missing.
+- Added `/api/v1/daily-updates/run-scheduled` plus `.github/workflows/daily-alert-emails.yml` so production email delivery can be driven by external cron while respecting each user's selected time.
 - Added a deterministic Ask-AI route for natural-language recovery strategy ideas, such as buying stocks that jump after recent weakness with a stop/safety net, so the app runs the scan instead of telling the user to rephrase.
 - Added Ask-AI request cancellation with a visible `Stop` control, live research timer, and `Thought for ...` timing shown above completed answers.
 - Added an Ask-AI screener mode for broad stock-discovery questions, including fundamentals, valuation, growth, dividend, sector, 52-week-high, and momentum prompts.

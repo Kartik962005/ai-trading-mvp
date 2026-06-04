@@ -15,11 +15,23 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta
 
-from app.services.daily_signal_engine import build_live_feature_values, evaluate_technical_setup, predict_signal_probabilities
+from app.services.daily_signal_engine import (
+    build_live_feature_values,
+    compute_expected_r,
+    compute_final_score,
+    evaluate_technical_setup,
+    predict_signal_probabilities,
+    validate_candidate_frame,
+)
+from app.services.daily_signal_engine.config import RISK_PROFILES
 
 # ── In-memory analysis cache ──────────────────────────────────────────────────
 _analysis_cache: dict = {}
 ANALYSIS_TTL = 3600
+DETAIL_RISK_PROFILE = os.getenv("DETAIL_ANALYSIS_RISK_PROFILE", "Balanced").title()
+DETAIL_MIN_DIRECTIONAL_EDGE = int(os.getenv("DETAIL_MIN_DIRECTIONAL_EDGE", "2"))
+DETAIL_MIN_CHART_SETUP_QUALITY = float(os.getenv("DETAIL_MIN_CHART_SETUP_QUALITY", "0.60"))
+DETAIL_MIN_EXPECTED_R = float(os.getenv("DETAIL_MIN_EXPECTED_R", "0.08"))
 _sentiment_cache: dict = {}
 _sentiment_inflight: dict = {}
 _sentiment_lock = threading.Lock()
@@ -575,6 +587,9 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     relative_strength = float(latest["RET_20"] * 100)
     regime = {"label": "neutral", "alignment_buy": 0.55, "alignment_sell": 0.55, "score": 0.55}
     technical_setup = evaluate_technical_setup(live_latest, relative_strength, 0.0)
+    risk_profile_name = DETAIL_RISK_PROFILE if DETAIL_RISK_PROFILE in RISK_PROFILES else "Balanced"
+    profile = RISK_PROFILES[risk_profile_name]
+    validation = validate_candidate_frame(df, risk_profile_name)
     feature_values = build_live_feature_values(
         live_latest,
         technical_setup,
@@ -585,43 +600,97 @@ def run_analysis(df: pd.DataFrame, ticker: str):
     probabilities = predict_signal_probabilities(
         technical_setup,
         regime,
-        "Balanced",
+        risk_profile_name,
         relative_strength,
-        technical_setup["chart_setup_quality"],
+        validation["quality_score"],
         feature_values=feature_values,
         setup_type=technical_setup.get("setup_type"),
     )
     model_pwin = float(probabilities["calibrated_pwin"])
-    model_expected_r = float(probabilities.get("expected_return") or 0.0)
+    conservative_p_loss = max(float(probabilities["p_loss"]), 1.0 - model_pwin)
     direction = technical_setup["direction"]
-    if direction == "BUY":
-        verdict = "Strong Buy" if model_pwin >= 0.70 else "Buy" if model_pwin >= 0.55 else "Hold" if model_pwin >= 0.45 else "Sell"
-    else:
-        verdict = "Strong Sell" if model_pwin >= 0.70 else "Sell" if model_pwin >= 0.55 else "Hold" if model_pwin >= 0.45 else "Buy"
-
     atr_val = float(latest['ATR_14'])
     entry = float(latest['close'])
-    
-    stop_distance = 1.5 * atr_val
-    forecast_r = max(0.35, min(abs(model_expected_r), 3.0))
-    if direction == "BUY": 
-        stop_loss = entry - (1.5 * atr_val)
-        target = entry + (forecast_r * stop_distance) 
-    else: 
-        stop_loss = entry + (1.5 * atr_val)
-        target = entry - (forecast_r * stop_distance)
+
+    target_multiplier = float(profile["target_atr_multiplier"])
+    stop_multiplier = float(profile["stop_atr_multiplier"])
+    risk_reward = target_multiplier / max(stop_multiplier, 1e-6)
+    expected_r = compute_expected_r(model_pwin, conservative_p_loss, risk_reward, 1.0)
+    avg_turnover = float(validation.get("avg_turnover") or 0.0)
+    liquidity_score = min(1.0, max(0.0, avg_turnover / 500_000_000))
+    risk_penalties = max(0.0, (1.0 - float(validation["quality_score"])) * 0.18)
+    final_score = compute_final_score(
+        calibrated_pwin=model_pwin,
+        expected_r=expected_r,
+        adjusted_setup_win_rate=float(probabilities.get("historical_hit_rate") or 0.52),
+        market_regime_alignment=regime["alignment_buy"] if direction == "BUY" else regime["alignment_sell"],
+        chart_setup_quality=float(technical_setup["chart_setup_quality"]),
+        relative_strength=min(1.0, abs(relative_strength) / 5),
+        liquidity_score=liquidity_score,
+        model_stability=float(probabilities["model_stability"]),
+        risk_penalties=risk_penalties,
+    )
+
+    quality_failures: list[str] = []
+    if direction not in {"BUY", "SELL"}:
+        quality_failures.append("no clear directional edge")
+    if abs(int(technical_setup.get("directional_edge") or 0)) < DETAIL_MIN_DIRECTIONAL_EDGE:
+        quality_failures.append("directional score edge is too small")
+    if not validation["is_valid"]:
+        quality_failures.extend(validation.get("rejections") or ["data quality failed"])
+    if float(technical_setup["chart_setup_quality"]) < DETAIL_MIN_CHART_SETUP_QUALITY:
+        quality_failures.append("chart setup quality is below threshold")
+    if expected_r < DETAIL_MIN_EXPECTED_R:
+        quality_failures.append("expected reward after costs is too low")
+    if float(probabilities["confidence"]) < float(profile["confidence_threshold"]):
+        quality_failures.append("model confidence is below threshold")
+    if risk_reward < float(profile["min_risk_reward"]):
+        quality_failures.append("risk/reward is below threshold")
+    if final_score < float(profile["min_final_score"]):
+        quality_failures.append("final score is below threshold")
+
+    tradable = not quality_failures
+    if direction == "SELL" and os.getenv("DETAIL_ANALYSIS_ALLOW_SELL", "false").lower() not in {"1", "true", "yes"}:
+        quality_failures.append("sell-side calls are disabled by default")
+        tradable = False
+
+    if direction == "SELL":
+        stop_loss = entry + (stop_multiplier * atr_val)
+        target = entry - (target_multiplier * atr_val)
+    else:
+        stop_loss = entry - (stop_multiplier * atr_val)
+        target = entry + (target_multiplier * atr_val)
+
+    if tradable and direction == "BUY":
+        verdict = "Strong Buy" if model_pwin >= 0.72 and final_score >= 0.70 else "Buy"
+    elif tradable and direction == "SELL":
+        verdict = "Strong Sell" if model_pwin >= 0.72 and final_score >= 0.70 else "Sell"
+    else:
+        verdict = "Hold"
 
     momentum_velocity = 1.0 + (abs(rsi - 50) / 50.0) 
-    estimated_days = max(1, min(math.ceil((abs(target - entry) / atr_val) / momentum_velocity * 1.4), 21)) 
+    estimated_days = max(1, min(math.ceil((abs(target - entry) / atr_val) / momentum_velocity * 1.4), 21)) if tradable else 0
     
     confidence = float(probabilities["confidence"]) * 100
 
     strategy_evals, best_id = evaluate_strategies(latest, prev, df)
+    robust_score = max(0.0, min(100.0, final_score * 100))
+    fiso = robust_score if tradable else min(55.0, robust_score)
+    if not tradable:
+        for strategy in strategy_evals.values():
+            strategy["score"] = min(int(strategy.get("score", 0)), 55)
+        strategy_evals[20] = {
+            "score": int(fiso),
+            "desc": "No-trade verdict: the setup did not clear Bullseye's risk/reward, confidence, and data-quality gates.",
+        }
+        best_id = 20
 
     result = {
         "ticker": ticker,
         "fiso_score": round(fiso, 2),
+        "legacy_fiso_score": round(min(100.0, max(0.0, raw_fiso)), 2),
         "verdict": verdict,
+        "signal_status": "trade" if tradable else "no_trade",
         "entry": round(entry, 2),
         "stop_loss": round(stop_loss, 2),
         "target": round(target, 2),
@@ -631,12 +700,33 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "best_strategy_id": best_id,
         "confidence": round(confidence, 2),
         "model_probability": round(model_pwin, 4),
-        "model_expected_return_r": round(model_expected_r, 4),
+        "model_expected_return_r": round(expected_r, 4),
+        "expected_r": round(expected_r, 4),
+        "risk_reward": round(risk_reward, 4),
+        "final_score": round(final_score, 4),
+        "chart_setup_quality": technical_setup["chart_setup_quality"],
+        "directional_edge": technical_setup.get("directional_edge"),
         "model_path": probabilities.get("model_path", "fallback"),
         "historical_hit_rate": probabilities.get("historical_hit_rate"),
         "historical_hit_rate_trades": probabilities.get("historical_hit_rate_trades"),
+        "risk_notes": list(dict.fromkeys(quality_failures)),
+        "analysis_quality": {
+            "risk_profile": risk_profile_name,
+            "validation": validation,
+            "technical_setup": technical_setup,
+            "probabilities": probabilities,
+            "quality_gates": {
+                "min_directional_edge": DETAIL_MIN_DIRECTIONAL_EDGE,
+                "min_chart_setup_quality": DETAIL_MIN_CHART_SETUP_QUALITY,
+                "min_expected_r": DETAIL_MIN_EXPECTED_R,
+                "min_confidence": profile["confidence_threshold"],
+                "min_risk_reward": profile["min_risk_reward"],
+                "min_final_score": profile["min_final_score"],
+                "conservative_p_loss": round(conservative_p_loss, 6),
+            },
+        },
         "estimated_days": estimated_days,
-        "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y')
+        "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y') if tradable else "No active trade"
     }
 
     # ── Save to RAM cache ──────────────────────────────────────────────────────

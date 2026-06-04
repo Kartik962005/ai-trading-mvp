@@ -65,6 +65,12 @@ _MEMORY_SIGNALS: list[dict[str, Any]] = []
 _MEMORY_OUTCOMES: list[dict[str, Any]] = []
 _MEMORY_EMAIL_LOGS: list[dict[str, Any]] = []
 
+MIN_DIRECTIONAL_EDGE = int(os.getenv("DAILY_MIN_DIRECTIONAL_EDGE", "2"))
+MIN_CHART_SETUP_QUALITY = float(os.getenv("DAILY_MIN_CHART_SETUP_QUALITY", "0.60"))
+MIN_EXPECTED_R = float(os.getenv("DAILY_MIN_EXPECTED_R", "0.08"))
+MIN_HISTORICAL_HIT_RATE = float(os.getenv("DAILY_MIN_HISTORICAL_HIT_RATE", "0.45"))
+MIN_HISTORICAL_TRADES_FOR_REJECTION = int(os.getenv("DAILY_MIN_HIT_RATE_TRADES", "10"))
+
 
 def _is_missing_table_error(exc: Exception, table_name: str | None = None) -> bool:
     message = str(exc)
@@ -381,6 +387,27 @@ def get_daily_update_preference(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _has_delivery_consent(preference: dict[str, Any]) -> bool:
+    if preference.get("consent_accepted_at"):
+        return True
+    # Backward compatibility: older rows saved an explicit enabled flag before
+    # consent timestamps existed. Treat enabled + email as legacy opt-in instead
+    # of silently skipping the user forever.
+    return bool(preference.get("daily_stock_email_enabled") and preference.get("email"))
+
+
+def _ensure_delivery_consent(preference: dict[str, Any]) -> dict[str, Any]:
+    if preference.get("consent_accepted_at") or not _has_delivery_consent(preference):
+        return preference
+    preference["consent_version"] = preference.get("consent_version") or f"{DEFAULT_CONSENT_VERSION}-legacy"
+    preference["consent_accepted_at"] = (
+        preference.get("updated_at")
+        or preference.get("created_at")
+        or _utc_now_iso()
+    )
+    return _upsert_preference(preference)
+
+
 def update_daily_update_preference(user: dict[str, Any], enabled: bool, email: str | None = None) -> dict[str, Any]:
     if enabled:
         return enable_daily_alerts(
@@ -484,6 +511,10 @@ def _build_candidate(
 
     relative_strength = _relative_strength(feature_frame, index_frame)
     technical_setup = evaluate_technical_setup(latest.to_dict(), relative_strength, sector_strength)
+    if technical_setup.get("direction") not in {"BUY", "SELL"}:
+        return None
+    if abs(int(technical_setup.get("directional_edge") or 0)) < MIN_DIRECTIONAL_EDGE:
+        return None
     feature_values = build_live_feature_values(
         latest,
         technical_setup,
@@ -523,9 +554,11 @@ def _build_candidate(
         target_r = max((close - target_price) / max(stop_loss - close, 1e-6), 0)
         stop_r = 1.0
 
+    calibrated_pwin = float(probabilities["calibrated_pwin"])
+    conservative_p_loss = max(float(probabilities["p_loss"]), 1.0 - calibrated_pwin)
     expected_r = compute_expected_r(
-        probabilities["calibrated_pwin"],
-        probabilities["p_loss"],
+        calibrated_pwin,
+        conservative_p_loss,
         target_r,
         stop_r,
         transaction_cost_r=0.03 if signal_type != "Intraday" else 0.04,
@@ -544,6 +577,8 @@ def _build_candidate(
     liquidity_score = _liquidity_score(avg_turnover)
     risk_reward = target_r
     confidence = probabilities["confidence"]
+    historical_hit_rate = float(probabilities.get("historical_hit_rate") or UNIVERSE_AVERAGE_WIN_RATE)
+    historical_hit_rate_trades = int(probabilities.get("historical_hit_rate_trades") or 0)
     atr_pct = atr / close
     penalties = _risk_penalties(validation, atr_pct, risk_level)
     regime_alignment = regime["alignment_buy"] if technical_setup["direction"] == "BUY" else regime["alignment_sell"]
@@ -563,12 +598,14 @@ def _build_candidate(
     allow_sell_signals = os.getenv("DAILY_SIGNALS_ALLOW_SELL", "false").lower() in {"1", "true", "yes"}
     if technical_setup["direction"] == "SELL" and not allow_sell_signals:
         return None
+    if historical_hit_rate_trades >= MIN_HISTORICAL_TRADES_FOR_REJECTION and historical_hit_rate < MIN_HISTORICAL_HIT_RATE:
+        return None
     if (
-        expected_r <= 0
+        expected_r < MIN_EXPECTED_R
         or confidence < profile["confidence_threshold"]
         or risk_reward < profile["min_risk_reward"]
         or final_score < float(profile.get("min_final_score", 0.0))
-        or technical_setup["chart_setup_quality"] < 0.5
+        or technical_setup["chart_setup_quality"] < MIN_CHART_SETUP_QUALITY
     ):
         return None
 
@@ -605,6 +642,13 @@ def _build_candidate(
             "sector_strength": round(sector_strength, 4),
             "relative_strength": round(relative_strength, 4),
             "signal_type": signal_type,
+            "quality_gates": {
+                "min_directional_edge": MIN_DIRECTIONAL_EDGE,
+                "min_chart_setup_quality": MIN_CHART_SETUP_QUALITY,
+                "min_expected_r": MIN_EXPECTED_R,
+                "min_risk_reward": profile["min_risk_reward"],
+                "conservative_p_loss": round(conservative_p_loss, 6),
+            },
         },
         "recent_returns": returns,
     }
@@ -1000,8 +1044,9 @@ def process_scheduled_daily_alerts(force: bool = False) -> dict[str, Any]:
     target_date = _next_trading_day(now.date()).isoformat()
     due_preferences: list[dict[str, Any]] = []
     for preference in _iter_preferences():
-        if not preference.get("consent_accepted_at"):
+        if not _has_delivery_consent(preference):
             continue
+        preference = _ensure_delivery_consent(preference)
         preferred_time = _parse_time_string(preference.get("email_time"))
         if not (force or (now.hour, now.minute) >= (preferred_time.hour, preferred_time.minute)):
             continue

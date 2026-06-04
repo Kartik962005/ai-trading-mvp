@@ -2,7 +2,15 @@ import unittest
 
 from app.services.daily_signal_engine.diversification import diversify_candidates
 from app.services.daily_signal_engine.scoring import adjusted_win_rate, compute_expected_r
-from app.services.daily_trade_service import _build_unsubscribe_token, _decode_unsubscribe_token, _validate_email_time
+from app.services.daily_signal_engine.technical_rules import evaluate_technical_setup
+from app.services import daily_trade_service as dts
+from app.services.daily_trade_service import (
+    _build_unsubscribe_token,
+    _decode_unsubscribe_token,
+    _ensure_delivery_consent,
+    _has_delivery_consent,
+    _validate_email_time,
+)
 
 
 class DailySignalEngineTests(unittest.TestCase):
@@ -35,6 +43,42 @@ class DailySignalEngineTests(unittest.TestCase):
         self.assertEqual(_validate_email_time("NSE", "18:00"), "18:00")
         with self.assertRaises(ValueError):
             _validate_email_time("NSE", "15:45")
+
+    def test_mixed_setup_does_not_become_buy_by_tie_break(self):
+        setup = evaluate_technical_setup(
+            {
+                "close": 100,
+                "ema20": 100,
+                "ema50": 100,
+                "resistance20": 110,
+                "support20": 90,
+                "volume": 1000,
+                "vol_avg20": 1000,
+                "rsi14": 50,
+                "adx14": 10,
+            },
+            relative_strength=0,
+            sector_strength=0,
+        )
+        self.assertEqual(setup["direction"], "HOLD")
+        self.assertEqual(setup["setup_type"], "no_trade")
+
+    def test_enabled_legacy_preference_counts_as_delivery_consent(self):
+        preference = {
+            "user_id": "user-legacy",
+            "email": "legacy@example.com",
+            "daily_stock_email_enabled": True,
+            "updated_at": "2026-06-03T12:00:00+00:00",
+        }
+        self.assertTrue(_has_delivery_consent(preference))
+        original_supabase = dts.supabase
+        dts.supabase = None
+        try:
+            updated = _ensure_delivery_consent(preference)
+            self.assertEqual(updated["consent_accepted_at"], "2026-06-03T12:00:00+00:00")
+            self.assertIn("legacy", updated["consent_version"])
+        finally:
+            dts.supabase = original_supabase
 
 
 if __name__ == "__main__":

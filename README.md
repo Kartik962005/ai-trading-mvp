@@ -85,6 +85,15 @@ When `DAILY_UPDATES_ENABLED=true`, the backend loop checks every minute:
 
 For quick local testing, use the admin run endpoint with `force=true`.
 
+For production, `.github/workflows/daily-alert-emails.yml` also calls the backend
+every 15 minutes after market close. Add these GitHub secrets:
+
+- `BACKEND_URL`: your deployed backend base URL
+- `ALERT_ADMIN_KEY`: same value configured on the backend
+
+That workflow calls `/api/v1/daily-updates/run-scheduled`, which respects each
+user's selected `email_time` and skips duplicate sends for the same target date.
+
 ## Notes
 
 - The current engine is modular and ready for a real market data or ML provider later.

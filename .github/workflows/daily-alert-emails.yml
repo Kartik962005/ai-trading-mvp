@@ -1,0 +1,32 @@
+name: Daily alert emails
+
+# Reliable external scheduler for logged-in daily stock emails. It calls the
+# backend endpoint that respects each user's selected email_time and duplicate
+# email logs, so the web server does not have to stay awake all evening.
+
+on:
+  schedule:
+    # Every 15 minutes from 15:30-22:45 IST on weekdays.
+    - cron: "*/15 10-17 * * 1-5"
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-alert-emails
+  cancel-in-progress: false
+
+jobs:
+  process-due-emails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Call scheduled daily email endpoint
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          ALERT_ADMIN_KEY: ${{ secrets.ALERT_ADMIN_KEY }}
+        run: |
+          test -n "$BACKEND_URL"
+          test -n "$ALERT_ADMIN_KEY"
+          curl --fail-with-body \
+            --request POST \
+            --header "x-alert-admin-key: ${ALERT_ADMIN_KEY}" \
+            "${BACKEND_URL%/}/api/v1/daily-updates/run-scheduled"

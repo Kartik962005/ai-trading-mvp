@@ -68,17 +68,34 @@ def evaluate_technical_setup(latest: dict[str, Any], relative_strength: float, s
         sell_score += 1
         sell_reasons.append("sector weakness")
 
-    direction = "BUY" if buy_score >= sell_score else "SELL"
-    chosen_reasons = buy_reasons if direction == "BUY" else sell_reasons
-    chosen_score = buy_score if direction == "BUY" else sell_score
-    chart_setup_quality = min(1.0, chosen_score / 8)
+    edge = buy_score - sell_score
+    if edge >= 2:
+        direction = "BUY"
+        chosen_reasons = buy_reasons
+        chosen_score = buy_score
+    elif edge <= -2:
+        direction = "SELL"
+        chosen_reasons = sell_reasons
+        chosen_score = sell_score
+    else:
+        direction = "HOLD"
+        chosen_reasons = ["mixed setup; no clear directional edge"]
+        chosen_score = max(buy_score, sell_score)
+
+    edge_quality = min(1.0, abs(edge) / 4)
+    chart_setup_quality = min(1.0, (chosen_score / 8) * (0.72 + 0.28 * edge_quality))
 
     return {
         "direction": direction,
         "buy_score": buy_score,
         "sell_score": sell_score,
+        "directional_edge": edge,
         "chart_setup_quality": round(chart_setup_quality, 4),
-        "setup_type": "trend_breakout" if chosen_score >= 6 else "momentum_continuation" if chosen_score >= 4 else "mixed_setup",
+        "setup_type": (
+            "no_trade"
+            if direction == "HOLD"
+            else "trend_breakout" if chosen_score >= 6 else "momentum_continuation" if chosen_score >= 4 else "mixed_setup"
+        ),
         "reasons": chosen_reasons[:5],
         "volume_ratio": round(volume_ratio, 4),
         "rsi": round(rsi, 2),

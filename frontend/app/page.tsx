@@ -78,13 +78,16 @@ function getAnalysisPresentation(analysis: any) {
   const target = toFiniteNumber(analysis.target, entry);
   const stopLoss = toFiniteNumber(analysis.stop_loss, entry);
   const originalVerdict = String(analysis.verdict ?? '').trim();
+  const isNoTrade = analysis.signal_status === 'no_trade' || /^hold$/i.test(originalVerdict);
 
   const bullishSetup = target > entry && stopLoss < entry;
   const bearishSetup = target < entry && stopLoss > entry;
 
   let displayVerdict = originalVerdict || 'Hold';
 
-  if (bearishSetup) {
+  if (isNoTrade) {
+    displayVerdict = 'Hold';
+  } else if (bearishSetup) {
     displayVerdict = originalVerdict.includes('Strong') ? 'Strong Sell' : 'Sell';
   } else if (bullishSetup) {
     displayVerdict = /sell/i.test(originalVerdict)
@@ -92,9 +95,9 @@ function getAnalysisPresentation(analysis: any) {
       : originalVerdict || 'Buy';
   }
 
-  const direction = bearishSetup ? 'bearish' : bullishSetup ? 'bullish' : 'neutral';
-  const isBullish = direction === 'bullish' || /buy/i.test(displayVerdict);
-  const isBearish = direction === 'bearish' || /sell/i.test(displayVerdict);
+  const direction = isNoTrade ? 'neutral' : bearishSetup ? 'bearish' : bullishSetup ? 'bullish' : 'neutral';
+  const isBullish = !isNoTrade && (direction === 'bullish' || /buy/i.test(displayVerdict));
+  const isBearish = !isNoTrade && (direction === 'bearish' || /sell/i.test(displayVerdict));
 
   return {
     ...analysis,
@@ -105,7 +108,7 @@ function getAnalysisPresentation(analysis: any) {
     direction,
     isBullish,
     isBearish,
-    isHold: !isBullish && !isBearish,
+    isHold: isNoTrade || (!isBullish && !isBearish),
     confidenceLevel: toFiniteNumber(analysis.fiso_score, 0),
   };
 }
@@ -1798,11 +1801,7 @@ const FisoDetailPanel = ({
   const [showAllStrategies, setShowAllStrategies] = useState(false);
   const showInlineStrategyToggle = false;
   const visibleStrategies = showAllStrategies ? topStrategies : topStrategies.slice(0, 3);
-  const stockNewsStories: NewsStory[] = analysis?.sentiment?.stories?.length
-    ? analysis.sentiment.stories
-    : (analysis?.sentiment?.headlines?.length ? analysis.sentiment.headlines : ['No verified stock-specific news found yet.']).map(storyFromHeadline);
-  const visibleStockNews = stockNewsStories.filter(story => isEnglishNewsTitle(story.title));
-  const visibleStockStories = visibleStockNews.length ? visibleStockNews : [{ title: 'No English stock-specific news found yet.', source: 'Bullseye', url: null }];
+  const visibleStockStories: NewsStory[] = [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -1820,7 +1819,9 @@ const FisoDetailPanel = ({
             <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Trade Setup</span>
             <div className="text-2xl font-['Space_Grotesk'] font-black text-white">{setupLabel}</div>
             <p className="text-[10px] text-zinc-400 mt-2 font-['JetBrains_Mono']">
-              Target and stop loss are aligned with the displayed verdict.
+              {isHold
+                ? 'No active trade: price bands are shown for research only.'
+                : 'Target and stop loss are aligned with the displayed verdict.'}
             </p>
           </div>
         </div>
@@ -1861,13 +1862,37 @@ const FisoDetailPanel = ({
 
         {/* Price targets */}
         <div className="lg:col-span-6 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Predictive Price Vectors</span>
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">
+            {isHold ? 'No Active Trade' : 'Predictive Price Vectors'}
+          </span>
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4">
             <div className="metric-card-hover bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4 hover:border-cyan-400/40 hover:bg-cyan-500/8 transition-all">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Entry Price</span>
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{isHold ? 'Current Price' : 'Entry Price'}</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysisView.entry?.toLocaleString()}</span>
-              <span className="text-[9px] text-zinc-500 block mt-1">Current position</span>
+              <span className="text-[9px] text-zinc-500 block mt-1">{isHold ? 'Reference only' : 'Current position'}</span>
             </div>
+            {isHold && (
+              <>
+                <div className="metric-card-hover bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-white/20 transition-all">
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Decision</span>
+                  <span className="text-xl font-['Space_Grotesk'] font-black uppercase text-zinc-100">Wait</span>
+                  <span className="text-[9px] text-zinc-500 block mt-1">No target or stop issued</span>
+                </div>
+                <div className="col-span-1 min-[420px]:col-span-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-200 font-['Space_Grotesk']">Why no trade</span>
+                  <ul className="mt-3 space-y-2 text-[11px] leading-5 text-zinc-300 font-['JetBrains_Mono']">
+                    {(analysisView.risk_notes?.length ? analysisView.risk_notes : ['Risk/reward and confidence gates did not clear.']).slice(0, 4).map((note: string) => (
+                      <li key={note} className="flex gap-2">
+                        <span className="mt-2 h-1 w-1 rounded-full bg-amber-300" aria-hidden="true" />
+                        <span>{note}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+            {!isHold && (
+              <>
             <div className="metric-card-hover bg-green-500/10 border border-green-400/30 rounded-2xl p-4 hover:border-green-400/50 hover:bg-green-500/15 transition-all">
               <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Target Price</span>
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-green-400">{currency}{analysisView.target?.toLocaleString()}</span>
@@ -1887,6 +1912,8 @@ const FisoDetailPanel = ({
               <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">1 : {rr}</span>
               <span className="text-[9px] text-zinc-500 block mt-1">per unit risk</span>
             </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1894,7 +1921,22 @@ const FisoDetailPanel = ({
       {/* ── Row 2: Trade Timeline ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Trade Timeline</span>
+          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">
+            {isHold ? 'Trade Status' : 'Trade Timeline'}
+          </span>
+          {isHold ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-400/30 bg-zinc-400/10 text-zinc-200 font-black">H</div>
+                <div>
+                  <div className="text-sm font-black uppercase tracking-widest text-white font-['Space_Grotesk']">No trade planned</div>
+                  <p className="mt-2 max-w-2xl text-[12px] leading-6 text-zinc-400 font-['JetBrains_Mono']">
+                    Bullseye is not issuing a target, stop loss, expected move, or holding period because this stock did not pass the current trade-quality gates.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between py-2.5 border-b border-white/5">
               <div className="flex items-center gap-3">
@@ -1935,6 +1977,7 @@ const FisoDetailPanel = ({
               <span className="font-['JetBrains_Mono'] font-bold text-sm text-red-400">{stopRiskPct}%</span>
             </div>
           </div>
+          )}
         </div>
         <div className="lg:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
           <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Position Snapshot</span>
@@ -1944,8 +1987,10 @@ const FisoDetailPanel = ({
               <span className={`text-sm font-black uppercase font-['Space_Grotesk'] ${accentColor}`}>{analysisView.displayVerdict}</span>
             </div>
             <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">Risk:Reward</span>
-              <span className="text-sm font-black text-white font-['JetBrains_Mono']">1 : {rr}</span>
+              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">
+                {isHold ? 'Trade State' : 'Risk:Reward'}
+              </span>
+              <span className="text-sm font-black text-white font-['JetBrains_Mono']">{isHold ? 'NO TRADE' : `1 : ${rr}`}</span>
             </div>
             <div className="col-span-2 rounded-2xl bg-cyan-500/5 border border-cyan-400/20 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -2612,6 +2657,7 @@ const FisoDetailPanel = ({
       </div>
 
       {/* ── Section 5: Global NLP Feed (LAST) ── */}
+      {false && (
       <div className="stock-news-panel bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)] mb-8">
         <div className="flex items-center mb-5 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2">
@@ -2659,6 +2705,7 @@ const FisoDetailPanel = ({
           </span>
         </div>
       </div>
+      )}
 
     </div>
   );

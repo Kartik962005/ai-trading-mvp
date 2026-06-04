@@ -789,6 +789,18 @@ async def run_daily_updates_forecast(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/v1/daily-updates/run-scheduled")
+@limiter.limit("6/minute")
+async def run_scheduled_daily_updates(request: Request):
+    admin_key = os.getenv("ALERT_ADMIN_KEY")
+    if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
+        raise HTTPException(status_code=403, detail="Invalid alert admin key")
+    try:
+        return process_scheduled_daily_alerts(force=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/notification-preferences")
 @app.get("/api/v1/notification-preferences")
 @limiter.limit("60/minute")
