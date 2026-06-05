@@ -648,6 +648,25 @@ const INDICATOR_NAMES = [
 
 const STOCKS_PER_PAGE = 24;
 const STOCK_PAGE_LIMIT = 100;
+const MARKET_SHUFFLE_VERSION = 'sector-mix-v1';
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function stableMarketShuffle<T extends { ticker: string }>(stocks: T[], salt: string) {
+  return [...stocks].sort((left, right) => {
+    const leftHash = stableHash(`${salt}:${left.ticker}`);
+    const rightHash = stableHash(`${salt}:${right.ticker}`);
+    if (leftHash !== rightHash) return leftHash - rightHash;
+    return left.ticker.localeCompare(right.ticker);
+  });
+}
 
 function asNumber(value: any, fallback = 0) {
   const numeric = Number(value);
@@ -1238,24 +1257,21 @@ const MarketAssetCard = ({
   const isReady = !!analysisView;
   const quickPrice = Number(quickQuote?.price);
   const quickChange = Number(quickQuote?.change_percent ?? 0);
-  const quickConfidence = Math.min(86, Math.max(42, 56 + Math.abs(quickChange) * 8));
-  const quickSignal = quickChange < 0 ? 'Sell' : 'Buy';
-  const quickSignalBullish = quickSignal === 'Buy';
 
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
   const verdictColor = isReady
     ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400')
-    : (quickSignalBullish ? 'text-green-500' : 'text-red-500');
-  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : quickSignal;
+    : 'text-cyan-600';
+  const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : 'Analyzing';
 
   // Mini verdict dot shown even before hover when prefetch is done
   const dotColor = isReady
     ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
-    : (quickSignalBullish ? 'bg-green-400' : 'bg-red-400');
+    : 'bg-cyan-400';
   const signalGradient = isReady
     ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
-    : (quickSignalBullish ? 'from-emerald-300 to-cyan-300' : 'from-rose-300 to-orange-200');
+    : 'from-cyan-300 to-sky-300';
 
   return (
     <div
@@ -1272,7 +1288,7 @@ const MarketAssetCard = ({
         </div>
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Live verdict dot — green/red/grey based on prefetch status */}
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Open preview'} />
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Running FISO analysis'} />
           <button
             type="button"
             onPointerDown={(e) => { e.stopPropagation(); onPreview(stock); }}
@@ -1290,7 +1306,7 @@ const MarketAssetCard = ({
       <div className="relative mt-3 flex min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-2 sm:px-3">
         <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400 sm:text-[10px] sm:tracking-widest">Price</span>
         <span className="min-w-0 truncate text-right font-['JetBrains_Mono'] text-xs font-black text-slate-950 sm:text-sm">
-          {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
+          {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : 'Fetching'}
         </span>
       </div>
       <div className="relative mt-2 flex min-w-0 items-center justify-between gap-2 px-1">
@@ -1303,10 +1319,11 @@ const MarketAssetCard = ({
           <div
             className="h-full rounded-full transition-all duration-1000"
             style={{
-              width: `${isReady ? analysisView.confidenceLevel : quickConfidence}%`,
+              width: `${isReady ? analysisView.confidenceLevel : 28}%`,
+              opacity: isReady ? 1 : 0.75,
               backgroundColor: isReady
                 ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171')
-                : (quickSignalBullish ? '#4ade80' : '#f87171'),
+                : '#22d3ee',
             }}
           />
         </div>
@@ -1333,10 +1350,17 @@ const StockPreviewModal = ({
   onSelect: (stock: typeof STOCKS[0]) => void;
   onAnalysisReady: (ticker: string, analysis: unknown) => void;
 }) => {
+  const exactPreviewChart = getCache(`chart:${stock.ticker}:1mo`);
+  const fallbackPreviewChart =
+    exactPreviewChart ??
+    getCache(`chart:${stock.ticker}:1y`) ??
+    getCache(`chart:${stock.ticker}:max`);
   const { data: fetchedAnalysis } = useSWR(
     !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
     fetcher,
     {
+      revalidateOnFocus: false,
+      dedupingInterval: 1000 * 60 * 10,
       onSuccess: data => {
         if (!data || data.error) return;
         setCache(`analysis:${stock.ticker}`, data);
@@ -1345,7 +1369,11 @@ const StockPreviewModal = ({
     }
   );
   const { data: previewChart } = useSWR(`/api/v1/chart/${stock.ticker}?range=1mo`, fetcher, {
-    fallbackData: getCache(`chart:${stock.ticker}:1mo`),
+    fallbackData: fallbackPreviewChart,
+    revalidateOnFocus: false,
+    revalidateIfStale: !exactPreviewChart,
+    revalidateOnMount: !exactPreviewChart,
+    dedupingInterval: 1000 * 60 * 10,
     onSuccess: data => setCache(`chart:${stock.ticker}:1mo`, data),
   });
 
@@ -1402,7 +1430,7 @@ const StockPreviewModal = ({
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-right">
               <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-['Space_Grotesk']">Live Price</div>
               <div className="mt-1 text-2xl font-black text-slate-950 font-['JetBrains_Mono']">
-                {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : '-'}
+                {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : 'Fetching'}
               </div>
               <div className={`mt-1 text-xs font-black font-['JetBrains_Mono'] ${quickChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {quickChange >= 0 ? '+' : ''}{quickChange.toFixed(2)}%
@@ -1445,16 +1473,23 @@ const StockPreviewModal = ({
                     </div>
                     <div className="mt-2 text-xs font-black text-white font-['JetBrains_Mono']">{analysisView.confidenceLevel}/100 FISO confidence</div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  {isHold ? (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Target</div>
-                      <div className="mt-2 text-lg font-black text-green-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.target}</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">No Active Trade</div>
+                      <div className="mt-2 text-sm font-black text-slate-700 font-['Space_Grotesk']">Target and stop are hidden until the setup becomes actionable.</div>
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stop Loss</div>
-                      <div className="mt-2 text-lg font-black text-red-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.stop_loss}</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Target</div>
+                        <div className="mt-2 text-lg font-black text-green-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.target}</div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stop Loss</div>
+                        <div className="mt-2 text-lg font-black text-red-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.stop_loss}</div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               ) : (
                 <div className="flex min-h-52 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
@@ -3084,6 +3119,7 @@ function HomeContent() {
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [dailySignalPreview, setDailySignalPreview] = useState<DailySignalRecord[]>([]);
   const [authPromptDismissed, setAuthPromptDismissed] = useState(false);
+  const [cachedQuote, setCachedQuote] = useState<QuoteSnapshot | undefined>(undefined);
   const [cachedChart, setCachedChart] = useState<any>(undefined);
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(undefined);
   const [cachedFundamentals, setCachedFundamentals] = useState<any>(undefined);
@@ -3630,26 +3666,40 @@ function HomeContent() {
 
   useEffect(() => {
     if (!ticker) {
+      setCachedQuote(undefined);
       setCachedChart(undefined);
       setCachedAnalysis(undefined);
       setCachedFundamentals(undefined);
       return;
     }
+    setCachedQuote(getCache(`quote:${ticker}`));
     setCachedChart(getCache(`chart:${ticker}:${chartRange}`));
     setCachedAnalysis(getCache(`analysis:${ticker}`));
     setCachedFundamentals(getCache(`fundamentals:${ticker}`));
   }, [ticker, chartRange]);
 
-  const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, { refreshInterval: 30000 });
+  const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, {
+    fallbackData: cachedQuote,
+    refreshInterval: 45000,
+    revalidateIfStale: !cachedQuote,
+    revalidateOnMount: !cachedQuote,
+    revalidateOnFocus: false,
+    dedupingInterval: 1000 * 45,
+  });
   const { data: chartData, error: chartError } = useSWR(ticker ? `/api/v1/chart/${ticker}?range=${chartRange}` : null, fetcher, {
     fallbackData: cachedChart,
     revalidateIfStale: !cachedChart,
     revalidateOnMount: !cachedChart,
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+    dedupingInterval: 1000 * 60 * 10,
   });
   const { data: analysis } = useSWR(ticker ? `/api/v1/analyze/${ticker}` : null, fetcher, {
     fallbackData: cachedAnalysis,
     revalidateIfStale: !cachedAnalysis,
     revalidateOnMount: !cachedAnalysis,
+    revalidateOnFocus: false,
+    dedupingInterval: 1000 * 60 * 10,
   });
   const { data: fundamentals, isLoading: fundamentalsLoading } = useSWR(
     ticker && canOpenDetailedAnalysis ? `/api/v1/fundamentals/${ticker}` : null,
@@ -3658,8 +3708,15 @@ function HomeContent() {
       fallbackData: cachedFundamentals,
       revalidateIfStale: !cachedFundamentals,
       revalidateOnMount: !cachedFundamentals,
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+      dedupingInterval: 1000 * 60 * 30,
     }
   );
+
+  useEffect(() => {
+    if (ticker && quote) setCache(`quote:${ticker}`, quote);
+  }, [quote, ticker]);
 
   useEffect(() => {
     if (ticker && chartData) setCache(`chart:${ticker}:${chartRange}`, chartData);
@@ -3853,6 +3910,7 @@ function HomeContent() {
   const openStockView = (stock: typeof STOCKS[0], nextView: DashboardView = 'overview') => {
     const market = resolveMarket(stock.exchange);
     const resolvedView = canShowDetailedAnalysis(stock) ? nextView : 'overview';
+    setCachedQuote(getCache(`quote:${stock.ticker}`));
     setCachedChart(getCache(`chart:${stock.ticker}:${chartRange}`));
     setCachedAnalysis(getCache(`analysis:${stock.ticker}`));
     setCachedFundamentals(getCache(`fundamentals:${stock.ticker}`));
@@ -3912,8 +3970,18 @@ function HomeContent() {
   };
 
   const getMarketStocks = () => {
-    if (activeMarket === 'INDIA') return STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE').slice(0, STOCK_PAGE_LIMIT);
-    if (activeMarket === 'US') return STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE').slice(0, STOCK_PAGE_LIMIT);
+    if (activeMarket === 'INDIA') {
+      return stableMarketShuffle(
+        STOCKS.filter(s => s.exchange === 'NSE' || s.exchange === 'BSE').slice(0, STOCK_PAGE_LIMIT),
+        'INDIA'
+      );
+    }
+    if (activeMarket === 'US') {
+      return stableMarketShuffle(
+        STOCKS.filter(s => s.exchange === 'NASDAQ' || s.exchange === 'NYSE').slice(0, STOCK_PAGE_LIMIT),
+        'US'
+      );
+    }
     return [];
   };
 
@@ -3923,11 +3991,12 @@ function HomeContent() {
   const visibleQuoteKey = visibleMarketStocks.length
     ? `/api/v1/quotes/batch?tickers=${visibleMarketStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
     : null;
+  const marketQuoteCacheKey = `market-quotes:${MARKET_SHUFFLE_VERSION}:${activeMarket}:${marketPage}`;
   const [cachedVisibleQuotes, setCachedVisibleQuotes] = useState<Record<string, QuoteSnapshot> | undefined>(undefined);
 
   useEffect(() => {
-    setCachedVisibleQuotes(getCache<Record<string, QuoteSnapshot>>(`market-quotes:${activeMarket}`));
-  }, [activeMarket, marketPage]);
+    setCachedVisibleQuotes(getCache<Record<string, QuoteSnapshot>>(marketQuoteCacheKey));
+  }, [marketQuoteCacheKey]);
 
   const { data: visibleQuotes } = useSWR<Record<string, QuoteSnapshot>>(visibleQuoteKey, fetcher, {
     fallbackData: cachedVisibleQuotes,
@@ -3935,18 +4004,50 @@ function HomeContent() {
     revalidateOnMount: !cachedVisibleQuotes,
     revalidateIfStale: !cachedVisibleQuotes,
     revalidateOnFocus: false,
-    onSuccess: quotes => setCache(`market-quotes:${activeMarket}`, quotes),
+    dedupingInterval: 1000 * 45,
+    onSuccess: quotes => {
+      setCache(marketQuoteCacheKey, quotes);
+      Object.entries(quotes).forEach(([nextTicker, nextQuote]) => setCache(`quote:${nextTicker}`, nextQuote));
+    },
   });
+
+  useEffect(() => {
+    const nextPage = marketPage + 1;
+    if (nextPage > marketPageCount) return;
+    const nextCacheKey = `market-quotes:${MARKET_SHUFFLE_VERSION}:${activeMarket}:${nextPage}`;
+    if (getCache<Record<string, QuoteSnapshot>>(nextCacheKey)) return;
+
+    const nextStocks = marketStocks.slice((nextPage - 1) * STOCKS_PER_PAGE, nextPage * STOCKS_PER_PAGE);
+    if (!nextStocks.length) return;
+    const nextKey = `/api/v1/quotes/batch?tickers=${nextStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`;
+    let cancelled = false;
+
+    fetcher(nextKey)
+      .then((quotes: Record<string, QuoteSnapshot>) => {
+        if (cancelled || !quotes) return;
+        setCache(nextCacheKey, quotes);
+        Object.entries(quotes).forEach(([nextTicker, nextQuote]) => setCache(`quote:${nextTicker}`, nextQuote));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMarket, marketPage, marketPageCount]);
+
   const assetColumns = Array.from({ length: assetColumnCount }, (_, columnIndex) =>
     visibleMarketStocks.filter((_, stockIndex) => stockIndex % assetColumnCount === columnIndex)
   );
 
   // ── Prefetch cache: ticker → analysis result ──────────────────────────────
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
+  const [cachedVisibleAnalysis, setCachedVisibleAnalysis] = useState<Record<string, any> | undefined>(undefined);
   const visibleAnalysisKey = visibleMarketStocks.length
     ? `/api/v1/analyze-batch?tickers=${visibleMarketStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
     : null;
-  const [cachedVisibleAnalysis, setCachedVisibleAnalysis] = useState<Record<string, any> | undefined>(undefined);
+  const visibleAnalysisComplete = visibleMarketStocks.length > 0
+    && visibleMarketStocks.every(stock => cachedVisibleAnalysis?.[stock.ticker]);
 
   useEffect(() => {
     const cachedVisible = visibleMarketStocks.reduce((acc, stock) => {
@@ -3958,12 +4059,36 @@ function HomeContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMarket, marketPage]);
 
+  useEffect(() => {
+    if (!cachedVisibleAnalysis) return;
+    const clean: Record<string, any> = {};
+    Object.entries(cachedVisibleAnalysis).forEach(([nextTicker, nextAnalysis]) => {
+      if (!nextAnalysis || nextAnalysis.error || nextAnalysis.detail) return;
+      clean[nextTicker] = nextAnalysis;
+      setCache(`analysis:${nextTicker}`, nextAnalysis);
+    });
+    if (Object.keys(clean).length > 0) {
+      setPrefetchCache(prev => ({ ...prev, ...clean }));
+    }
+  }, [cachedVisibleAnalysis]);
+
   const { data: visibleAnalysis } = useSWR<Record<string, any>>(visibleAnalysisKey, fetcher, {
     fallbackData: cachedVisibleAnalysis,
     revalidateOnFocus: false,
     dedupingInterval: 1000 * 60 * 10,
-    revalidateIfStale: !cachedVisibleAnalysis,
-    revalidateOnMount: !cachedVisibleAnalysis,
+    revalidateIfStale: !visibleAnalysisComplete,
+    revalidateOnMount: !visibleAnalysisComplete,
+    onSuccess: results => {
+      const clean: Record<string, any> = {};
+      Object.entries(results ?? {}).forEach(([nextTicker, nextAnalysis]) => {
+        if (!nextAnalysis || nextAnalysis.error || nextAnalysis.detail) return;
+        clean[nextTicker] = nextAnalysis;
+        setCache(`analysis:${nextTicker}`, nextAnalysis);
+      });
+      if (Object.keys(clean).length > 0) {
+        setPrefetchCache(prev => ({ ...prev, ...clean }));
+      }
+    },
   });
 
   useEffect(() => {
@@ -3979,8 +4104,8 @@ function HomeContent() {
     }
   }, [visibleAnalysis]);
 
-  // Hydrate visible cards from browser cache only. Fresh analysis runs on demand
-  // when a card is opened or a stock dashboard is selected.
+  // Hydrate visible cards from browser cache first, then refresh visible-page
+  // analysis automatically so homepage verdicts match the stock preview.
   useEffect(() => {
     setExpandedTicker(null);
     setMarketPage(1);

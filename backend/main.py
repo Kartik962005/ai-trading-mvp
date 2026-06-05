@@ -49,7 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.services.data_service import get_latest_quote, get_historical_data, get_fundamentals_data, get_chart_data
+from app.services.data_service import get_latest_quote, get_latest_quotes_batch, get_historical_data, get_fundamentals_data, get_chart_data
 from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
 from app.services.stock_ai_service import run_stock_ai_search
@@ -235,11 +235,8 @@ async def batch_quotes(request: Request, tickers: str):
         raise HTTPException(status_code=400, detail="No tickers provided")
     if len(ticker_list) > 30:
         raise HTTPException(status_code=400, detail="Max 30 tickers per batch")
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor(max_workers=len(ticker_list)) as executor:
-        tasks = [loop.run_in_executor(executor, get_latest_quote, t) for t in ticker_list]
-        results = await asyncio.gather(*tasks)
-    return {ticker: result for ticker, result in zip(ticker_list, results)}
+    bulk_results = get_latest_quotes_batch(ticker_list)
+    return {ticker: bulk_results.get(ticker, {"price": None, "change_percent": 0.0}) for ticker in ticker_list}
 
 
 @app.get("/api/v1/chart/{ticker}")

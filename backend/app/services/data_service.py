@@ -4,6 +4,7 @@ import pandas as pd
 import time
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from app.services import price_store
@@ -35,7 +36,7 @@ _chart_cache: dict = {}
 _fundamentals_cache: dict = {}
 _nse_quote_cache: dict = {}
 HIST_TTL  = 3600   # 1 hour
-QUOTE_TTL = 15     # 15 seconds
+QUOTE_TTL = 120    # 2 minutes
 CHART_TTL = 3600
 FUNDAMENTALS_TTL = 3600 * 6
 NSE_QUOTE_TTL = 3600
@@ -468,6 +469,18 @@ def get_chart_data(ticker: str, range_key: str = "1y"):
     }
     period, interval = options.get(range_key, options["1y"])
 
+    if range_key in {"1m", "1mo", "1y"}:
+        try:
+            days = 45 if range_key in {"1m", "1mo"} else 365
+            df = get_historical_data(ticker, days=days)
+            if range_key in {"1m", "1mo"}:
+                df = df.tail(31).copy()
+            if not df.empty:
+                _chart_cache[cache_key] = {"df": df.copy(), "ts": time.time()}
+                return df
+        except Exception as exc:
+            print(f"[Chart] Cached history path failed for {ticker}: {exc}")
+
     try:
         df = _fetch_yahoo_chart_data(ticker, period, interval)
     except Exception as exc:
@@ -487,22 +500,12 @@ def get_chart_data(ticker: str, range_key: str = "1y"):
     return df
 
 
-def get_latest_quote(ticker: str):
-    now = time.time()
-    if ticker in _quote_cache and now - _quote_cache[ticker]['ts'] < QUOTE_TTL:
-        return _quote_cache[ticker]['data']
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-    }
-
-    for base_url in [
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d",
-        f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d",
-    ]:
+def _fetch_quote_from_chart_api(ticker: str, timeout: float = 3.0, use_backup_host: bool = True):
+    hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"] if use_backup_host else ["query1.finance.yahoo.com"]
+    for host in hosts:
+        base_url = f"https://{host}/v8/finance/chart/{ticker}?interval=1m&range=1d"
         try:
-            response = requests.get(base_url, headers=headers, timeout=4)
+            response = requests.get(base_url, headers=YAHOO_HEADERS, timeout=timeout)
             meta = response.json()['chart']['result'][0]['meta']
             live_price = float(meta['regularMarketPrice'])
             prev_close = float(meta['chartPreviousClose'])
@@ -512,6 +515,18 @@ def get_latest_quote(ticker: str):
             return result
         except Exception:
             continue
+    return None
+
+
+def get_latest_quote(ticker: str):
+    now = time.time()
+    cached = _quote_cache.get(ticker)
+    if cached and now - cached['ts'] < QUOTE_TTL:
+        return cached['data']
+
+    result = _fetch_quote_from_chart_api(ticker, timeout=3)
+    if result:
+        return result
 
     try:
         tkr = yf.Ticker(ticker)
@@ -525,7 +540,93 @@ def get_latest_quote(ticker: str):
     except Exception as e:
         print(f"[Quote] All sources failed for {ticker}: {e}")
 
+    if cached:
+        return cached['data']
     return {"price": None, "change_percent": 0.0}
+
+
+def _get_latest_quotes_from_price_table(tickers: list[str]):
+    if not SUPABASE_OK or not supabase or not tickers:
+        return {}
+
+    try:
+        since = (pd.Timestamp.now().normalize() - pd.Timedelta(days=21)).strftime("%Y-%m-%d")
+        response = supabase.table("stock_prices") \
+            .select("ticker,date,close") \
+            .in_("ticker", tickers) \
+            .gte("date", since) \
+            .order("date", desc=True) \
+            .limit(max(len(tickers) * 8, 80)) \
+            .execute()
+    except Exception as exc:
+        print(f"[QuoteBatch] Supabase latest-close lookup failed: {exc}")
+        return {}
+
+    rows_by_ticker: dict[str, list[dict]] = {}
+    for row in response.data or []:
+        ticker = row.get("ticker")
+        close = _clean_scalar(row.get("close"))
+        if ticker and close is not None:
+            rows_by_ticker.setdefault(ticker, []).append(row)
+
+    results = {}
+    for ticker, rows in rows_by_ticker.items():
+        rows = sorted(rows, key=lambda row: str(row.get("date") or ""), reverse=True)
+        latest = _clean_scalar(rows[0].get("close")) if rows else None
+        previous = _clean_scalar(rows[1].get("close")) if len(rows) > 1 else latest
+        if latest is None:
+            continue
+        latest = float(latest)
+        previous = float(previous) if previous else latest
+        change_pct = ((latest - previous) / previous * 100) if previous > 0 else 0.0
+        result = {"price": round(latest, 2), "change_percent": round(change_pct, 2)}
+        results[ticker] = result
+        _quote_cache[ticker] = {"data": result, "ts": time.time()}
+
+    return results
+
+
+def get_latest_quotes_batch(tickers: list[str]):
+    now = time.time()
+    results: dict[str, dict] = {}
+    missing: list[str] = []
+
+    for ticker in tickers:
+        cached = _quote_cache.get(ticker)
+        if cached and now - cached["ts"] < QUOTE_TTL:
+            results[ticker] = cached["data"]
+        elif cached:
+            results[ticker] = cached["data"]
+        else:
+            missing.append(ticker)
+
+    if not missing:
+        return results
+
+    cached_table_results = _get_latest_quotes_from_price_table(missing)
+    results.update(cached_table_results)
+
+    missing_after_cache = [ticker for ticker in missing if ticker not in results]
+    if missing_after_cache:
+        with ThreadPoolExecutor(max_workers=min(len(missing_after_cache), 24)) as executor:
+            futures = {
+                executor.submit(_fetch_quote_from_chart_api, ticker, 0.9, False): ticker
+                for ticker in missing_after_cache
+            }
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    result = future.result()
+                except Exception:
+                    result = None
+                if result:
+                    results[ticker] = result
+
+    for ticker in missing:
+        if ticker not in results and ticker in _quote_cache:
+            results[ticker] = _quote_cache[ticker]["data"]
+
+    return results
 
 
 def get_historical_data(ticker: str, days: int = 365):
