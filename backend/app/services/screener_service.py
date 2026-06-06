@@ -1042,7 +1042,7 @@ def screen_stocks(prompt: str, stocks: list[dict[str, Any]]) -> dict[str, Any]:
     matched_rows = []
     stock_by_ticker = {stock["ticker"]: stock for stock in stocks if stock.get("ticker")}
     days = rules["consecutive_days"]
-    snapshot_rows = snapshot_by_ticker(tickers)
+    snapshot_rows = snapshot_by_ticker(tickers, max_age_hours=None)
     snapshot_used = bool(snapshot_rows) and len(snapshot_rows) >= max(1, min(len(tickers), int(len(tickers) * 0.5)))
     download = None
 

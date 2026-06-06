@@ -150,6 +150,63 @@ def frontend_metric_row(
     }
 
 
+def _row_ticker(row: dict[str, Any]) -> str | None:
+    stock = row.get("stock") if isinstance(row.get("stock"), dict) else {}
+    ticker = row.get("ticker") or stock.get("ticker")
+    return str(ticker) if ticker else None
+
+
+def _merge_metric_row(row: dict[str, Any], enriched: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(enriched)
+    for key, value in row.items():
+        if key in {"stock", "technical"}:
+            continue
+        if value is not None:
+            merged[key] = value
+    merged["stock"] = enriched.get("stock") or row.get("stock")
+    merged["technical"] = {
+        **(enriched.get("technical") or {}),
+        **(row.get("technical") or {}),
+    }
+    if row.get("reason"):
+        merged["reason"] = row["reason"]
+    return merged
+
+
+def enrich_metric_rows(
+    rows: list[dict[str, Any]],
+    *,
+    max_age_hours: float | None = None,
+) -> list[dict[str, Any]]:
+    """Fill frontend screener rows with the latest stored snapshot metrics.
+
+    This is intentionally allowed to read stale snapshots by default so weekend
+    and market-holiday screens show the last available data instead of blank
+    metric columns.
+    """
+    if not rows:
+        return []
+    tickers = [ticker for ticker in (_row_ticker(row) for row in rows) if ticker]
+    snapshots = snapshot_by_ticker(tickers, max_age_hours=max_age_hours)
+    if not snapshots:
+        return rows
+    enriched_rows: list[dict[str, Any]] = []
+    for row in rows:
+        ticker = _row_ticker(row)
+        snapshot = snapshots.get(ticker or "")
+        if not snapshot:
+            enriched_rows.append(row)
+            continue
+        snapshot_row = frontend_metric_row(
+            snapshot,
+            row.get("stock") if isinstance(row.get("stock"), dict) else None,
+            reason=row.get("reason"),
+            score=row.get("score") if isinstance(row.get("score"), int) else None,
+        )
+        enriched_rows.append(_merge_metric_row(row, snapshot_row))
+    return enriched_rows
+
+
 def snapshot_available() -> bool:
     return supabase is not None
 

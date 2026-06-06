@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ALL_SCREENS, buildCustomQueryResult, getRowsForScreen, getScreenBySlug } from '../screen-data';
 import ScreenMetricTable from '../ScreenMetricTable';
 import StockSearch from '../StockSearch';
+import { enrichScreenRows } from '../enrichRows';
 
 export default function ScreenDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -14,6 +15,17 @@ export default function ScreenDetailPage() {
   const [query, setQuery] = useState(screen?.query ?? '');
   const [rows, setRows] = useState(initialRows);
   const [activeTitle, setActiveTitle] = useState(screen?.title ?? 'Stock screen');
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(initialRows);
+    enrichScreenRows(initialRows).then(nextRows => {
+      if (!cancelled) setRows(nextRows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRows]);
 
   if (!screen) {
     return (
@@ -24,10 +36,11 @@ export default function ScreenDetailPage() {
     );
   }
 
-  const runCustomQuery = () => {
+  const runCustomQuery = async () => {
     const result = buildCustomQueryResult(query);
     setRows(result.rows);
     setActiveTitle('Custom query result');
+    setRows(await enrichScreenRows(result.rows));
   };
 
   return (

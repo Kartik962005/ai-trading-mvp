@@ -1452,6 +1452,9 @@ def _screening_answer(
             ],
         }
 
+    if stock_snapshot_service is not None and hasattr(stock_snapshot_service, "enrich_metric_rows"):
+        rows = stock_snapshot_service.enrich_metric_rows(rows, max_age_hours=None)
+
     top = rows[:12]
 
     def n(value: Any, digits: int = 2) -> str:

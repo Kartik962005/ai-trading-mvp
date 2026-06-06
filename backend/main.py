@@ -60,7 +60,7 @@ from app.services.ask_ai_history_service import (
     list_conversations,
     save_turn,
 )
-from app.services.stock_snapshot_service import is_snapshot_stale
+from app.services.stock_snapshot_service import enrich_metric_rows, is_snapshot_stale
 from app.services.strategy_engine import DISCLAIMER as STRATEGY_DISCLAIMER, backtest_nl_strategy, backtest_strategy, strategy_to_dict
 from app.services.strategy_store import (
     create_strategy as create_ai_strategy,
@@ -343,6 +343,10 @@ class SmartScreenerRequest(BaseModel):
     sectors: list[dict[str, Any]] = []
 
 
+class ScreenerEnrichRequest(BaseModel):
+    rows: list[dict[str, Any]] = []
+
+
 class StockAiRequest(BaseModel):
     prompt: str
     current_ticker: str
@@ -451,6 +455,18 @@ async def smart_screener_search(request: Request, body: SmartScreenerRequest):
             for stock in body.stocks
         ]
         return smart_search(body.prompt, stocks, body.screeners, body.sectors)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/screener/enrich")
+@limiter.limit("30/minute")
+async def screener_enrich(request: Request, body: ScreenerEnrichRequest):
+    try:
+        return {
+            "rows": enrich_metric_rows(body.rows[:120], max_age_hours=None),
+            "source": "Supabase stock_snapshot",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -15,6 +15,7 @@ import {
 } from './screen-data';
 import StockSearch from './StockSearch';
 import { STOCKS } from '../stocks';
+import { enrichScreenRows } from './enrichRows';
 
 const BACKEND = '/api/backend';
 
@@ -361,7 +362,7 @@ export default function ScreensPage() {
 
       if (intent === 'PRE_DEFINED_SCREENER' && live.router?.screener_name) {
         const screen = getScreenBySlug(live.router.screener_name);
-        const rows = live.rows.length ? live.rows : screen ? getRowsForScreen(screen.slug) : [];
+        const rows = await enrichScreenRows(live.rows.length ? live.rows : screen ? getRowsForScreen(screen.slug) : []);
         setResult({
           title: screen ? screen.title : 'Preset screen',
           query: screen?.query || live.matchedRules?.join('\n') || clean,
@@ -372,7 +373,7 @@ export default function ScreensPage() {
         });
       } else if (intent === 'SECTOR_FILTER') {
         const sector = live.router?.sector || sectors.find(item => clean.toLowerCase().includes(item.name.toLowerCase()))?.name;
-        const rows = live.rows.length ? live.rows : sector ? getRowsForSector(sector) : [];
+        const rows = await enrichScreenRows(live.rows.length ? live.rows : sector ? getRowsForSector(sector) : []);
         setResult({
           title: sector ? `${sector} stocks` : `${rows.length} sector matches`,
           query: live.matchedRules?.join('\n') || `Sector matched: ${sector ?? 'Unknown'}`,
@@ -382,10 +383,11 @@ export default function ScreensPage() {
           intent,
         });
       } else if (intent === 'STOCK_INFO') {
+        const rows = await enrichScreenRows(live.rows);
         setResult({
-          title: `${live.rows.length || 1} stock lookup result`,
+          title: `${rows.length || 1} stock lookup result`,
           query: live.matchedRules?.join('\n') || `Stock: ${live.router?.stock_symbol ?? clean}`,
-          rows: live.rows,
+          rows,
           explanation: aiMessage || live.explanation,
           source: live.source,
           intent,
@@ -400,33 +402,36 @@ export default function ScreensPage() {
           intent,
         });
       } else if (live.rows.length || live.matchedRules?.length) {
+        const rows = await enrichScreenRows(live.rows);
         setResult({
-          title: `${live.rows.length} AI screener matches`,
+          title: `${rows.length} AI screener matches`,
           query: live.matchedRules?.join('\n') || 'No supported live rules matched.',
-          rows: live.rows,
+          rows,
           explanation: aiMessage || live.explanation,
           source: live.source,
           intent: intent || 'CUSTOM_FILTER',
         });
       } else {
         const custom = buildCustomQueryResult(clean);
+        const rows = await enrichScreenRows(custom.rows);
         setResult({
-          title: `${custom.rows.length} AI screener matches`,
+          title: `${rows.length} AI screener matches`,
           query: custom.query,
-          rows: custom.rows,
+          rows,
           explanation: aiMessage || live.explanation || custom.explanation,
-          source: custom.rows.length ? 'Local preset metadata fallback' : live.source,
+          source: rows.length ? 'Local preset metadata + backend snapshot' : live.source,
           intent: intent || 'CUSTOM_FILTER',
         });
       }
     } catch {
       const custom = buildCustomQueryResult(clean);
+      const rows = await enrichScreenRows(custom.rows);
       setResult({
-        title: `${custom.rows.length} AI screener matches`,
+        title: `${rows.length} AI screener matches`,
         query: custom.query,
-        rows: custom.rows,
+        rows,
         explanation: custom.explanation || 'Live screener is unavailable, so only local preset metadata is available.',
-        source: 'Local preset metadata fallback',
+        source: rows.length ? 'Local preset metadata + backend snapshot' : 'Local preset metadata fallback',
         intent: 'CUSTOM_FILTER',
       });
     } finally {

@@ -2,15 +2,29 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getRowsForSector } from '../../screen-data';
 import ScreenMetricTable from '../../ScreenMetricTable';
 import StockSearch from '../../StockSearch';
+import { enrichScreenRows } from '../../enrichRows';
 
 export default function SectorDetailPage() {
   const params = useParams<{ sector: string }>();
   const sector = decodeURIComponent(params.sector);
-  const rows = useMemo(() => getRowsForSector(sector), [sector]);
+  const initialRows = useMemo(() => getRowsForSector(sector), [sector]);
+  const [rows, setRows] = useState(initialRows);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(initialRows);
+    enrichScreenRows(initialRows).then(nextRows => {
+      if (!cancelled) setRows(nextRows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRows]);
+
   const averageScore = Math.round(rows.reduce((sum, row) => sum + row.score, 0) / Math.max(rows.length, 1));
   const roceValues = rows.map(row => row.roce).filter((value): value is number => typeof value === 'number');
   const topRoce = roceValues.length ? Math.max(...roceValues).toFixed(1) : '-';

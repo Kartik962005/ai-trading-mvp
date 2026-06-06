@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, ValidationError, validator
 from app.services.data_service import get_latest_quote
 from app.services.llm_client import chat as llm_chat
 from app.services.screener_service import screen_stocks
-from app.services.stock_snapshot_service import frontend_metric_row, snapshot_by_ticker
+from app.services.stock_snapshot_service import enrich_metric_rows, frontend_metric_row, snapshot_by_ticker
 
 
 INTENTS = {"CUSTOM_FILTER", "PRE_DEFINED_SCREENER", "STOCK_INFO", "SECTOR_FILTER", "GENERAL_CHAT"}
@@ -409,7 +409,10 @@ def _fundamental_filter_rows(
     params = router.get("custom_query_parameters") if isinstance(router.get("custom_query_parameters"), dict) else {}
     sector = _find_sector(str(router.get("sector") or prompt), sectors) or _find_sector(prompt, sectors)
     candidate_stocks = [stock for stock in stocks if not sector or _stock_sector(stock) == sector]
-    snapshots = snapshot_by_ticker([stock["ticker"] for stock in candidate_stocks if stock.get("ticker")])
+    snapshots = snapshot_by_ticker(
+        [stock["ticker"] for stock in candidate_stocks if stock.get("ticker")],
+        max_age_hours=None,
+    )
     rows = [
         _make_row(stock, index, "Matched real Bullseye stock_snapshot fundamentals.", snapshot=snapshots.get(stock.get("ticker")))
         for index, stock in enumerate(candidate_stocks)
@@ -705,7 +708,7 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
             quote = get_latest_quote(str(stock.get("ticker")))
         except Exception:
             quote = None
-        snapshot = snapshot_by_ticker([str(stock.get("ticker"))]).get(str(stock.get("ticker")))
+        snapshot = snapshot_by_ticker([str(stock.get("ticker"))], max_age_hours=None).get(str(stock.get("ticker")))
         router["stock_symbol"] = stock.get("symbol")
         router["ai_response_message"] = f"Fetched the latest available Bullseye data for {stock.get('symbol')}."
         return {
@@ -719,7 +722,10 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
     if intent == "SECTOR_FILTER":
         sector = _find_sector(str(router.get("sector") or prompt), sectors) or _find_sector(prompt, sectors)
         sector_stocks = [stock for stock in stocks if sector and _stock_sector(stock) == sector]
-        snapshots = snapshot_by_ticker([stock["ticker"] for stock in sector_stocks if stock.get("ticker")])
+        snapshots = snapshot_by_ticker(
+            [stock["ticker"] for stock in sector_stocks if stock.get("ticker")],
+            max_age_hours=None,
+        )
         rows = [
             _make_row(stock, index, f"Included in {sector} from the loaded Bullseye universe.", snapshot=snapshots.get(stock.get("ticker")))
             for index, stock in enumerate(sector_stocks)
@@ -748,6 +754,8 @@ def smart_search(prompt: str, stocks: list[dict[str, Any]], screeners: list[dict
             fallback_rows = _fundamental_filter_rows(prompt, stocks, sectors, router)
             if fallback_rows.get("rows"):
                 return fallback_rows
+        if live.get("rows"):
+            live["rows"] = enrich_metric_rows(live["rows"], max_age_hours=None)
         live["router"] = router
         live["explanation"] = (
             router["ai_response_message"]
