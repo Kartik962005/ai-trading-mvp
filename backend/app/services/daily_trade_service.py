@@ -193,6 +193,20 @@ def _normalize_signal_type(value: str | None) -> str:
     return signal_type
 
 
+def _normalize_delivery_mode(value: str | None) -> str:
+    mode = (value or "next_day").strip().lower().replace("-", "_").replace(" ", "_")
+    if mode in {"today", "same_day", "intraday_today"}:
+        return "today"
+    return "next_day"
+
+
+def _coerce_email_time(value: str | None) -> str:
+    try:
+        return _parse_time_string(value).strftime("%H:%M")
+    except Exception:
+        return DEFAULT_EMAIL_TIME
+
+
 def _validate_email_time(market: str, value: str | None) -> str:
     parsed = _parse_time_string(value)
     close_time = MARKET_CLOSES[market]
@@ -766,10 +780,13 @@ def run_daily_prediction(
     risk_level = _normalize_risk(risk_level)
     signal_type = _normalize_signal_type(signal_type)
     run_day = _today_ist()
+    target_date = (target_day or _next_trading_day(run_day)).isoformat()
     if _is_market_holiday(run_day) and not force:
         return {"skipped": True, "reason": "Non-trading day", "run_date": run_day.isoformat()}
 
     existing_run = _find_existing_run(run_day.isoformat(), market, risk_level, signal_type)
+    if existing_run and existing_run.get("target_date") != target_date:
+        existing_run = None
     if existing_run and not force:
         signals = _load_signals_for_run(existing_run["id"])
         notifications = _send_daily_signal_emails(existing_run, signals, user_ids=user_ids) if send_email else []
@@ -806,7 +823,6 @@ def run_daily_prediction(
     selected = diversify_candidates(candidates)[:MAX_SELECTED_SIGNALS]
     run_id = str(uuid4())
     generated_at = _utc_now_iso()
-    target_date = (target_day or _next_trading_day(run_day)).isoformat()
     model_version = os.getenv("DAILY_SIGNAL_MODEL_VERSION", "signal-engine-v1")
     signal_rows = []
     for index, signal in enumerate(selected, 1):
@@ -1001,38 +1017,59 @@ def send_instant_signal_email(user: dict[str, Any], payload: dict[str, Any]) -> 
     current = get_notification_preference(user)
     market = _normalize_market(payload.get("market") or current.get("market"))
     risk_level = _normalize_risk(payload.get("risk_level") or current.get("risk_level"))
-    signal_type = _normalize_signal_type(payload.get("signal_type") or current.get("signal_type"))
-    email_time = _validate_email_time(market, payload.get("email_time") or current.get("email_time") or DEFAULT_EMAIL_TIME)
-    preference = update_notification_preference(
-        user,
+    preference_signal_type = _normalize_signal_type(payload.get("signal_type") or current.get("signal_type"))
+    delivery_mode = _normalize_delivery_mode(payload.get("delivery_mode"))
+    run_signal_type = "Intraday" if delivery_mode == "today" else preference_signal_type
+    email_time = _coerce_email_time(payload.get("email_time") or current.get("email_time") or DEFAULT_EMAIL_TIME)
+    clean_email = (payload.get("email") or user.get("email") or current.get("email") or "").strip()
+    if "@" not in clean_email:
+        raise ValueError("Instant stock emails need a valid account email.")
+    if delivery_mode == "today":
+        now = datetime.now(IST)
+        if _is_market_holiday(now.date()):
+            raise ValueError("Today is not a trading day. Use the next-trading-day email instead.")
+        if now.time() >= MARKET_CLOSES[market]:
+            raise ValueError("The market is already closed. Use the next-trading-day email instead.")
+
+    current.update(
         {
-            "email": payload.get("email") or user.get("email") or current.get("email"),
+            "email": clean_email,
             "market": market,
             "risk_level": risk_level,
             "email_time": email_time,
-            "signal_type": signal_type,
+            "signal_type": preference_signal_type,
             "daily_stock_email_enabled": current.get("daily_stock_email_enabled", False),
-        },
+        }
     )
+    preference = _upsert_preference(current)
+    _log_audit("instant_signal_email_requested", "notification_preferences", preference, user_id=user["id"], entity_id=user["id"])
+
+    target_day = _today_ist() if delivery_mode == "today" else None
     result = run_daily_prediction(
         market=market,
         risk_level=risk_level,
-        signal_type=signal_type,
+        signal_type=run_signal_type,
+        target_day=target_day,
         send_email=False,
         user_ids=[user["id"]],
-        force=True,
+        force=bool(payload.get("force_generation")),
     )
+    if result.get("skipped") or not result.get("model_run"):
+        raise ValueError(result.get("reason") or "Signal generation was skipped.")
+
     notification = _send_signal_email_to_preference(
         result["model_run"],
         result["signals"],
         preference,
-        email_kind="instant_signal",
+        email_kind="instant_today_signal" if delivery_mode == "today" else "instant_signal",
     )
     return {
         "preference": preference,
         "model_run": result["model_run"],
         "signals": result["signals"],
         "notification": notification,
+        "delivery_mode": delivery_mode,
+        "cached": result.get("cached", False),
     }
 
 

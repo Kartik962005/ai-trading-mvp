@@ -419,6 +419,8 @@ class NotificationPreferenceRequest(BaseModel):
     risk_level: str | None = None
     email_time: str | None = None
     signal_type: str | None = None
+    delivery_mode: str | None = None
+    force_generation: bool | None = None
     consent_version: str | None = None
     consent_accepted_at: str | None = None
 

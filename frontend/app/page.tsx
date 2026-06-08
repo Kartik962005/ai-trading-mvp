@@ -219,6 +219,8 @@ type DailySignalRecord = {
   explanation_json?: { reasons?: string[] };
 };
 
+type InstantSignalDeliveryMode = 'today' | 'next_day';
+
 const DEFAULT_NOTIFICATION_PREFERENCE: NotificationPreference = {
   email: null,
   daily_stock_email_enabled: false,
@@ -289,7 +291,7 @@ function NotificationSettingsModal({
   onClose: () => void;
   onChange: (patch: Partial<NotificationPreference>) => void;
   onSave: () => void;
-  onSendNow: () => void;
+  onSendNow: (deliveryMode: InstantSignalDeliveryMode) => void;
   onToggle: (enabled: boolean) => void;
   onConfirmConsent: () => void;
   onCancelConsent: () => void;
@@ -316,7 +318,7 @@ function NotificationSettingsModal({
               return;
             }
             event.preventDefault();
-            onSendNow();
+            onSendNow('next_day');
           }}
         >
           <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
@@ -339,27 +341,46 @@ function NotificationSettingsModal({
 
           <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-5">
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={onSendNow}
+                  onClick={() => onSendNow('today')}
+                  disabled={isSaving}
+                  className="flex min-h-[124px] flex-col justify-between rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-4 text-left transition hover:border-amber-300/45 hover:bg-amber-400/14 disabled:opacity-60"
+                >
+                  <div>
+                    <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
+                      Today&apos;s Stocks
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
+                      Send a same-day intraday 10-stock email before market close using the latest available data.
+                    </div>
+                  </div>
+                  <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-amber-300 font-['Space_Grotesk']">
+                    {isSaving ? 'Sending...' : 'Send Today'}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onSendNow('next_day')}
                   disabled={isSaving}
                   className="flex min-h-[116px] flex-col justify-between rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-4 text-left transition hover:border-emerald-300/45 hover:bg-emerald-400/14 disabled:opacity-60"
                 >
                   <div>
                     <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
-                      Send Instantly Now
+                      Next-Day Stocks
                     </div>
                     <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
                       Send the next trading day&apos;s ranked 10-stock email to your signed-in account right now.
                     </div>
                   </div>
                   <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300 font-['Space_Grotesk']">
-                    {isSaving ? 'Sending...' : 'Send Now'}
+                    {isSaving ? 'Sending...' : 'Send Next Day'}
                   </div>
                 </button>
 
-                <label className="flex min-h-[116px] items-center justify-between rounded-2xl border border-cyan-300/25 bg-cyan-400/5 px-4 py-4">
+                <label className="flex min-h-[116px] items-center justify-between rounded-2xl border border-cyan-300/25 bg-cyan-400/5 px-4 py-4 sm:col-span-2">
                   <div>
                     <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
                       Daily Automatic Alert
@@ -3445,7 +3466,7 @@ function HomeContent() {
     }
   };
 
-  const sendNotificationEmailNow = async () => {
+  const sendNotificationEmailNow = async (deliveryMode: InstantSignalDeliveryMode = 'next_day') => {
     if (!user) {
       setNotificationError('Sign in first to send a stock signal email.');
       setShowAuthModal(true);
@@ -3471,6 +3492,8 @@ function HomeContent() {
           ...notificationPreference,
           email: user.email,
           email_time: emailTime,
+          delivery_mode: deliveryMode,
+          signal_type: deliveryMode === 'today' ? 'Intraday' : notificationPreference.signal_type,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -3488,7 +3511,11 @@ function HomeContent() {
       setShowNotificationSettings(false);
       setNotificationMessage(
         data.notification?.status === 'sent'
-          ? 'Next-trading-day stock signal email sent.'
+          ? (
+            deliveryMode === 'today'
+              ? `Today's intraday stock signal email sent for ${data.model_run?.target_date || 'today'}.`
+              : `Next-trading-day stock signal email sent for ${data.model_run?.target_date || 'the next session'}.`
+          )
           : `Instant email status: ${data.notification?.status || 'processed'}.`
       );
       await loadDailySignalPreview(nextPreference);
@@ -5088,7 +5115,7 @@ function HomeContent() {
           }}
           onChange={patch => patchNotificationPreference(patch)}
           onSave={() => { void saveNotificationPreference(); }}
-          onSendNow={() => { void sendNotificationEmailNow(); }}
+          onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
           onToggle={enabled => { void toggleDailySignals(enabled); }}
           onConfirmConsent={() => { void confirmEnableDailySignals(); }}
           onCancelConsent={() => setShowNotificationConsent(false)}
