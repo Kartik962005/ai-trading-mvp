@@ -904,10 +904,10 @@ export default function AskAiPage() {
                 <span className="font-display text-xs font-bold text-cyan-700">BE</span>
               </div>
               <div className="leading-tight">
-                <div className="font-display text-[15px] font-semibold tracking-tight">
-                  <span className="text-slate-900">Ask</span> <span className="text-cyan-600">AI</span>
+                <div className="font-['Space_Grotesk'] text-[15px] font-black uppercase tracking-[0.18em] sm:text-base">
+                  <span className="text-slate-900">BULLS</span><span className="text-cyan-600">EYE</span>
                 </div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Backtest · Scan · Explain</div>
+                <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Ask AI · Backtest · Scan</div>
               </div>
             </Link>
           </div>
@@ -926,6 +926,12 @@ export default function AskAiPage() {
               className="h-9 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-[12px] font-semibold leading-9 text-slate-600 transition hover:border-cyan-300 hover:text-cyan-700"
             >
               Screener
+            </Link>
+            <Link
+              href="/"
+              className="hidden h-9 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-[12px] font-semibold leading-9 text-slate-600 transition hover:border-cyan-300 hover:text-cyan-700 sm:inline-block"
+            >
+              Home
             </Link>
           </div>
         </div>
