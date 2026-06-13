@@ -161,3 +161,53 @@ import { Card, Button, Eyebrow, Badge, Stat, SectionHeading } from "@/components
   display primitives are server-safe (no directive) and work in either context.
 - Verify each phase: `npx tsc -p tsconfig.json --noEmit` passes, `npm run dev`
   renders, browser console is clean. Then commit.
+
+---
+
+## 8. Layout shell (`frontend/components/layout/`)
+
+Shared, dark, design-system chrome. **Layout-only and stateful-piece-agnostic:**
+the header owns no state — pages pass their search field / account menu in as
+slots, so existing auth and data flow are untouched. Import from `@/components/layout`.
+
+| Component | Purpose | Key props |
+|-----------|---------|-----------|
+| `Brand` | "BE" gradient mark + BULLSEYE wordmark | `href` **or** `onClick`, `tagline`, `showTagline`, `showWordmark` |
+| `NavLink` | Header nav link / CTA | `href`, `variant`: `default`\|`primary`(gradient CTA, e.g. Ask AI)\|`dark`(solid, e.g. Screener), `active` |
+| `AppHeader` | Sticky glass header | `brand`, `center` (e.g. search), `actions` (nav + account), `maxWidthClassName` |
+| `Footer` | Site footer + disclaimer | `className` |
+| `AppShell` | Full page: glow bg + header + main + footer | `header` (AppHeaderProps), `footer`, `glow`, `mainClassName` |
+
+### Composition example (interior page)
+
+```tsx
+import { AppShell, NavLink } from "@/components/layout";
+
+<AppShell header={{ actions: (
+  <>
+    <NavLink href="/ask-ai" variant="primary">✦ Ask AI</NavLink>
+    <NavLink href="/screens" variant="dark">Screener</NavLink>
+  </>
+) }}>
+  {/* page content */}
+</AppShell>
+```
+
+### Mounting sequence (important for handoff)
+
+Today the homepage is **dark** but the Screener and Ask-AI pages are **light**
+(white headers + white card bodies). Mounting the dark shell on a still-light page
+body looks broken, so the shell is rolled in *with* each page's body conversion:
+
+- **Phase 2 (Homepage):** mount `AppHeader` on the homepage — replace its inline
+  `<nav>`, composing `Brand` + `NavLink`s, passing the existing asset-search and
+  account-menu JSX as `center`/`actions` slots (do not rewrite their state). Add
+  the missing **Alerts** nav link. Add `Footer`.
+- **Phase 3 (Screener) / Phase 4 (Ask AI):** convert the page body from light →
+  dark and wrap in `AppShell` (or compose `AppHeader`), replacing the bespoke
+  light headers in `screens/page.tsx`, `screens/[slug]`, `screens/sector/[sector]`,
+  and `ask-ai/page.tsx`.
+- **Phase 6 (Alerts/account):** wrap `alerts/page.tsx` in `AppShell`.
+
+Net: by end of Phase 6 every route shares one dark shell. The shell components
+themselves are complete now (Phase 1) so later phases only compose them.
