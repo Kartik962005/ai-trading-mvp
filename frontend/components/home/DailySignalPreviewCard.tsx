@@ -38,7 +38,7 @@ export function DailySignalPreviewCard({
   const destination = signedIn ? userEmail || "signed-in account" : "your signed-in account";
 
   return (
-    <Card padding="lg" className="border-cyan-300/25 bg-slate-950 text-slate-100 shadow-[0_28px_90px_rgba(8,47,73,0.28)]">
+    <Card variant="solid" padding="lg" className="border-cyan-300/25 text-slate-100 shadow-[0_28px_90px_rgba(8,47,73,0.28)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Badge tone="accent" pill>

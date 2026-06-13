@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Badge, Button, Card, Stat } from "@/components/ui";
+import { Button, Card, Stat } from "@/components/ui";
 
 export type HomeMarket = "INDIA" | "US";
 
@@ -33,9 +33,9 @@ export function HomeHero({
           className="absolute -right-24 -top-28 h-64 w-64 rounded-full bg-cyan-200/35 blur-3xl"
         />
         <div className="relative max-w-4xl">
-          <Badge tone="accent" pill>
+          <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">
             Live Market Intelligence
-          </Badge>
+          </span>
           <h2 className="mt-5 max-w-4xl font-['Space_Grotesk'] text-4xl font-black leading-[0.98] tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
             Scan live markets. Open the setup worth your attention.
           </h2>

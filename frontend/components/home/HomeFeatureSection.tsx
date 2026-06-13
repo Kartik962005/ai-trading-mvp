@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button, Card } from "@/components/ui";
+import { Card } from "@/components/ui";
 
 export interface HomeFeatureSectionProps {
   onOpenDailySignals: () => void;
@@ -50,14 +50,13 @@ export function HomeFeatureSection({ onOpenDailySignals }: HomeFeatureSectionPro
             >
               Screener
             </Link>
-            <Button
-              variant="secondary"
-              size="md"
+            <button
+              type="button"
               onClick={onOpenDailySignals}
-              className="border-white/10 bg-white/5 text-slate-200 hover:border-cyan-300/50 hover:bg-cyan-400/10 hover:text-slate-50"
+              className="inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-slate-200 transition hover:border-cyan-300/50 hover:bg-cyan-400/10"
             >
               Daily Signals
-            </Button>
+            </button>
           </div>
         </Card>
 

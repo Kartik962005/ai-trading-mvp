@@ -3243,13 +3243,12 @@ function HomeContent() {
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [showProfileMenu]);
 
+  // Sign-in is mandatory: once the session check finishes, force the auth modal
+  // open for anyone who is not signed in, and close it as soon as they are.
   useEffect(() => {
-    if (!authReady || user || authPromptDismissed) return;
-    const timer = window.setTimeout(() => {
-      setShowAuthModal(true);
-    }, 450);
-    return () => window.clearTimeout(timer);
-  }, [authPromptDismissed, authReady, user]);
+    if (!authReady) return;
+    setShowAuthModal(!user);
+  }, [authReady, user]);
 
   const dismissAuthModal = () => {
     setAuthPromptDismissed(true);
@@ -5076,7 +5075,7 @@ function HomeContent() {
           <div className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_60px_rgba(6,182,212,0.15)]">
 
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center">
                   <span className="font-black text-black text-sm">B</span>
@@ -5085,8 +5084,9 @@ function HomeContent() {
                   <span className="text-white">BULLS</span><span className="text-cyan-500">EYE</span>
                 </h2>
               </div>
-              <button onClick={dismissAuthModal}
-                className="text-zinc-500 hover:text-white transition-colors text-xl">✕</button>
+              <p className="mt-3 text-xs font-['JetBrains_Mono'] text-zinc-400">
+                Sign in to access Bullseye — markets, screener, Ask AI, and alerts.
+              </p>
             </div>
 
             {/* Google Sign In */}
@@ -5153,14 +5153,6 @@ function HomeContent() {
               className="force-light-text w-full bg-slate-950 border border-slate-800 font-bold uppercase tracking-widest text-sm py-3 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-40 font-['Space_Grotesk']"
             >
               {authLoading ? 'Please wait...' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
-            </button>
-
-            <button
-              type="button"
-              onClick={dismissAuthModal}
-              className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 py-3 text-xs font-bold uppercase tracking-widest text-zinc-300 transition-all hover:border-cyan-400/50 hover:bg-cyan-400/10 hover:text-white font-['Space_Grotesk']"
-            >
-              Continue without logging in
             </button>
 
             <p className="text-[9px] text-zinc-600 text-center mt-4 font-['JetBrains_Mono']">
