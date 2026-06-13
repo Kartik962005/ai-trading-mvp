@@ -1,9 +1,17 @@
-"""Unified LLM client.
+"""Unified LLM client with a resilient multi-provider fallback chain.
 
-Tries Groq first (fast, generous free tier) and falls back to Google Gemini
-when Groq is unavailable, rate-limited, or errors out. Gemini is called over
-plain REST so no extra pip dependency is required; it is only used when
-GEMINI_API_KEY is set (Gemini's free tier allows ~15 requests/minute).
+Order of preference (any provider without a configured key is skipped):
+
+    Groq  ->  Gemini  ->  OpenRouter  ->  Cerebras
+
+Groq and Cerebras share a generous free tier and are very fast, so a single
+provider being rate-limited (HTTP 429) or briefly erroring no longer collapses
+the screener / Ask-AI answers into a canned heuristic response: the next
+provider in the chain is tried automatically.
+
+Gemini, OpenRouter, and Cerebras are all called over plain REST (OpenAI-style
+for the latter two) so no extra pip dependency is required. Groq keeps using its
+official SDK because it is already a project dependency.
 """
 
 import os
@@ -12,11 +20,29 @@ import requests
 
 _groq_client = None
 
+# Providers we know how to call, in default preference order.
+_PROVIDER_ORDER = ["groq", "gemini", "openrouter", "cerebras"]
+
+
+def _env_key(name: str) -> str | None:
+    """Return a non-empty env value, treating obvious placeholders as unset.
+
+    Guards against half-filled keys such as a Gemini key that still has
+    ``your_gemini_key`` pasted on the end.
+    """
+    value = (os.getenv(name) or "").strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    if "your_" in lowered or lowered in {"changeme", "todo", "xxx"}:
+        return None
+    return value
+
 
 def _get_groq():
     global _groq_client
     if _groq_client is None:
-        api_key = os.getenv("GROQ_API_KEY")
+        api_key = _env_key("GROQ_API_KEY")
         if not api_key:
             return None
         from groq import Groq
@@ -26,11 +52,28 @@ def _get_groq():
 
 
 def groq_available() -> bool:
-    return bool(os.getenv("GROQ_API_KEY"))
+    return _env_key("GROQ_API_KEY") is not None
 
 
 def gemini_available() -> bool:
-    return bool(os.getenv("GEMINI_API_KEY"))
+    return _env_key("GEMINI_API_KEY") is not None
+
+
+def openrouter_available() -> bool:
+    return _env_key("OPENROUTER_API_KEY") is not None
+
+
+def cerebras_available() -> bool:
+    return _env_key("CEREBRAS_API_KEY") is not None
+
+
+def _provider_available(provider: str) -> bool:
+    return {
+        "groq": groq_available,
+        "gemini": gemini_available,
+        "openrouter": openrouter_available,
+        "cerebras": cerebras_available,
+    }.get(provider, lambda: False)()
 
 
 def _groq_chat(messages, temperature: float, max_tokens: int, model: str | None) -> str:
@@ -47,11 +90,82 @@ def _groq_chat(messages, temperature: float, max_tokens: int, model: str | None)
     return (completion.choices[0].message.content or "").strip()
 
 
+def _openai_compatible_chat(
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages,
+    temperature: float,
+    max_tokens: int,
+    extra_headers: dict | None = None,
+) -> str:
+    """Call any OpenAI-compatible /chat/completions endpoint (OpenRouter, Cerebras)."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if extra_headers:
+        headers.update(extra_headers)
+    response = requests.post(
+        base_url.rstrip("/") + "/chat/completions",
+        headers=headers,
+        json={
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        },
+        timeout=40,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    choices = payload.get("choices") or []
+    if not choices:
+        raise RuntimeError("provider returned no choices.")
+    text = ((choices[0].get("message") or {}).get("content") or "").strip()
+    if not text:
+        raise RuntimeError("provider returned an empty response.")
+    return text
+
+
+def _openrouter_chat(messages, temperature: float, max_tokens: int, model: str | None) -> str:
+    api_key = _env_key("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not set.")
+    model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct")
+    return _openai_compatible_chat(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        # Optional attribution headers OpenRouter recommends; harmless if unset.
+        extra_headers={
+            "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://bullseye.help"),
+            "X-Title": os.getenv("OPENROUTER_TITLE", "Bullseye"),
+        },
+    )
+
+
+def _cerebras_chat(messages, temperature: float, max_tokens: int, model: str | None) -> str:
+    api_key = _env_key("CEREBRAS_API_KEY")
+    if not api_key:
+        raise RuntimeError("CEREBRAS_API_KEY is not set.")
+    model = model or os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+    return _openai_compatible_chat(
+        base_url="https://api.cerebras.ai/v1",
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
 def _gemini_chat(messages, temperature: float, max_tokens: int) -> str:
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = _env_key("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set.")
-    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     system_chunks: list[str] = []
     contents: list[dict] = []
@@ -99,6 +213,18 @@ def _gemini_chat(messages, temperature: float, max_tokens: int) -> str:
     return text
 
 
+def _call_provider(provider: str, messages, temperature: float, max_tokens: int, model: str | None) -> str:
+    if provider == "groq":
+        return _groq_chat(messages, temperature, max_tokens, model)
+    if provider == "gemini":
+        return _gemini_chat(messages, temperature, max_tokens)
+    if provider == "openrouter":
+        return _openrouter_chat(messages, temperature, max_tokens, model)
+    if provider == "cerebras":
+        return _cerebras_chat(messages, temperature, max_tokens, model)
+    raise RuntimeError(f"unknown provider: {provider}")
+
+
 def chat(
     messages: list[dict],
     *,
@@ -107,31 +233,38 @@ def chat(
     model: str | None = None,
     prefer: str = "groq",
 ) -> dict:
-    """Return {"text": str, "model": "groq"|"gemini"}.
+    """Return {"text": str, "model": <provider>}.
 
-    Falls back to the other provider if the preferred one fails. Raises
-    RuntimeError only when every available provider fails.
+    Tries the preferred provider first, then walks the rest of the chain,
+    skipping any provider without a configured key. Raises RuntimeError only
+    when every available provider fails.
     """
-    order = ["groq", "gemini"] if prefer == "groq" else ["gemini", "groq"]
+    order = [prefer] + [p for p in _PROVIDER_ORDER if p != prefer]
+    # A per-call ``model`` override only makes sense for the preferred provider;
+    # downstream fallbacks use their own configured default model.
     errors: list[str] = []
-    for provider in order:
+    attempted = False
+    for index, provider in enumerate(order):
+        if not _provider_available(provider):
+            continue
+        attempted = True
+        provider_model = model if index == 0 else None
         try:
-            if provider == "groq":
-                if not groq_available():
-                    continue
-                return {"text": _groq_chat(messages, temperature, max_tokens, model), "model": "groq"}
-            if provider == "gemini":
-                if not gemini_available():
-                    continue
-                return {"text": _gemini_chat(messages, temperature, max_tokens), "model": "gemini"}
+            text = _call_provider(provider, messages, temperature, max_tokens, provider_model)
+            return {"text": text, "model": provider}
         except Exception as exc:  # noqa: BLE001 - we want to try the next provider
             errors.append(f"{provider}: {exc}")
-            print(f"[LLM] {provider} failed: {exc}")
+            print(f"[LLM] {provider} failed, trying next provider: {exc}")
             continue
-    raise RuntimeError(
-        "No LLM provider succeeded. " + (" | ".join(errors) if errors else "No API keys configured.")
-    )
+    if not attempted:
+        raise RuntimeError("No LLM provider configured. Set GROQ_API_KEY (and ideally a fallback key).")
+    raise RuntimeError("All LLM providers failed. " + " | ".join(errors))
 
 
 def any_provider_available() -> bool:
-    return groq_available() or gemini_available()
+    return any(_provider_available(p) for p in _PROVIDER_ORDER)
+
+
+def configured_providers() -> list[str]:
+    """List providers that currently have a usable key (for diagnostics/logging)."""
+    return [p for p in _PROVIDER_ORDER if _provider_available(p)]

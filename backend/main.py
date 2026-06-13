@@ -90,6 +90,7 @@ from app.services.daily_trade_service import (
     get_signals_history,
     get_signals_today,
     process_scheduled_daily_alerts,
+    run_scheduled_tick,
     run_daily_prediction,
     run_daily_forecast,
     run_outcome_tracking,
@@ -148,16 +149,10 @@ async def start_daily_trade_updates():
 
     async def loop():
         await asyncio.sleep(20)
-        outcome_tracked_for: str | None = None
         while True:
-            now = datetime.now(IST)
-            today = now.date().isoformat()
             try:
-                if not _is_market_holiday(now.date()):
-                    process_scheduled_daily_alerts()
-                    if now.hour >= 16 and outcome_tracked_for != today:
-                        run_outcome_tracking(review_day=now.date())
-                        outcome_tracked_for = today
+                # Same idempotent tick the external cron calls; safe to run both.
+                run_scheduled_tick()
             except Exception as exc:
                 print(f"[DailyTrade] scheduled update failed: {exc}")
             await asyncio.sleep(60)
@@ -811,7 +806,8 @@ async def run_scheduled_daily_updates(request: Request):
     if admin_key and request.headers.get("x-alert-admin-key") != admin_key:
         raise HTTPException(status_code=403, detail="Invalid alert admin key")
     try:
-        return process_scheduled_daily_alerts(force=False)
+        # Drives both due-email delivery AND post-close outcome tracking.
+        return run_scheduled_tick(force=False)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

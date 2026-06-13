@@ -8,7 +8,12 @@ from pydantic import BaseModel, Field, ValidationError, validator
 from app.services.data_service import get_latest_quote
 from app.services.llm_client import chat as llm_chat
 from app.services.screener_service import screen_stocks
-from app.services.stock_snapshot_service import enrich_metric_rows, frontend_metric_row, snapshot_by_ticker
+from app.services.stock_snapshot_service import (
+    enrich_metric_rows,
+    frontend_metric_row,
+    snapshot_available,
+    snapshot_by_ticker,
+)
 
 
 INTENTS = {"CUSTOM_FILTER", "PRE_DEFINED_SCREENER", "STOCK_INFO", "SECTOR_FILTER", "GENERAL_CHAT"}
@@ -419,6 +424,22 @@ def _fundamental_filter_rows(
         if snapshots.get(stock.get("ticker"))
     ]
 
+    # The LLM router sometimes picks a sector that none of the loaded stocks
+    # belong to, which would zero out an otherwise answerable query. If a sector
+    # filter wiped out every row, retry once across the full loaded universe.
+    if not rows and sector:
+        all_snapshots = snapshot_by_ticker(
+            [stock["ticker"] for stock in stocks if stock.get("ticker")],
+            max_age_hours=None,
+        )
+        rows = [
+            _make_row(stock, index, "Matched real Bullseye stock_snapshot fundamentals.", snapshot=all_snapshots.get(stock.get("ticker")))
+            for index, stock in enumerate(stocks)
+            if all_snapshots.get(stock.get("ticker"))
+        ]
+        if rows:
+            sector = None
+
     schema_conditions = _schema_conditions(router)
     conditions = schema_conditions or _fundamental_conditions(prompt, params)
     labels = [condition[3] for condition in conditions]
@@ -430,16 +451,20 @@ def _fundamental_filter_rows(
         labels.append(f"sector: {sector}")
 
     if not rows:
-        router["ai_response_message"] = (
-            "The stock_snapshot dataset is not available yet, so I cannot honestly answer this fundamentals filter."
-        )
+        if not snapshot_available():
+            message = "The stock fundamentals dataset is temporarily unavailable, so I can't answer this filter reliably right now."
+            unavailable = ["stock_snapshot"]
+        else:
+            message = "None of the loaded stocks had snapshot data for this filter. Try a broader query or a different set of stocks."
+            unavailable = []
+        router["ai_response_message"] = message
         return {
             "router": router,
             "rows": [],
             "matchedRules": labels or ["real fundamentals filter"],
-            "explanation": router["ai_response_message"],
+            "explanation": message,
             "source": "Supabase stock_snapshot",
-            "unavailable_data": ["stock_snapshot"],
+            "unavailable_data": unavailable,
         }
 
     closest_only = bool(conditions and not strict_rows)

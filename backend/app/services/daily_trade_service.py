@@ -70,6 +70,49 @@ MIN_CHART_SETUP_QUALITY = float(os.getenv("DAILY_MIN_CHART_SETUP_QUALITY", "0.60
 MIN_EXPECTED_R = float(os.getenv("DAILY_MIN_EXPECTED_R", "0.08"))
 MIN_HISTORICAL_HIT_RATE = float(os.getenv("DAILY_MIN_HISTORICAL_HIT_RATE", "0.45"))
 MIN_HISTORICAL_TRADES_FOR_REJECTION = int(os.getenv("DAILY_MIN_HIT_RATE_TRADES", "10"))
+# "ranked" (default): keep every structurally-sound setup and let final-score
+# ranking + top-N pick the day's best — this is the selection the walk-forward
+# backtest validated as positive-expectancy. "threshold": also apply the hard
+# confidence/expected-R/final-score floors (can legitimately yield 0 signals on
+# weak days). The honest model's confidence rarely clears the old hard floors,
+# so a hard floor would otherwise leave daily emails empty most days.
+DAILY_SELECTION_MODE = os.getenv("DAILY_SELECTION_MODE", "ranked").strip().lower()
+# Confidence at/above which a ranked pick is framed as genuinely high-conviction.
+DAILY_HIGH_CONVICTION_CONFIDENCE = float(os.getenv("DAILY_HIGH_CONVICTION_CONFIDENCE", "0.5"))
+
+
+def _conviction_for_signals(signals: list[dict[str, Any]]) -> dict[str, Any]:
+    """Honest day-level conviction label so the UI/email never overpromises.
+
+    Markets are not always tradable; on weak days the right answer is "sit out".
+    """
+    if not signals:
+        return {
+            "level": "none",
+            "top_confidence": 0.0,
+            "positive_ev_count": 0,
+            "note": "No setups cleared today's filters. The honest call is to sit out today.",
+        }
+    top_conf = max(float(s.get("confidence") or 0.0) for s in signals)
+    positive_ev = sum(1 for s in signals if float(s.get("expected_r") or 0.0) > 0)
+    if top_conf >= DAILY_HIGH_CONVICTION_CONFIDENCE and positive_ev:
+        level = "high"
+        note = "Several setups cleared a high-conviction bar today."
+    elif top_conf >= DAILY_HIGH_CONVICTION_CONFIDENCE or positive_ev:
+        level = "moderate"
+        note = "These are today's best-ranked setups, but conviction is moderate — size conservatively."
+    else:
+        level = "low"
+        note = (
+            "Market conditions are weak today. These are only the best-ranked setups available; "
+            "overall conviction is low, so trade small or sit out."
+        )
+    return {
+        "level": level,
+        "top_confidence": round(top_conf, 4),
+        "positive_ev_count": positive_ev,
+        "note": note,
+    }
 
 
 def _is_missing_table_error(exc: Exception, table_name: str | None = None) -> bool:
@@ -614,12 +657,20 @@ def _build_candidate(
         return None
     if historical_hit_rate_trades >= MIN_HISTORICAL_TRADES_FOR_REJECTION and historical_hit_rate < MIN_HISTORICAL_HIT_RATE:
         return None
+    # Sanity floors applied in every mode: never surface a structurally broken
+    # setup (poor reward:risk geometry or a low-quality chart pattern).
     if (
+        risk_reward < profile["min_risk_reward"]
+        or technical_setup["chart_setup_quality"] < MIN_CHART_SETUP_QUALITY
+    ):
+        return None
+    # Hard conviction floors only in "threshold" mode. In "ranked" mode we keep
+    # the candidate and let diversify_candidates() rank by final_score and take
+    # the top N — the +EV selection the backtest validated.
+    if DAILY_SELECTION_MODE == "threshold" and (
         expected_r < MIN_EXPECTED_R
         or confidence < profile["confidence_threshold"]
-        or risk_reward < profile["min_risk_reward"]
         or final_score < float(profile.get("min_final_score", 0.0))
-        or technical_setup["chart_setup_quality"] < MIN_CHART_SETUP_QUALITY
     ):
         return None
 
@@ -869,6 +920,7 @@ def run_daily_prediction(
         "status": "completed",
         "summary": {
             "market_regime": regime,
+            "conviction": _conviction_for_signals(signal_rows),
             "method": "data ingestion, validation, feature engineering, technical rules, scoring, diversification, and outcome tracking",
         },
     }
@@ -971,6 +1023,7 @@ def _send_signal_email_to_preference(
         unsubscribe_url=_unsubscribe_url(preference),
         risk_level=model_run["risk_level"],
         signal_type=model_run["signal_type"],
+        conviction=(model_run.get("summary") or {}).get("conviction"),
     )
     result = _send_email(preference["email"], subject, text, html=html)
     log_record = {
@@ -1080,22 +1133,40 @@ def process_scheduled_daily_alerts(force: bool = False) -> dict[str, Any]:
 
     target_date = _next_trading_day(now.date()).isoformat()
     due_preferences: list[dict[str, Any]] = []
+    considered = 0
+    skipped = {"no_consent": 0, "not_due_yet": 0, "already_sent": 0, "no_email": 0}
     for preference in _iter_preferences():
+        considered += 1
         if not _has_delivery_consent(preference):
+            skipped["no_consent"] += 1
             continue
         preference = _ensure_delivery_consent(preference)
+        if not preference.get("email"):
+            skipped["no_email"] += 1
+            continue
         preferred_time = _parse_time_string(preference.get("email_time"))
         if not (force or (now.hour, now.minute) >= (preferred_time.hour, preferred_time.minute)):
+            skipped["not_due_yet"] += 1
             continue
         if _daily_email_already_sent_for_target(preference["user_id"], target_date):
+            skipped["already_sent"] += 1
             continue
-        if not preference.get("email"):
-            continue
-        if force or (now.hour, now.minute) >= (preferred_time.hour, preferred_time.minute):
-            due_preferences.append(preference)
+        due_preferences.append(preference)
+
+    # Always log the tick outcome so "no emails arrived" is debuggable in prod.
+    print(
+        f"[DailySignals] scheduled tick at {now.strftime('%H:%M IST')} target={target_date} "
+        f"considered={considered} due={len(due_preferences)} skipped={skipped} force={force}"
+    )
 
     if not due_preferences:
-        return {"sent": 0, "reason": "No due unsent preferences", "target_date": target_date}
+        return {
+            "sent": 0,
+            "considered": considered,
+            "skipped": skipped,
+            "reason": "No due unsent preferences",
+            "target_date": target_date,
+        }
 
     grouped: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for preference in due_preferences:
@@ -1113,7 +1184,50 @@ def process_scheduled_daily_alerts(force: bool = False) -> dict[str, Any]:
         )
         all_notifications.extend(result.get("notifications", []))
 
-    return {"sent": len(all_notifications), "notifications": all_notifications}
+    print(f"[DailySignals] scheduled tick sent {len(all_notifications)} email(s) for target={target_date}")
+    return {
+        "sent": len(all_notifications),
+        "considered": considered,
+        "skipped": skipped,
+        "target_date": target_date,
+        "notifications": all_notifications,
+    }
+
+
+# Per-day guard so repeated cron hits don't re-run outcome tracking all day.
+_OUTCOME_TRACKED_FOR: str | None = None
+
+
+def run_scheduled_tick(force: bool = False) -> dict[str, Any]:
+    """Single entry point a cron (or the in-process loop) can call repeatedly.
+
+    Does everything the daily pipeline needs, idempotently:
+      1. Send any due daily-signal emails (respects each user's email_time and
+         the per-target-date dedupe in email_logs).
+      2. After market close, record yesterday's signal outcomes ONCE so the
+         model's hit-rate calibration keeps learning.
+
+    Point the existing ~10-min keep-alive cron at POST
+    /api/v1/daily-updates/run-scheduled with the x-alert-admin-key header: one
+    cron then keeps the host awake AND drives both steps, with no dependency on
+    a long-lived in-process loop surviving a sleeping free-tier dyno.
+    """
+    global _OUTCOME_TRACKED_FOR
+    now = datetime.now(IST)
+    emails = process_scheduled_daily_alerts(force=force)
+
+    outcomes: dict[str, Any] | None = None
+    today = now.date().isoformat()
+    after_close = force or now.time() >= MARKET_CLOSES.get(DEFAULT_MARKET, time(15, 30))
+    if after_close and _OUTCOME_TRACKED_FOR != today and (force or not _is_market_holiday(now.date())):
+        try:
+            outcomes = run_outcome_tracking(review_day=now.date())
+            _OUTCOME_TRACKED_FOR = today
+            print(f"[DailySignals] outcome tracking processed {outcomes.get('processed', 0)} signal(s) for {today}")
+        except Exception as exc:  # noqa: BLE001 - never let tracking break email delivery
+            print(f"[DailySignals] outcome tracking failed: {exc}")
+
+    return {"emails": emails, "outcomes": outcomes}
 
 
 def _load_pending_signals(target_day: str) -> list[dict[str, Any]]:

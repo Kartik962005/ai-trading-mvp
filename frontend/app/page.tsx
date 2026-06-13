@@ -491,7 +491,7 @@ function NotificationSettingsModal({
             <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
               <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300 font-['Space_Grotesk']">Email Preview</div>
               <div className="mt-2 text-[11px] text-slate-400 font-['JetBrains_Mono']">
-                Up to 10 stocks for the next trading day are sent. Fewer are sent when fewer names pass the quality filters.
+                The top model-ranked stocks for the next trading day are sent, each with a confidence score. Fewer are sent — or none — when the market is weak and few names clear the quality bar.
               </div>
               <div className="mt-4 space-y-3">
                 {previewSignals.length > 0 ? previewSignals.slice(0, 4).map(signal => (
@@ -504,6 +504,14 @@ function NotificationSettingsModal({
                     </div>
                     <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
                       Entry {signal.entry_low.toFixed(2)}-{signal.entry_high.toFixed(2)} | Target {signal.target_price.toFixed(2)} | Stop Loss {signal.stop_loss.toFixed(2)}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-[10px] font-['JetBrains_Mono']">
+                      <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 font-black uppercase tracking-[0.14em] text-cyan-300">
+                        Confidence {Math.round((signal.confidence ?? 0) * 100)}%
+                      </span>
+                      {typeof signal.risk_reward === 'number' && (
+                        <span className="text-slate-400">R:R {signal.risk_reward.toFixed(2)}</span>
+                      )}
                     </div>
                     <div className="mt-2 text-[10px] text-slate-400 font-['JetBrains_Mono']">
                       {(signal.explanation_json?.reasons ?? []).slice(0, 2).join(' | ') || 'Model-ranked technical setup'}

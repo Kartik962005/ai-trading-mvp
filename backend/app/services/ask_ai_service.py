@@ -1571,21 +1571,67 @@ def _stock_snapshot(ticker: str) -> tuple[dict[str, Any] | None, str | None]:
             "trend_20d_pct": trend_pct,
             "trend_word": trend_word,
         }
+
+        # Pull real fundamentals (P/E, ROE, margins, growth, dividend, market cap)
+        # from the daily stock_snapshot table so factual questions like "what is
+        # the PE of TCS" are answered with real numbers, not the model's guess.
+        fundamentals_lines: list[str] = []
+        try:
+            from app.services.stock_snapshot_service import snapshot_by_ticker as _snap_by_ticker
+
+            fund = (_snap_by_ticker([ticker], max_age_hours=None) or {}).get(ticker) or {}
+
+            def _add_fund(key: str, label: str) -> None:
+                value = fund.get(key)
+                if value not in (None, ""):
+                    fundamentals_lines.append(f"- {label}: {value}")
+
+            _add_fund("name", "Company")
+            _add_fund("sector", "Sector")
+            _add_fund("trailing_pe", "P/E (trailing)")
+            _add_fund("forward_pe", "P/E (forward)")
+            _add_fund("price_to_book", "Price / Book")
+            _add_fund("roe", "Return on equity (ROE %)")
+            _add_fund("roce", "Return on capital (ROCE %)")
+            _add_fund("debt_to_equity", "Debt / equity")
+            _add_fund("dividend_yield", "Dividend yield")
+            _add_fund("operating_margin", "Operating margin")
+            _add_fund("profit_margin", "Profit margin")
+            _add_fund("revenue_growth", "Revenue growth")
+            _add_fund("profit_growth", "Profit growth")
+            _add_fund("market_cap_cr", "Market cap (cr)")
+            _add_fund("high_52w", "52-week high")
+            _add_fund("low_52w", "52-week low")
+            if fundamentals_lines:
+                snapshot["fundamentals"] = {
+                    k: fund.get(k)
+                    for k in (
+                        "trailing_pe", "forward_pe", "price_to_book", "roe", "roce",
+                        "debt_to_equity", "dividend_yield", "operating_margin",
+                        "profit_margin", "revenue_growth", "profit_growth", "market_cap_cr",
+                    )
+                    if fund.get(k) not in (None, "")
+                }
+        except Exception as exc:  # noqa: BLE001 - fundamentals are best-effort
+            print(f"[AskAI] fundamentals lookup failed for {ticker}: {exc}")
+
         trend_line = f"- Recent trend: {trend_word}"
         if trend_pct is not None:
             trend_line += f" ({trend_pct:+.2f}% over ~20 sessions)"
-        text = "\n".join(
-            [
-                f"Stock snapshot for {ticker} (computed from our historical data, as of {latest.get('day')}):",
-                f"- Latest close: {close}",
-                f"- RSI(14): {rsi} ({status})",
-                trend_line,
-                f"- SMA 50: {sma50} | EMA 20: {ema20}",
-                f"- MACD: {macd_read}",
-                f"- 20-day support / resistance: {support} / {resistance}",
-                "Note: this is historical data, not a live real-time quote.",
-            ]
-        )
+        text_lines = [
+            f"Stock snapshot for {ticker} (computed from our historical data, as of {latest.get('day')}):",
+            f"- Latest close: {close}",
+            f"- RSI(14): {rsi} ({status})",
+            trend_line,
+            f"- SMA 50: {sma50} | EMA 20: {ema20}",
+            f"- MACD: {macd_read}",
+            f"- 20-day support / resistance: {support} / {resistance}",
+        ]
+        if fundamentals_lines:
+            text_lines.append("Fundamentals (from Bullseye's daily snapshot):")
+            text_lines.extend(fundamentals_lines)
+        text_lines.append("Note: this is end-of-day data, not a live real-time quote.")
+        text = "\n".join(text_lines)
         return snapshot, text
     except Exception as exc:  # noqa: BLE001
         print(f"[AskAI] snapshot failed for {ticker}: {exc}")

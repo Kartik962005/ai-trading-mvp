@@ -4,7 +4,18 @@ import pandas as pd
 import ta
 
 
+# EMA50 + ADX(14) + 20-day rolling windows need a real history. On an empty or
+# too-short frame the underlying `ta` library raises ("negative dimensions")
+# instead of returning NaN, so guard and return empty — callers treat an empty
+# feature frame as "no usable data" and skip the ticker.
+_MIN_BARS_FOR_FEATURES = 60
+
+
 def build_feature_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame is None or frame.empty or len(frame) < _MIN_BARS_FOR_FEATURES:
+        return pd.DataFrame()
+    if not {"close", "high", "low", "volume"}.issubset(frame.columns):
+        return pd.DataFrame()
     work = frame.copy()
     close = work["close"]
     high = work["high"]

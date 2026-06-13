@@ -83,11 +83,29 @@ def get_symbol_metadata(ticker: str) -> dict[str, str]:
     }
 
 
+def _mock_prices_allowed() -> bool:
+    """Synthetic prices are OFF by default.
+
+    Generating live buy/sell signals on fabricated OHLC is exactly what erodes
+    user trust, so a fetch failure now skips the ticker (returns empty) instead
+    of inventing data. Set ALLOW_MOCK_PRICES=true only for offline UI demos.
+    """
+    return os.getenv("ALLOW_MOCK_PRICES", "").strip().lower() in {"1", "true", "yes"}
+
+
 def fetch_price_history(ticker: str, days: int = 320) -> pd.DataFrame:
     try:
-        return _normalize_frame(get_historical_data(ticker, days=days))
-    except Exception:
+        frame = _normalize_frame(get_historical_data(ticker, days=days))
+    except Exception as exc:  # noqa: BLE001 - degrade safely, never fabricate
+        print(f"[DataIngestion] price fetch failed for {ticker}: {exc}")
+        frame = _normalize_frame(None)
+    if not frame.empty:
+        return frame
+    if _mock_prices_allowed():
+        print(f"[DataIngestion] ALLOW_MOCK_PRICES set; using SYNTHETIC data for {ticker} (demo only, not tradable).")
         return _normalize_frame(_mock_history(ticker, days=days))
+    print(f"[DataIngestion] no real price data for {ticker}; skipping (mock fallback disabled).")
+    return frame
 
 
 def fetch_market_context(market: str) -> dict[str, Any]:

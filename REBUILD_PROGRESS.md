@@ -385,3 +385,52 @@ Verification:
 
 Known note:
 - `npm.cmd --prefix frontend run lint` still fails on pre-existing project-wide lint issues in `frontend/app/page.tsx`, `frontend/app/screens/page.tsx`, and old `any` usage. The production Next build passes.
+
+## 2026-06-14 - Signal model + AI reliability + alert automation
+
+Status: done (local-verified). See `FIXES_AND_DEPLOY.md` for the deploy checklist.
+
+Root-cause finding: the four user complaints were infrastructure/config gaps, not
+broken logic. No trained model existed on disk; the backend had no LLM fallback;
+Ask-AI never fed fundamentals to the model; daily emails relied on a loop that dies
+when Render sleeps.
+
+Done:
+- Trained and committed the runtime win-probability artifact
+  `app/services/daily_signal_engine/artifacts/win_probability_model.joblib`.
+  Rebuilt `ml_dataset.pkl` offline from cached `frames_5y.pkl` + `earnings_dates.pkl`
+  to match the current 30-feature set. OOS verdict: unranked −0.064R vs ML top-N
+  +0.037R (PF 1.16) — "ML adds edge".
+- Daily signals: added `DAILY_SELECTION_MODE` (default `ranked`) so structurally
+  sound candidates are ranked by `final_score` and the top `MAX_SELECTED_SIGNALS`
+  (now 5) are surfaced, instead of a hard floor that zeroed out under the honest
+  model. Added `_conviction_for_signals()` day-level label, rendered in the email
+  banner and homepage preview; per-signal confidence now shown in the UI.
+- `data_ingestion.fetch_price_history` no longer fabricates OHLC on fetch failure
+  (skips the ticker; `ALLOW_MOCK_PRICES=true` re-enables synthetic data for demos).
+- `feature_engineering.build_feature_frame` guards against empty/short frames
+  (the `ta` library raised "negative dimensions" on these).
+- `llm_client` rewritten into a Groq→Gemini→OpenRouter→Cerebras fallback chain
+  with placeholder-key detection; OpenRouter/Cerebras keys + `CEREBRAS_MODEL`
+  added to `backend/.env`.
+- `smart_search_service`: retries without an over-aggressive LLM sector filter and
+  stops falsely reporting "dataset not available" when the snapshot is present.
+- `ask_ai_service._stock_snapshot` now injects real fundamentals (P/E, ROE, ROCE,
+  margins, growth, dividend, market cap) from `stock_snapshot` so factual questions
+  are answered from data (verified TCS P/E = 15.888 exactly), not model memory.
+- `run_scheduled_tick()` unifies due-email delivery + post-close outcome tracking
+  behind one idempotent call used by both the in-process loop and
+  `/api/v1/daily-updates/run-scheduled`; added per-tick skip-breakdown logging.
+
+Verification:
+- `python -m compileall app main.py` clean; `python -m pytest tests` = 7 passed.
+- `npx tsc -p tsconfig.json --noEmit` = exit 0.
+- Live: model artifact loads (`model_path=model`); forced NSE run returned 3 ranked
+  BUY signals + a "low" conviction label; screener HTTP returned varied data-backed
+  rows; Ask-AI HTTP returned the real TCS P/E; all three LLM providers fail over.
+- Supabase check: `stock_snapshot` has 2,022 fresh rows (updated 2026-06-12); the
+  notification/email_logs/signals tables all exist. No DB migration needed.
+
+Owner note:
+- The previous Supabase tables noted as "not applied" in earlier phases ARE now
+  applied and populated. The June-01 "missing table" notes are stale.

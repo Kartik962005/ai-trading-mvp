@@ -67,6 +67,32 @@ def _metric_block(label: str, value: str) -> str:
     )
 
 
+_CONVICTION_STYLE = {
+    "high": ("#065f46", "#ecfdf5", "#a7f3d0"),
+    "moderate": ("#92400e", "#fffbeb", "#fde68a"),
+    "low": ("#9a3412", "#fff7ed", "#fed7aa"),
+    "none": ("#9a3412", "#fff7ed", "#fed7aa"),
+}
+
+
+def _conviction_banner(conviction: dict[str, Any] | None) -> tuple[str, str]:
+    if not conviction:
+        return "", ""
+    level = str(conviction.get("level") or "moderate").lower()
+    note = str(conviction.get("note") or "")
+    fg, bg, border = _CONVICTION_STYLE.get(level, _CONVICTION_STYLE["moderate"])
+    label = f"Today's conviction: {level.upper()}"
+    html = (
+        f"<div style='margin:0 0 16px;padding:14px 16px;background:{bg};border:1px solid {border};"
+        f"border-radius:6px;color:{fg};font-size:13px;line-height:1.6'>"
+        f"<strong style='display:block;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px'>{escape(label)}</strong>"
+        f"{escape(note)}"
+        "</div>"
+    )
+    text = f"{label}\n{note}\n\n"
+    return html, text
+
+
 def build_signal_email(
     *,
     signal_date: str,
@@ -75,9 +101,11 @@ def build_signal_email(
     unsubscribe_url: str,
     risk_level: str,
     signal_type: str,
+    conviction: dict[str, Any] | None = None,
 ) -> tuple[str, str, str]:
     signal_label = str(signal_type or "next-trading-day").replace("_", " ").strip()
     subject = f"Bullseye {market} {signal_label} stock signals | generated {signal_date}"
+    conviction_html, conviction_text = _conviction_banner(conviction)
     card_rows: list[str] = []
     text_rows: list[str] = []
 
@@ -140,6 +168,7 @@ def build_signal_email(
         f"<p style='margin:10px 0 0;color:#dbeafe;font-size:14px;line-height:1.6'>Generated on: {escape(signal_date)} | Risk: {escape(risk_level)} | Signal type: {escape(signal_type)}</p>"
         "</td></tr>"
         "<tr><td style='padding:16px'>"
+        + conviction_html
         + ("".join(card_rows) if card_rows else "<div style='padding:18px;color:#334155'>No signals passed the quality filters for the next trading day.</div>")
         + "<div style='margin-top:8px;padding:16px;background:#eff6ff;color:#1e293b;font-size:13px;line-height:1.7'>"
         "Signals are model-generated analysis for research use only. Returns are not guaranteed. "
@@ -152,6 +181,7 @@ def build_signal_email(
     text = (
         f"Bullseye {market} {signal_label} stock signals\n"
         f"Generated on: {signal_date} | Risk level: {risk_level} | Signal type: {signal_type}\n\n"
+        + conviction_text
         + ("\n".join(text_rows) if text_rows else "No signals passed the quality filters for the next trading day.")
         + "\nSignals are model-generated analysis. Returns are not guaranteed. Past performance does not guarantee future results.\n"
         + f"Unsubscribe: {unsubscribe_url}"
