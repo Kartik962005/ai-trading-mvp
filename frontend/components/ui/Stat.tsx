@@ -30,3 +30,5 @@ export function Stat({ label, value, hint, tone = "default", className, ...props
     </div>
   );
 }
+
+export const Metric = Stat;

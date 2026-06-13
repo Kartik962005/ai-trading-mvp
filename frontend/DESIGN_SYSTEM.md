@@ -1,213 +1,217 @@
-# Bullseye — Design System
+# Bullseye Design System
 
-> **This file is the single source of truth for the UI redesign.** Every redesign
-> phase (homepage, screener, Ask AI, stock page, alerts, polish) must read this
-> file first and build only from the tokens and primitives below.
->
-> **Hard rule:** the **color palette and fonts do not change.** These tokens were
-> *extracted from the live app*, not invented. You may restructure layout,
-> hierarchy, spacing, density, components, and motion — never the colors.
+This file is the single source of truth for the redesign. Later phases must use
+these tokens and primitives rather than inventing new colors, type styles, card
+styles, or spacing rules.
 
----
+Hard rule: colors are locked. The values below were extracted from
+`frontend/app/globals.css`, `frontend/app/layout.tsx`, `frontend/app/page.tsx`,
+`frontend/app/ask-ai/page.tsx`, `frontend/app/screens/page.tsx`, and the
+`ui-mockups/*.html` explorations.
 
-## 1. How the theme actually works
+## Current Theme Audit
 
-The app is **dark-only** and themed almost entirely with **Tailwind v4 utility
-classes** (e.g. `bg-slate-950`, `text-cyan-300`, `border-white/10`). `globals.css`
-is near-default Next boilerplate; the real palette lives in the markup. The
-redesign keeps using these exact utilities so colors never drift.
+The product currently mixes a light public shell with dark fintech research
+surfaces:
 
-Two font families do the heavy lifting, applied as arbitrary Tailwind values:
-- `font-['Space_Grotesk']` — display / headings / eyebrow labels / tickers
-- `font-['JetBrains_Mono']` — numbers, data, metrics, code-like labels
+- Homepage and screener light shell: `#f8fcff`, `#edf7f8`, `#ffffff`,
+  translucent white cards, cyan/emerald radial glows, `text-slate-950`.
+- Research and modal surfaces: `bg-slate-950`, `bg-black/50`,
+  `bg-white/[0.04]`, `border-white/10`, `text-slate-300`, cyan accents.
+- Ask AI is mostly light glass: white cards, `border-slate-200`,
+  cyan/emerald gradient action bubbles, and slate body text.
+- The stock dashboard and notification modal use the darker card language.
+- `ui-mockups/redesign.html` is the preferred layout reference: ticker tape,
+  glass nav/search, data-dense signal rows, command-like CTAs, dense cards, and
+  restrained radial glow. Other mockups are reference only and must not introduce
+  their alternate palettes.
 
-(Body text falls back to the loaded Plus Jakarta Sans / Geist sans.)
+## Color Tokens
 
-> Layout inspiration: `ai-trading-mvp/ui-mockups/redesign.html` (glass nav with a
-> centered command search, gradient brand mark, ticker tape, eyebrow labels,
-> chips, big gradient H1, radial-glow backgrounds). Its palette matches the live
-> theme, so borrow its **structure**, keep our **colors**.
+The semantic CSS variables live in `frontend/app/globals.css`.
 
----
+| Token | Exact value or source | Current usage |
+| --- | --- | --- |
+| `--bg` | `#020617` (`slate-950`) | Dark app canvas, dark cards |
+| `--bg-soft` | `#0f172a` (`slate-900`) | Dark elevated wells, dark buttons |
+| `--bg-elevated` | `#111827` | Deep modal/account surfaces |
+| `--page-light` | `#f8fcff` | Light homepage/screener canvas |
+| `--page-light-mid` | `#edf7f8` | Light page gradient middle |
+| `--surface` | `rgba(255,255,255,0.04)` | Dark glass cards |
+| `--surface-strong` | `rgba(255,255,255,0.06)` | Stronger dark glass cards |
+| `--surface-light` | `rgba(255,255,255,0.82)` | Light glass cards |
+| `--surface-inset` | `rgba(0,0,0,0.50)` | Inputs, wells, code-like panels |
+| `--line` | `rgba(255,255,255,0.10)` | Dark hairline borders |
+| `--line-light` | `rgba(15,23,42,0.10)` | Light hairline borders |
+| `--accent` | `#22d3ee` (`cyan-400`) | Primary accent, scan line, active bars |
+| `--accent-soft` | `#67e8f9` (`cyan-300`) | Eyebrows, glows, active borders |
+| `--accent-strong` | `#06b6d4` (`cyan-500`) | Hover and gradient stops |
+| `--positive` | `#34d399` (`emerald-400`) | Buy/up/gain states |
+| `--positive-soft` | `#86efac` (`emerald-300`) | Soft positive text/glow |
+| `--negative` | `#fb7185` (`rose-400`) | Sell/down/loss states |
+| `--negative-strong` | `#ef4444` (`red-500`) | Strong sell bars and errors |
+| `--caution` | `#fcd34d` (`amber-300`) | Caution/hold/warning states |
+| `--muted` | `#94a3b8` (`slate-400`) | Muted text, placeholders |
 
-## 2. Color tokens (LOCKED — extracted from the live app)
+Tailwind v4 aliases also exist: `bg-bg`, `bg-bg-soft`, `bg-page-light`,
+`bg-surface-glass`, `bg-surface-light`, `border-line`, `border-line-light`,
+`text-accent`, `text-positive`, `text-negative`, `text-caution`, and
+`text-muted`.
 
-| Semantic name      | Tailwind class(es)                          | Use |
-|--------------------|---------------------------------------------|-----|
-| **bg / page**      | `bg-slate-950`                              | App background, solid panels |
-| **surface**        | `bg-white/[0.04]`, `bg-white/5`             | Elevated cards on the dark bg |
-| **surface-inset**  | `bg-black/50`, `bg-black/40`                | Inputs, wells, code areas |
-| **line / border**  | `border-white/10`                           | Default hairline borders |
-| **text-primary**   | `text-white`                                | Headings, key values |
-| **text-body**      | `text-slate-300`                            | Paragraph / default body |
-| **text-muted**     | `text-slate-400`                            | Secondary, captions, labels |
-| **accent**         | `text-cyan-300`                             | Eyebrow labels, links, accents |
-| **accent-fill**    | `bg-cyan-400` + `text-slate-950` (hover `bg-cyan-300`) | Primary buttons / CTAs |
-| **accent-tint**    | `bg-cyan-500/15`, `border-cyan-300`         | Chips, active states, focus ring |
-| **positive**       | `text-emerald-300`, `bg-emerald-400`, `border-emerald-300` | Buy / up / gains |
-| **negative**       | `text-rose-300`/`text-red-200`, `bg-rose-*`/`bg-red-500`, `border-rose-*`/`border-red-400` | Sell / down / loss |
-| **caution**        | `text-amber-300`, `bg-amber-400`, `border-amber-300` | Warnings, low-conviction, holds |
-| **on-accent**      | `text-slate-950`                            | Text on cyan/emerald fills |
+Common literal classes are still valid and pixel-equivalent:
 
-**Verdict gradients** (used for buy/sell glow + gradient text):
-`from-emerald-400` (bull), `from-rose-400` (bear), `from-slate-400` (neutral),
-`from-cyan-300` (brand). Brand mark gradient: `linear-gradient(135deg,#a7f3e8,#22d3ee 55%,#34d399)`.
+- Canvas: `bg-slate-950`, `bg-[#f8fcff]`
+- Surfaces: `bg-white/[0.04]`, `bg-white/5`, `bg-white/80`, `bg-black/50`
+- Borders: `border-white/10`, `border-slate-200`, `border-cyan-200`
+- Primary text: `text-slate-950` on light, `text-slate-50` or `text-white` on
+  dark surfaces
+- Body text: `text-slate-500`, `text-slate-400`, `text-slate-300`
+- Accent: `text-cyan-300`, `text-cyan-400`, `bg-cyan-400`, `bg-cyan-500`
+- Directional: `text-emerald-300`, `bg-emerald-400`, `text-rose-300`,
+  `bg-red-500`, `text-amber-300`
 
-Optional semantic utilities are also defined in `globals.css` (`bg-surface`,
-`text-accent`, `text-positive`, etc.) that alias these exact colors — use either
-the literal class or the semantic alias; both render identically.
+Brand mark gradient is locked:
+`linear-gradient(135deg,#a7f3e8,#22d3ee 55%,#34d399)`.
 
----
+## Typography
 
-## 3. Typography
+Use two intentional UI fonts:
 
-| Role            | Spec |
-|-----------------|------|
-| **Eyebrow label** | `text-[10px] font-black uppercase tracking-[0.18em] font-['Space_Grotesk']`, usually `text-cyan-300` or `text-slate-400`. The signature Bullseye label. |
-| **Display H1**  | `font-['Space_Grotesk']` `font-extrabold` `tracking-tight`, ~`text-4xl`→`text-6xl`. Often a gradient-clipped span. |
-| **Heading**     | `font-['Space_Grotesk']` `font-bold`, `text-xl`→`text-2xl`, `text-white`. |
-| **Body**        | default sans, `text-sm`/`text-base`, `text-slate-300`, `leading-relaxed`. |
-| **Data / metric** | `font-['JetBrains_Mono']`, value `font-bold text-white`, label as eyebrow. |
-| **Tracking**    | Eyebrows use `tracking-[0.14em]`–`tracking-[0.2em]`. |
+| Role | Font | Rules |
+| --- | --- | --- |
+| Display | `Space Grotesk` | Brand, H1/H2/H3, section eyebrows, button labels, ticker names, card titles. Use uppercase sparingly, usually with `font-black` and `tracking-[0.14em]` to `tracking-[0.2em]` for labels. |
+| Data | `JetBrains Mono` | Prices, confidence, risk/reward, tickers, percentages, table cells, compact metadata, command/search inputs. Use tabular, compact, and high contrast. |
 
----
+Body copy currently falls back through Inter/Plus Jakarta/Geist/system sans.
+Do not introduce another display or data font. The layout also loads Geist and
+Geist Mono variables for compatibility, but redesign components should use
+Space Grotesk for display and JetBrains Mono for data.
 
-## 4. Shape, elevation, spacing, motion
+Type scale:
 
-- **Radii:** `rounded-2xl` (cards, buttons, inputs — default), `rounded-3xl`
-  (large panels / modals), `rounded-full` (pills, dots, avatars).
-- **Borders:** `border border-white/10` default; accent/active → `border-cyan-300|400`.
-- **Elevation:** glass surfaces use `backdrop-blur-sm|md|2xl`. Large shadow:
-  `shadow-[0_28px_90px_rgba(15,23,42,0.5)]`; soft: `shadow-[0_18px_55px_rgba(15,23,42,0.08)]`.
-- **Card padding:** `p-5` / `p-6` (mobile→desktop); compact rows `p-3`.
-- **Section rhythm:** vertical gaps `gap-3`/`gap-4` inside cards, `gap-6`/`gap-8` between sections; page gutters `px-4 sm:px-6`.
-- **Backgrounds:** radial-glow accents allowed, e.g.
-  `radial-gradient(60% 40% at 80% -5%, rgba(34,211,238,.10), transparent 60%)`.
-- **Motion (already in `globals.css`):** `.animate-rise` (entrance),
-  `.animate-marquee` (ticker), `dot-bounce` (typing). Keep motion restrained:
-  150–300ms, `transition`, ease-out. Respect `prefers-reduced-motion`.
+- Eyebrow: `text-[10px] font-black uppercase tracking-[0.18em]`
+- Small metadata: `text-[10px]` to `text-xs`, usually JetBrains Mono
+- Body: `text-sm` or `text-base`, `leading-relaxed`
+- Card title: `text-base` to `text-xl`, Space Grotesk, `font-black`
+- Section title: `text-2xl` to `text-4xl`, Space Grotesk, `font-black`
+- Hero: `text-4xl` to `text-6xl`, Space Grotesk, `font-black`,
+  `tracking-tight`
 
----
+## Spacing, Radius, Border, Shadow, Motion
 
-## 5. Design language / principles
+Spacing:
 
-1. **Modern fintech, dark glass.** Deep `slate-950` canvas, translucent
-   white-alpha cards, cyan as the single action accent, emerald/rose strictly for
-   directional data, amber for caution.
-2. **Hierarchy via the eyebrow pattern.** Tiny uppercase tracked label →
-   display heading → supporting body. Used on every section and card.
-3. **Data-dense but breathable.** Generous radii and padding; numbers in
-   JetBrains Mono so they read as data.
-4. **One accent.** Cyan drives all primary actions/links. Don't introduce new hues.
-5. **Consistent surfaces.** Everything sits on `rounded-2xl` white-alpha cards with
-   `border-white/10`. No ad-hoc card styles.
-6. **Honest states.** Every data surface has explicit loading (skeleton), empty,
-   and error states — never a blank box.
-7. **Restrained motion.** Subtle entrance/hover only; nothing that distracts from data.
+- Page gutters: `px-3 sm:px-6 lg:px-8` for the wide homepage,
+  `px-4 sm:px-6` for standard pages.
+- Page max width: `max-w-[1600px]` for the homepage/trading surface,
+  `max-w-7xl` for narrower marketing or admin layouts.
+- Card padding: `p-4`, `p-5`, `p-6`; large feature panels may use `p-7`.
+- Internal gaps: `gap-2` to `gap-4` for dense controls, `gap-6` for sections.
 
-**Grid & breakpoints:** mobile-first, Tailwind defaults (`sm 640 / md 768 /
-lg 1024 / xl 1280`). Page max-width container ~`max-w-7xl mx-auto`. Content grids
-use 12 columns at `lg` (`lg:grid-cols-12`) collapsing to 1 column on mobile.
+Radius:
 
----
+- `rounded-xl`: compact controls, table controls, small buttons.
+- `rounded-2xl`: default cards, inputs, buttons, pills with content.
+- `rounded-3xl`: large panels, modals, homepage sections.
+- `rounded-full`: avatars, dots, tight status pills.
 
-## 6. Component catalog (`frontend/components/ui/`)
+Borders:
 
-All primitives are TypeScript, theme-accurate, and composable via a `className`
-override (merged with the local `cn()` helper). Import from `@/components/ui`.
+- Dark default: `border border-white/10`
+- Light default: `border border-slate-200` or `border-white/70`
+- Active/focus: `border-cyan-300`, `border-cyan-400`, `focus:ring-cyan-400`
+- Directional: `border-emerald-300/30`, `border-rose-300/30`,
+  `border-amber-300/30`
 
-| Component | Purpose | Key props / variants |
-|-----------|---------|----------------------|
-| `cn(...)` | className merge helper (no deps) | — |
-| `Card` | Standard glass surface | `variant`: `glass`\|`solid`\|`inset`; `padding`: `none`\|`sm`\|`md`\|`lg`; `as`, `interactive` |
-| `Button` | Actions | `variant`: `primary`\|`secondary`\|`ghost`\|`danger`; `size`: `sm`\|`md`\|`lg`; `block` |
-| `Eyebrow` | The signature uppercase tracked label | `tone`: `accent`\|`muted`; `as` |
-| `Badge` / `Pill` | Status chips | `tone`: `neutral`\|`accent`\|`positive`\|`negative`\|`caution`; `Pill` is rounded-full |
-| `Stat` | Label + value metric block | `label`, `value`, `hint`, `tone` |
-| `Input` | Text/number/time input | native input props; `invalid` |
-| `Select` | Styled native select | native select props; `children` = options |
-| `Tabs` | Tabbed switcher (client) | `tabs: {id,label}[]`, `value`, `onValueChange` |
-| `Modal` | Overlay dialog (client) | `open`, `onClose`, `title`, `size` |
-| `Tooltip` | Hover hint (client) | `content`, `children`, `side` |
-| `SectionHeading` | Eyebrow + title + description + actions | `eyebrow`, `title`, `description`, `actions` |
-| `Skeleton` | Loading placeholder | `className` for shape |
+Shadows:
+
+- Light card: `shadow-[0_18px_55px_rgba(15,23,42,0.08)]`
+- Light hover: `shadow-[0_26px_70px_rgba(8,145,178,0.16)]`
+- Dark modal: `shadow-[0_28px_90px_rgba(15,23,42,0.5)]`
+- Brand/CTA glow: `shadow-[0_12px_32px_rgba(6,182,212,0.28)]`
+
+Motion:
+
+- Use existing `.animate-rise`, `.animate-marquee`, and `dot-bounce`.
+- Hover motion may translate by `-translate-y-0.5` or `-translate-y-1`.
+- Transitions should stay in the 150ms to 300ms range.
+- Avoid ornamental motion that competes with data scanning.
+
+## Design Language
+
+Target feel: modern fintech, clean, data-dense but breathable, strong visual
+hierarchy, consistent grid, card-based surfaces, and restrained motion.
+
+Principles:
+
+1. Keep cyan as the only action accent. Emerald, rose, and amber are reserved
+   for market direction and warning states.
+2. Use the eyebrow pattern: small uppercase label, strong heading, short support
+   copy.
+3. Cards should feel like working surfaces, not decorative content blocks.
+4. Every data panel needs a loading, empty, or unavailable state.
+5. Dense content needs clear scanning anchors: labels, mono values, status dots,
+   and consistent grid tracks.
+6. Homepage sections may use the current light shell, but dark research panels
+   remain valid when the content is signal-heavy.
+
+Grid and breakpoints:
+
+- Mobile first.
+- Tailwind breakpoints: `sm 640`, `md 768`, `lg 1024`, `xl 1280`.
+- Homepage uses `max-w-[1600px]` and can split into a main column plus a
+  `360px` to `390px` side rail at `xl`.
+- Standard sections use 1 column on mobile, 2 columns at `md`, and 12-column
+  composition at `lg`.
+
+## Component Catalog
+
+All shared primitives live in `frontend/components/ui/` and export from
+`@/components/ui`.
+
+| Component | Purpose | Variants and props |
+| --- | --- | --- |
+| `cn` | Dependency-free className joiner | Accepts strings, numbers, false, null, undefined |
+| `Card` | Standard surface wrapper | `variant`: `glass`, `solid`, `inset`; `padding`: `none`, `sm`, `md`, `lg`; `interactive`, `className` |
+| `Button` | Native button actions | `variant`: `primary`, `secondary`, `ghost`, `danger`; `size`: `sm`, `md`, `lg`; `block`, native button props |
+| `Eyebrow` | Signature uppercase label | `tone`: `accent`, `muted`; `as`: `span`, `div`, `p` |
+| `Badge` | Compact status chip | `tone`: `neutral`, `accent`, `positive`, `negative`, `caution`; `pill` |
+| `Pill` | Rounded status chip | Same props as `Badge`, always rounded-full |
+| `Stat` / `Metric` | Label/value metric block | `label`, `value`, `hint`, `tone`: `default`, `positive`, `negative`, `caution`, `accent`; `Metric` is an alias |
+| `Input` | Theme input | Native input props, `invalid` |
+| `Select` | Styled native select | Native select props |
+| `Tabs` | Controlled segmented tabs | `tabs`, `value`, `onValueChange`, `className` |
+| `Modal` | Client overlay dialog | `open`, `onClose`, `title`, `size`: `sm`, `md`, `lg` |
+| `Tooltip` | Client hover/focus hint | `content`, `children`, `side`: `top`, `bottom` |
+| `SectionHeading` | Eyebrow/title/description/actions block | `eyebrow`, `title`, `description`, `actions` |
+| `Skeleton` | Loading placeholder | Shape via `className` |
 | `EmptyState` | Empty/no-data panel | `title`, `description`, `icon`, `action` |
-| `Table` + `THead/TBody/TR/TH/TD` | Data tables (responsive) | compose; mobile → stacked cards in feature code |
+| `Table`, `THead`, `TBody`, `TR`, `TH`, `TD` | Responsive table primitives | Compose directly; mobile stacking belongs in feature components |
 
-### Usage examples
+Interactive primitives (`Tabs`, `Modal`, `Tooltip`) are client components. Pure
+display primitives stay server-safe.
 
-```tsx
-import { Card, Button, Eyebrow, Badge, Stat, SectionHeading } from "@/components/ui";
+## Homepage Components
 
-<Card>
-  <Eyebrow>Signal 1</Eyebrow>
-  <h3 className="mt-1 font-['Space_Grotesk'] text-2xl font-bold text-white">TCS</h3>
-  <Badge tone="positive">BUY</Badge>
-  <Stat label="Confidence" value="62%" />
-  <Button variant="primary" size="md">View analysis</Button>
-</Card>
-```
+Homepage-only presentation belongs in `frontend/components/home/`.
 
----
+| Component | Purpose |
+| --- | --- |
+| `HomeHero` | First viewport hero, stats, and CTAs |
+| `MarketSwitcher` | India/US market selector |
+| `MarketScanSection` | Live stock grid shell and pagination |
+| `DailySignalPreviewCard` | Daily email signal preview and alert CTAs |
+| `HomeFeatureSection` | Marketing/features and final CTAs |
 
-## 7. Guardrails for every phase
+These components must not own SWR, fetch calls, stock lists, auth state, or
+market handlers. `frontend/app/page.tsx` owns all data and passes props down.
 
-- Do **not** change colors or fonts. Reuse the tokens/classes above verbatim.
-- Do **not** touch data fetching, SWR keys, API URLs, Supabase auth, or handlers —
-  presentational refactor only.
-- Compose from `@/components/ui`; extract feature components under
-  `frontend/components/<feature>/`. Keep data/logic in the page; pass via props.
-- Interactive primitives (`Tabs`, `Modal`, `Tooltip`) are `"use client"`. Pure
-  display primitives are server-safe (no directive) and work in either context.
-- Verify each phase: `npx tsc -p tsconfig.json --noEmit` passes, `npm run dev`
-  renders, browser console is clean. Then commit.
+## Guardrails
 
----
-
-## 8. Layout shell (`frontend/components/layout/`)
-
-Shared, dark, design-system chrome. **Layout-only and stateful-piece-agnostic:**
-the header owns no state — pages pass their search field / account menu in as
-slots, so existing auth and data flow are untouched. Import from `@/components/layout`.
-
-| Component | Purpose | Key props |
-|-----------|---------|-----------|
-| `Brand` | "BE" gradient mark + BULLSEYE wordmark | `href` **or** `onClick`, `tagline`, `showTagline`, `showWordmark` |
-| `NavLink` | Header nav link / CTA | `href`, `variant`: `default`\|`primary`(gradient CTA, e.g. Ask AI)\|`dark`(solid, e.g. Screener), `active` |
-| `AppHeader` | Sticky glass header | `brand`, `center` (e.g. search), `actions` (nav + account), `maxWidthClassName` |
-| `Footer` | Site footer + disclaimer | `className` |
-| `AppShell` | Full page: glow bg + header + main + footer | `header` (AppHeaderProps), `footer`, `glow`, `mainClassName` |
-
-### Composition example (interior page)
-
-```tsx
-import { AppShell, NavLink } from "@/components/layout";
-
-<AppShell header={{ actions: (
-  <>
-    <NavLink href="/ask-ai" variant="primary">✦ Ask AI</NavLink>
-    <NavLink href="/screens" variant="dark">Screener</NavLink>
-  </>
-) }}>
-  {/* page content */}
-</AppShell>
-```
-
-### Mounting sequence (important for handoff)
-
-Today the homepage is **dark** but the Screener and Ask-AI pages are **light**
-(white headers + white card bodies). Mounting the dark shell on a still-light page
-body looks broken, so the shell is rolled in *with* each page's body conversion:
-
-- **Phase 2 (Homepage):** mount `AppHeader` on the homepage — replace its inline
-  `<nav>`, composing `Brand` + `NavLink`s, passing the existing asset-search and
-  account-menu JSX as `center`/`actions` slots (do not rewrite their state). Add
-  the missing **Alerts** nav link. Add `Footer`.
-- **Phase 3 (Screener) / Phase 4 (Ask AI):** convert the page body from light →
-  dark and wrap in `AppShell` (or compose `AppHeader`), replacing the bespoke
-  light headers in `screens/page.tsx`, `screens/[slug]`, `screens/sector/[sector]`,
-  and `ask-ai/page.tsx`.
-- **Phase 6 (Alerts/account):** wrap `alerts/page.tsx` in `AppShell`.
-
-Net: by end of Phase 6 every route shares one dark shell. The shell components
-themselves are complete now (Phase 1) so later phases only compose them.
+- Do not change colors. Add aliases only when they point to values above.
+- Do not move data fetching into presentational components.
+- Preserve SWR keys and backend paths exactly unless a phase explicitly asks for
+  data behavior changes.
+- Preserve the stock detail dashboard when working on homepage-only phases.
+- Prefer existing primitives and layout components over new ad hoc card styles.
+- Run `npx tsc -p tsconfig.json --noEmit` before committing.

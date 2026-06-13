@@ -16,7 +16,7 @@ export type { EyebrowProps } from "./Eyebrow";
 export { Badge, Pill } from "./Badge";
 export type { BadgeProps, BadgeTone } from "./Badge";
 
-export { Stat } from "./Stat";
+export { Stat, Metric } from "./Stat";
 export type { StatProps, StatTone } from "./Stat";
 
 export { Input } from "./Input";

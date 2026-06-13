@@ -3,15 +3,37 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Bullseye locked palette extracted from the current app. */
+  --bg: #020617;
+  --bg-soft: #0f172a;
+  --bg-elevated: #111827;
+  --page-light: #f8fcff;
+  --page-light-mid: #edf7f8;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-strong: rgba(255, 255, 255, 0.06);
+  --surface-light: rgba(255, 255, 255, 0.82);
+  --surface-inset: rgba(0, 0, 0, 0.50);
+  --line: rgba(255, 255, 255, 0.10);
+  --line-light: rgba(15, 23, 42, 0.10);
+  --accent: #22d3ee;
+  --accent-soft: #67e8f9;
+  --accent-strong: #06b6d4;
+  --positive: #34d399;
+  --positive-soft: #86efac;
+  --negative: #fb7185;
+  --negative-strong: #ef4444;
+  --caution: #fcd34d;
+  --muted: #94a3b8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-space);
-  --font-body: var(--font-jakarta);
+  --font-sans: "Inter", "Plus Jakarta Sans", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Space Grotesk", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", "Plus Jakarta Sans", "Geist", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* --- Bullseye design-system semantic color aliases (Phase 0, additive) ---
@@ -19,7 +41,18 @@
    references one vocabulary. A primitive may use these OR the literal Tailwind
    class (e.g. `bg-surface` === `bg-slate-950`). Colors are NOT changed. */
 @theme {
+  --color-bg: var(--bg);
+  --color-bg-soft: var(--bg-soft);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-page-light: var(--page-light);
+  --color-page-light-mid: var(--page-light-mid);
   --color-surface: var(--color-slate-950);
+  --color-surface-glass: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-surface-light: var(--surface-light);
+  --color-surface-inset: var(--surface-inset);
+  --color-line: var(--line);
+  --color-line-light: var(--line-light);
   --color-accent: var(--color-cyan-300);
   --color-accent-strong: var(--color-cyan-400);
   --color-positive: var(--color-emerald-400);

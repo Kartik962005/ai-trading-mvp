@@ -4,6 +4,13 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
+import {
+  DailySignalPreviewCard,
+  HomeFeatureSection,
+  HomeHero,
+  MarketScanSection,
+  MarketSwitcher,
+} from '@/components/home';
 
 const BACKEND = '/api/backend';
 const fetcher = async (url: string) => {
@@ -3635,6 +3642,15 @@ function HomeContent() {
     await confirmEnableDailySignals();
   };
 
+  const openDailySignalSettings = () => {
+    setShowProfileMenu(false);
+    if (user) {
+      setShowNotificationSettings(true);
+      return;
+    }
+    setShowAuthModal(true);
+  };
+
   const applyUrlState = (search: string) => {
     const params = new URLSearchParams(search);
     const urlTicker = params.get('ticker');
@@ -4700,132 +4716,57 @@ function HomeContent() {
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
             <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
+              <HomeHero
+                activeMarket={activeMarket}
+                visibleCount={visibleMarketStocks.length}
+                totalCount={marketStocks.length}
+                signedIn={Boolean(user)}
+                onOpenDailySignals={openDailySignalSettings}
+              />
 
-              {/* Market tabs */}
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
-                {(['INDIA', 'US'] as const).map(market => (
-                  <button key={market} onClick={() => setActiveMarket(market)}
-                    className={`relative p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border backdrop-blur-xl transition-all duration-300 flex flex-col items-start overflow-hidden
-                      ${activeMarket === market
-                        ? market === 'INDIA'
-                          ? 'bg-cyan-900/30 border-cyan-400/50 shadow-[0_0_40px_rgba(6,182,212,0.25)] ring-1 ring-cyan-400/20 market-tab-active-india'
-                          : 'bg-fuchsia-900/30 border-fuchsia-400/50 shadow-[0_0_40px_rgba(217,70,239,0.25)] ring-1 ring-fuchsia-400/20 market-tab-active-us'
-                        : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-white/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]'}`}>
-                    <span className={`text-2xl sm:text-4xl mb-2 sm:mb-4 ${activeMarket === market ? 'opacity-100' : 'opacity-40'}`}>
-                      {market === 'INDIA' ? '🇮🇳' : '🇺🇸'}
-                    </span>
-                    <span className={`text-base sm:text-2xl font-black uppercase tracking-tight font-['Space_Grotesk']
-                      ${activeMarket === market ? 'text-white' : 'text-zinc-400'}`}>
-                      {market === 'INDIA' ? 'India' : 'US'}
-                    </span>
-                    <span className={`text-[9px] sm:text-[10px] font-['JetBrains_Mono'] mt-1 sm:mt-2 uppercase tracking-widest hidden sm:block
-                      ${activeMarket === market
-                        ? market === 'INDIA' ? 'text-cyan-400' : 'text-fuchsia-400'
-                        : 'text-zinc-600'}`}>
-                      {market === 'INDIA' ? 'NSE / BSE' : 'NASDAQ / NYSE'}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <MarketSwitcher activeMarket={activeMarket} onMarketChange={setActiveMarket} />
 
-              {/* Asset grid */}
-              <div className="bg-black/20 backdrop-blur-md rounded-3xl p-4 sm:p-6 border border-white/5 animate-in slide-in-from-bottom-8 fade-in duration-500">
-                <div className="flex items-center justify-between mb-4 sm:mb-6 px-2 border-b border-white/10 pb-4">
-                  <div>
-                    <h2 className="text-xs sm:text-sm font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk']">Live Scan</h2>
-                    <p className="mt-1 text-[10px] font-['JetBrains_Mono'] text-zinc-600">
-                      Showing {visibleMarketStocks.length} of {marketStocks.length} tracked stocks
-                    </p>
-                  </div>
-                  <span className="text-[10px] bg-white/10 px-3 py-1 rounded-full text-zinc-300 font-['JetBrains_Mono']">{activeMarket}</span>
-                </div>
-                <div
-                  className="grid gap-4 sm:gap-5"
-                  style={{ gridTemplateColumns: `repeat(${assetColumnCount}, minmax(0, 1fr))` }}
-                >
-                  {assetColumns.map((columnStocks, columnIndex) => (
-                    <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-4 sm:gap-5">
-                      {columnStocks.map(s => (
-                        <MarketAssetCard
-                          key={s.ticker}
-                          stock={s}
-                          prefetchedAnalysis={prefetchCache[s.ticker]}
-                          quickQuote={visibleQuotes?.[s.ticker]}
-                          onPreview={openPreview}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-6 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-4 sm:flex-row">
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 font-['Space_Grotesk']">
-                    Page {marketPage} / {marketPageCount}
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {Array.from({ length: marketPageCount }, (_, index) => index + 1).map(page => (
-                      <button
-                        key={page}
-                        type="button"
-                        onClick={() => {
-                          setMarketPage(page);
-                          setExpandedTicker(null);
-                        }}
-                        className={`h-9 min-w-9 rounded-xl border px-3 text-xs font-black transition-all font-['JetBrains_Mono'] ${
-                          marketPage === page
-                            ? 'border-cyan-300 bg-cyan-400 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.35)]'
-                            : 'border-white/10 bg-white/5 text-zinc-400 hover:border-cyan-300/50 hover:text-cyan-200'
-                        }`}
-                        aria-label={`Show stock page ${page}`}
-                      >
-                        {page}
-                      </button>
+              <MarketScanSection
+                activeMarket={activeMarket}
+                visibleCount={visibleMarketStocks.length}
+                totalCount={marketStocks.length}
+                page={marketPage}
+                pageCount={marketPageCount}
+                columnCount={assetColumnCount}
+                onPageChange={(page) => {
+                  setMarketPage(page);
+                  setExpandedTicker(null);
+                }}
+              >
+                {assetColumns.map((columnStocks, columnIndex) => (
+                  <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-4 sm:gap-5">
+                    {columnStocks.map(s => (
+                      <MarketAssetCard
+                        key={s.ticker}
+                        stock={s}
+                        prefetchedAnalysis={prefetchCache[s.ticker]}
+                        quickQuote={visibleQuotes?.[s.ticker]}
+                        onPreview={openPreview}
+                      />
                     ))}
                   </div>
-                </div>
-              </div>
+                ))}
+              </MarketScanSection>
+
+              <DailySignalPreviewCard
+                signedIn={Boolean(user)}
+                userEmail={user?.email}
+                signals={dailySignalPreview}
+                isSaving={notificationSaving || notificationLoading}
+                error={notificationError}
+                message={notificationMessage}
+                onOpenSettings={openDailySignalSettings}
+                onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
+              />
 
               <GlobalNewsPanel />
 
-              <section className="overflow-hidden rounded-3xl border border-cyan-300/25 bg-slate-950 p-5 text-white shadow-[0_28px_90px_rgba(8,47,73,0.28)] sm:p-7">
-                <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
-                  <div className="flex min-h-[230px] flex-col justify-between rounded-2xl border border-white/10 bg-white/[0.06] p-5 sm:p-6">
-                    <div>
-                    <div className="text-2xl font-black uppercase tracking-[0.12em] sm:text-3xl font-['Space_Grotesk']" style={{ color: '#dffcff', textShadow: '0 0 24px rgba(103,232,249,0.75)' }}>About Bullseye</div>
-                    <h2 className="mt-4 max-w-3xl text-2xl font-black leading-tight sm:text-4xl font-['Space_Grotesk']" style={{ color: '#f8fdff', textShadow: '0 2px 24px rgba(255,255,255,0.22)' }}>
-                        A focused market cockpit for scanning, comparing, and validating stock setups.
-                      </h2>
-                      <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 font-['JetBrains_Mono']">
-                        Bullseye brings chart action, FISO confidence, technical studies, strategy ranking, live quotes, and deeper stock context into a single research flow. The homepage helps you move quickly across markets, while each stock page gives you a cleaner place to inspect the setup before you decide what deserves more attention.
-                      </p>
-                    </div>
-                    <div className="mt-5 flex flex-wrap gap-2">
-                      {['Live market scan', 'AI verdict context', 'Chart-led research', 'India and US coverage'].map(label => (
-                        <span key={label} className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-cyan-100 font-['Space_Grotesk']">
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3">
-                    {[
-                      ['Signal Engine', 'FISO scoring converts trend, momentum, risk, and sentiment inputs into one readable market verdict.'],
-                      ['Technical Workspace', 'Indicator panels sit below the candle chart so momentum, volume, volatility, and trend studies can be compared without leaving the page.'],
-                      ['Research Flow', 'Paginated cards keep the homepage fast to scan, then detailed stock dashboards open with price, chart, targets, stop loss, and strategy context.'],
-                    ].map(([title, body]) => (
-                      <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 transition-colors hover:border-cyan-300/30 hover:bg-white/[0.07]">
-                        <div className="flex items-start gap-3">
-                          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.75)]" />
-                          <div>
-                            <div className="text-sm font-black uppercase tracking-[0.18em] font-['Space_Grotesk']" style={{ color: '#f8fdff', textShadow: '0 0 16px rgba(103,232,249,0.35)' }}>{title}</div>
-                            <p className="mt-2 text-xs leading-6 font-['JetBrains_Mono']" style={{ color: '#d8e2f0' }}>{body}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+              <HomeFeatureSection onOpenDailySignals={openDailySignalSettings} />
             </div>
           )}
 
