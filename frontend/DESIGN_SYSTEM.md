@@ -214,4 +214,10 @@ market handlers. `frontend/app/page.tsx` owns all data and passes props down.
   data behavior changes.
 - Preserve the stock detail dashboard when working on homepage-only phases.
 - Prefer existing primitives and layout components over new ad hoc card styles.
+- Light vs dark surfaces: the shared primitives (`Card` glass, `SectionHeading`,
+  `EmptyState`, `Badge` accent → `text-cyan-300`) are tuned for DARK backgrounds
+  and read as low-contrast on the light shell. On light pages use either an
+  explicit-color primitive (`Button`, which is high-contrast on light) or a light
+  pill/eyebrow at `text-cyan-700` on `bg-cyan-50`. Do not place `text-cyan-300`
+  text on near-white backgrounds.
 - Run `npx tsc -p tsconfig.json --noEmit` before committing.

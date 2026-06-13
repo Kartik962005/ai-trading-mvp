@@ -16,7 +16,13 @@ import {
 import StockSearch from './StockSearch';
 import { STOCKS } from '../stocks';
 import { enrichScreenRows } from './enrichRows';
-import { Badge, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
+
+// Legible eyebrow pill for the LIGHT screener surfaces. (The shared Badge
+// primitive uses cyan-300 text tuned for dark backgrounds, which is low-contrast
+// on white — see DESIGN_SYSTEM light/dark note.)
+const lightPillClass =
+  "inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700";
 
 const BACKEND = '/api/backend';
 
@@ -500,7 +506,7 @@ export default function ScreensPage() {
           <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
             <section className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-7">
               <div className="max-w-3xl">
-                <Badge tone="accent" pill>Screens</Badge>
+                <span className={lightPillClass}>Screens</span>
                 <h1 className="mt-3 font-['Space_Grotesk'] text-2xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Explore category-wise stocks</h1>
                 <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:mt-3 sm:text-base">
                   Ask in plain English. Price, volume, technicals, and supported fundamentals are screened against Bullseye&apos;s latest backend snapshot.
@@ -560,7 +566,7 @@ export default function ScreensPage() {
               <section ref={resultsRef} className="scroll-mt-24 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <Badge tone="accent" pill>AI screener result</Badge>
+                    <span className={lightPillClass}>AI screener result</span>
                     <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-black text-slate-950 sm:text-2xl">{result.title}</h2>
                     {result.explanation && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">{result.explanation}</p>}
                     {result.source && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{result.source}</p>}
