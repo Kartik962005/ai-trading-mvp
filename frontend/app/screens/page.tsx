@@ -16,6 +16,7 @@ import {
 import StockSearch from './StockSearch';
 import { STOCKS } from '../stocks';
 import { enrichScreenRows } from './enrichRows';
+import { Badge, Button } from '@/components/ui';
 
 const BACKEND = '/api/backend';
 
@@ -484,23 +485,26 @@ export default function ScreensPage() {
               </div>
             </Link>
             <StockSearch compact />
-            <Link href="/" className="hidden rounded-2xl border border-slate-200 bg-slate-950 px-5 py-3 text-xs font-black uppercase tracking-[0.2em] text-white shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition hover:bg-cyan-600 md:inline-flex">
-              Home
-            </Link>
+            <div className="hidden items-center gap-2 md:flex">
+              <Link href="/ask-ai" className="force-light-text inline-flex h-12 items-center justify-center gap-1.5 rounded-2xl border border-cyan-400/60 bg-gradient-to-r from-cyan-600 to-emerald-500 px-4 font-['Space_Grotesk'] text-xs font-black uppercase tracking-[0.18em] text-white shadow-[0_12px_32px_rgba(6,182,212,0.28)] transition hover:from-cyan-500 hover:to-emerald-400">
+                <span aria-hidden="true">✦</span> Ask AI
+              </Link>
+              <Link href="/" className="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 font-['Space_Grotesk'] text-xs font-black uppercase tracking-[0.2em] text-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.08)] transition hover:border-cyan-300 hover:text-cyan-700">
+                Home
+              </Link>
+            </div>
           </div>
         </header>
 
         <section className="relative z-10 mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-3 py-4 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[minmax(0,1fr)_390px]">
           <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
-            <section className="overflow-hidden rounded-2xl border border-white/70 bg-white/78 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-7">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div className="max-w-3xl">
-                  <div className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-700 sm:mb-3 sm:text-[10px]">Screens</div>
-                  <h1 className="font-['Space_Grotesk'] text-2xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Explore category-wise stocks</h1>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:mt-3 sm:text-base">
-                    Ask in plain English. Price, volume, technicals, and supported fundamentals are screened against Bullseye's latest backend snapshot.
-                  </p>
-                </div>
+            <section className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-7">
+              <div className="max-w-3xl">
+                <Badge tone="accent" pill>Screens</Badge>
+                <h1 className="mt-3 font-['Space_Grotesk'] text-2xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Explore category-wise stocks</h1>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:mt-3 sm:text-base">
+                  Ask in plain English. Price, volume, technicals, and supported fundamentals are screened against Bullseye&apos;s latest backend snapshot.
+                </p>
               </div>
 
               <div className="mt-4 rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-3 sm:mt-6">
@@ -516,26 +520,27 @@ export default function ScreensPage() {
                       }
                     }}
                     placeholder="Ask AI: stocks that gained last 4 consecutive days and whose average volume is above last week average"
-                    className="min-h-14 flex-1 resize-none rounded-2xl border border-cyan-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-16"
+                    className="min-h-14 flex-1 resize-none rounded-2xl border border-cyan-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-16 font-['JetBrains_Mono']"
                   />
-                  <button
+                  <Button
                     type="button"
+                    size="lg"
                     onClick={() => runQuery()}
                     disabled={!query.trim() || isSearching}
-                    className="rounded-2xl bg-cyan-500 px-5 py-4 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-cyan-600 disabled:opacity-40 sm:text-xs lg:w-36"
+                    className="lg:w-36"
                   >
-                    {isSearching ? 'Thinking' : 'Ask AI'}
-                  </button>
+                    {isSearching ? 'Thinking…' : 'Ask AI'}
+                  </Button>
                 </div>
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-[10px] font-black uppercase tracking-widest text-cyan-700">Examples</summary>
+                <details className="mt-3">
+                  <summary className="cursor-pointer font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">Examples</summary>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {examples.map(example => (
                       <button
                         key={example}
                         type="button"
                         onClick={() => runQuery(example)}
-                        className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-[11px] text-slate-600 transition hover:border-cyan-400 hover:text-cyan-700 sm:text-xs"
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-[11px] text-slate-600 transition hover:border-cyan-400 hover:text-cyan-700 sm:text-xs"
                       >
                         {example}
                       </button>
@@ -543,7 +548,8 @@ export default function ScreensPage() {
                   </div>
                 </details>
                 {isSearching && (
-                  <div className="mt-3 rounded-xl border border-cyan-200 bg-white/80 px-3 py-2 text-xs font-bold text-cyan-700">
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-cyan-200 bg-white/80 px-3 py-2 text-xs font-bold text-cyan-700">
+                    <span className="h-1.5 w-1.5 animate-ping rounded-full bg-cyan-500" aria-hidden />
                     {searchingMessage || 'Routing your request through Bullseye AI...'}
                   </div>
                 )}
@@ -554,8 +560,8 @@ export default function ScreensPage() {
               <section ref={resultsRef} className="scroll-mt-24 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest text-cyan-700">AI screener result</div>
-                    <h2 className="mt-1 font-['Space_Grotesk'] text-xl font-black sm:text-2xl">{result.title}</h2>
+                    <Badge tone="accent" pill>AI screener result</Badge>
+                    <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-black text-slate-950 sm:text-2xl">{result.title}</h2>
                     {result.explanation && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">{result.explanation}</p>}
                     {result.source && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{result.source}</p>}
                   </div>
