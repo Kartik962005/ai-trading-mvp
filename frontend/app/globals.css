@@ -14,6 +14,22 @@
   --font-body: var(--font-jakarta);
 }
 
+/* --- Bullseye design-system semantic color aliases (Phase 0, additive) ---
+   Same colors as the live theme, just semantic names so every redesign phase
+   references one vocabulary. A primitive may use these OR the literal Tailwind
+   class (e.g. `bg-surface` === `bg-slate-950`). Colors are NOT changed. */
+@theme {
+  --color-surface: var(--color-slate-950);
+  --color-accent: var(--color-cyan-300);
+  --color-accent-strong: var(--color-cyan-400);
+  --color-positive: var(--color-emerald-400);
+  --color-positive-soft: var(--color-emerald-300);
+  --color-negative: var(--color-rose-400);
+  --color-negative-soft: var(--color-rose-300);
+  --color-caution: var(--color-amber-300);
+  --color-muted: var(--color-slate-400);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
