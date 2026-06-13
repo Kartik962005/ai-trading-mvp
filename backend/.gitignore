@@ -1,1 +1,10 @@
 .env
+
+# Python / tooling caches (never commit)
+__pycache__/
+*.pyc
+.pytest_cache/
+.yfinance-cache/
+
+# Local run logs
+*.log
