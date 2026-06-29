@@ -11,6 +11,7 @@ import {
   MarketScanSection,
   MarketSwitcher,
 } from '@/components/home';
+import BlurText from '@/components/ui/BlurText';
 
 const BACKEND = '/api/backend';
 const fetcher = async (url: string) => {
@@ -4429,6 +4430,22 @@ function HomeContent() {
           animation: welcomeWordIn 0.7s cubic-bezier(0.22,0.61,0.36,1) forwards;
           opacity: 0;
         }
+        .welcome-blur {
+          margin: 0;
+          justify-content: center;
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 900;
+          letter-spacing: -0.02em;
+          line-height: 1;
+          font-size: clamp(34px, 7vw, 70px);
+        }
+        .welcome-blur span {
+          background: linear-gradient(135deg, #67e8f9 0%, #22d3ee 45%, #34d399 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          color: transparent;
+        }
       `}} />
 
       {/* APPLE-STYLE WELCOME OVERLAY — outside bullseye-light so its CSS doesn't override text colors */}
@@ -4472,39 +4489,14 @@ function HomeContent() {
               Bullseye
             </span>
 
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <span
-                className="welcome-word"
-                style={{
-                  animationDelay: '0.35s',
-                  fontSize: 'clamp(34px, 7vw, 70px)',
-                  fontWeight: 900,
-                  letterSpacing: '-0.02em',
-                  color: '#f8fafc',
-                  lineHeight: 1,
-                  fontFamily: "'Space Grotesk', sans-serif",
-                }}
-              >
-                Welcome,
-              </span>
-              <span
-                className="welcome-word"
-                style={{
-                  animationDelay: '0.65s',
-                  fontSize: 'clamp(34px, 7vw, 70px)',
-                  fontWeight: 900,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1,
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  background: 'linear-gradient(135deg, #67e8f9 0%, #22d3ee 45%, #34d399 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                }}
-              >
-                {welcomeName}
-              </span>
-            </div>
+            <BlurText
+              text={`Welcome, ${welcomeName}`}
+              animateBy="words"
+              direction="top"
+              delay={140}
+              stepDuration={0.4}
+              className="welcome-blur"
+            />
 
             <span
               className="welcome-word"

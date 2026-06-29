@@ -7,7 +7,8 @@ name: Daily alert emails
 on:
   schedule:
     # Every 15 minutes from 15:30-22:45 IST on weekdays.
-    - cron: "*/15 10-17 * * 1-5"
+    - cron: "*/15 10-16 * * 1-5"
+    - cron: "0,15 17 * * 1-5"
   workflow_dispatch: {}
 
 concurrency:
@@ -24,9 +25,78 @@ jobs:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           ALERT_ADMIN_KEY: ${{ secrets.ALERT_ADMIN_KEY }}
         run: |
-          test -n "$BACKEND_URL"
-          test -n "$ALERT_ADMIN_KEY"
-          curl --fail-with-body \
+          set -euo pipefail
+
+          if [ -z "${BACKEND_URL:-}" ]; then
+            echo "::error::Missing GitHub Actions secret BACKEND_URL."
+            exit 1
+          fi
+          if [ -z "${ALERT_ADMIN_KEY:-}" ]; then
+            echo "::error::Missing GitHub Actions secret ALERT_ADMIN_KEY."
+            exit 1
+          fi
+          case "$BACKEND_URL" in
+            http://*|https://*) ;;
+            *)
+              echo "::error::BACKEND_URL must start with http:// or https://."
+              exit 1
+              ;;
+          esac
+
+          endpoint="${BACKEND_URL%/}/api/v1/daily-updates/run-scheduled"
+          echo "Calling scheduled daily email endpoint: ${endpoint}"
+          status_code="$(
+            curl --silent --show-error --location \
+            --connect-timeout 20 \
+            --max-time 900 \
+            --retry 2 \
+            --retry-delay 10 \
+            --retry-all-errors \
             --request POST \
             --header "x-alert-admin-key: ${ALERT_ADMIN_KEY}" \
-            "${BACKEND_URL%/}/api/v1/daily-updates/run-scheduled"
+            --output response.json \
+            --write-out "%{http_code}" \
+            "$endpoint"
+          )"
+
+          echo "Backend HTTP status: ${status_code}"
+          echo "Backend response:"
+          cat response.json
+          echo
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "::error::Daily email endpoint returned HTTP ${status_code}."
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import sys
+
+          with open("response.json", "r", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          emails = payload.get("emails") or {}
+          delivery = emails.get("delivery") or {}
+          attempted = int(delivery.get("attempted", emails.get("attempted", 0)) or 0)
+          sent = int(delivery.get("sent", emails.get("sent", 0)) or 0)
+          failed = int(delivery.get("failed", emails.get("failed", 0)) or 0)
+          skipped = int(delivery.get("skipped", emails.get("delivery_skipped", 0)) or 0)
+          skip_reasons = emails.get("skipped") or {}
+
+          print(
+              "Email summary: "
+              f"considered={emails.get('considered', 0)} "
+              f"attempted={attempted} sent={sent} failed={failed} "
+              f"provider_skipped={skipped} skip_reasons={skip_reasons}"
+          )
+
+          if attempted and (failed or skipped or sent != attempted):
+              print(
+                  "::error::Daily email delivery was attempted but not every "
+                  "message was accepted by the email provider. Check backend "
+                  "RESEND_API_KEY/SMTP settings, ALERT_FROM_EMAIL, and the "
+                  "notification response above."
+              )
+              sys.exit(1)
+          PY

@@ -94,6 +94,20 @@ every 15 minutes after market close. Add these GitHub secrets:
 That workflow calls `/api/v1/daily-updates/run-scheduled`, which respects each
 user's selected `email_time` and skips duplicate sends for the same target date.
 
+### Troubleshooting production email delivery
+
+- If the GitHub Actions run fails in a few seconds, first check repo secrets:
+  `BACKEND_URL` must be the deployed backend base URL and `ALERT_ADMIN_KEY` must
+  exactly match the backend's `ALERT_ADMIN_KEY` environment variable.
+- If the workflow reaches the backend but no email arrives, inspect the printed
+  response. `emails.delivery.sent` is the count accepted by the email provider;
+  `failed` or `skipped` means Resend/SMTP config needs attention.
+- Backend email delivery needs either `RESEND_API_KEY` + `ALERT_FROM_EMAIL` or
+  `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` + `ALERT_FROM_EMAIL`.
+- Failed or skipped provider attempts are not treated as delivered, so after
+  fixing the provider config the next scheduled run can retry the same day's
+  cached signal email.
+
 ## Notes
 
 - The current engine is modular and ready for a real market data or ML provider later.

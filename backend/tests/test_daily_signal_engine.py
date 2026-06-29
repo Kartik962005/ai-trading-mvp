@@ -7,6 +7,7 @@ from app.services import daily_trade_service as dts
 from app.services.daily_trade_service import (
     _build_unsubscribe_token,
     _decode_unsubscribe_token,
+    _email_already_sent,
     _ensure_delivery_consent,
     _has_delivery_consent,
     _validate_email_time,
@@ -79,6 +80,76 @@ class DailySignalEngineTests(unittest.TestCase):
             self.assertIn("legacy", updated["consent_version"])
         finally:
             dts.supabase = original_supabase
+
+    def test_failed_email_log_does_not_block_daily_retry(self):
+        original_supabase = dts.supabase
+        original_logs = list(dts._MEMORY_EMAIL_LOGS)
+        dts.supabase = None
+        dts._MEMORY_EMAIL_LOGS = [
+            {
+                "user_id": "user-123",
+                "model_run_id": "run-123",
+                "email_kind": "daily_signal",
+                "status": "failed",
+            }
+        ]
+        try:
+            self.assertFalse(_email_already_sent("user-123", "run-123"))
+            dts._MEMORY_EMAIL_LOGS[0]["status"] = "sent"
+            self.assertTrue(_email_already_sent("user-123", "run-123"))
+        finally:
+            dts.supabase = original_supabase
+            dts._MEMORY_EMAIL_LOGS = original_logs
+
+    def test_scheduled_alerts_count_only_provider_sent_as_sent(self):
+        original_iter_preferences = dts._iter_preferences
+        original_dedupe = dts._daily_email_already_sent_for_target
+        original_run_daily_prediction = dts.run_daily_prediction
+        preferences = [
+            {
+                "user_id": "user-sent",
+                "email": "sent@example.com",
+                "daily_stock_email_enabled": True,
+                "market": "NSE",
+                "risk_level": "Balanced",
+                "signal_type": "Next-day swing",
+                "email_time": "18:00",
+                "consent_accepted_at": "2026-06-03T12:00:00+00:00",
+            },
+            {
+                "user_id": "user-failed",
+                "email": "failed@example.com",
+                "daily_stock_email_enabled": True,
+                "market": "NSE",
+                "risk_level": "Balanced",
+                "signal_type": "Next-day swing",
+                "email_time": "18:00",
+                "consent_accepted_at": "2026-06-03T12:00:00+00:00",
+            },
+        ]
+
+        def fake_run_daily_prediction(**kwargs):
+            self.assertEqual(set(kwargs["user_ids"]), {"user-sent", "user-failed"})
+            return {
+                "notifications": [
+                    {"user_id": "user-sent", "status": "sent", "provider": "resend"},
+                    {"user_id": "user-failed", "status": "failed", "provider": "resend"},
+                ]
+            }
+
+        dts._iter_preferences = lambda: preferences
+        dts._daily_email_already_sent_for_target = lambda user_id, target_date, email_kind="daily_signal": False
+        dts.run_daily_prediction = fake_run_daily_prediction
+        try:
+            result = dts.process_scheduled_daily_alerts(force=True)
+            self.assertEqual(result["attempted"], 2)
+            self.assertEqual(result["sent"], 1)
+            self.assertEqual(result["failed"], 1)
+            self.assertEqual(result["delivery"], {"attempted": 2, "sent": 1, "failed": 1, "skipped": 0, "other": 0})
+        finally:
+            dts._iter_preferences = original_iter_preferences
+            dts._daily_email_already_sent_for_target = original_dedupe
+            dts.run_daily_prediction = original_run_daily_prediction
 
 
 if __name__ == "__main__":

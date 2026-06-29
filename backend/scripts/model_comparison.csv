@@ -1,0 +1,2 @@
+model,n_oos,AUC,ACC@0.5,Brier,trades,dec_R,avg_R,PF,wilson,totalR
+histgbm_cvcal,285197,0.5258,0.6802,0.2197,3125,0.0108,0.0598,1.1017,0.37,186.9

@@ -953,10 +953,11 @@ def _email_already_sent(user_id: str, run_id: str) -> bool:
         try:
             response = (
                 supabase.table(EMAIL_LOGS_TABLE)
-                .select("id")
+                .select("id,status")
                 .eq("user_id", user_id)
                 .eq("model_run_id", run_id)
                 .eq("email_kind", "daily_signal")
+                .in_("status", ["sent", "queued"])
                 .limit(1)
                 .execute()
             )
@@ -965,7 +966,29 @@ def _email_already_sent(user_id: str, run_id: str) -> bool:
             if not _should_use_memory_fallback(exc, EMAIL_LOGS_TABLE):
                 raise
             print(f"[DailySignals] email logs table missing during duplicate check, using in-memory fallback: {exc}")
-    return any(item for item in _MEMORY_EMAIL_LOGS if item["user_id"] == user_id and item["model_run_id"] == run_id and item["email_kind"] == "daily_signal")
+    return any(
+        item
+        for item in _MEMORY_EMAIL_LOGS
+        if item["user_id"] == user_id
+        and item["model_run_id"] == run_id
+        and item["email_kind"] == "daily_signal"
+        and item.get("status") in {"sent", "queued"}
+    )
+
+
+def _summarize_delivery_results(notifications: list[dict[str, Any]]) -> dict[str, int]:
+    attempted = len(notifications)
+    sent = sum(1 for item in notifications if item.get("status") == "sent")
+    failed = sum(1 for item in notifications if item.get("status") == "failed")
+    skipped = sum(1 for item in notifications if item.get("status") == "skipped")
+    other = attempted - sent - failed - skipped
+    return {
+        "attempted": attempted,
+        "sent": sent,
+        "failed": failed,
+        "skipped": skipped,
+        "other": other,
+    }
 
 
 def _daily_email_already_sent_for_target(user_id: str, target_date: str, email_kind: str = "daily_signal") -> bool:
@@ -1160,8 +1183,13 @@ def process_scheduled_daily_alerts(force: bool = False) -> dict[str, Any]:
     )
 
     if not due_preferences:
+        delivery = _summarize_delivery_results([])
         return {
             "sent": 0,
+            "attempted": 0,
+            "failed": 0,
+            "delivery_skipped": 0,
+            "delivery": delivery,
             "considered": considered,
             "skipped": skipped,
             "reason": "No due unsent preferences",
@@ -1184,9 +1212,18 @@ def process_scheduled_daily_alerts(force: bool = False) -> dict[str, Any]:
         )
         all_notifications.extend(result.get("notifications", []))
 
-    print(f"[DailySignals] scheduled tick sent {len(all_notifications)} email(s) for target={target_date}")
+    delivery = _summarize_delivery_results(all_notifications)
+    print(
+        f"[DailySignals] scheduled tick delivery for target={target_date}: "
+        f"attempted={delivery['attempted']} sent={delivery['sent']} "
+        f"failed={delivery['failed']} skipped={delivery['skipped']}"
+    )
     return {
-        "sent": len(all_notifications),
+        "sent": delivery["sent"],
+        "attempted": delivery["attempted"],
+        "failed": delivery["failed"],
+        "delivery_skipped": delivery["skipped"],
+        "delivery": delivery,
         "considered": considered,
         "skipped": skipped,
         "target_date": target_date,

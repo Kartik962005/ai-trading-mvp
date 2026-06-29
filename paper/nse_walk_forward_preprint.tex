@@ -1,0 +1,692 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+
+\title{Calibrated, Leakage-Safe Ranking of Short-Horizon Equity Setups:\\
+An Honest Walk-Forward Study on NSE Stocks}
+
+\author{
+Kartik Gupta\thanks{Student author. Experiments, implementation, and first manuscript draft.}\\
+\small [Department / Institution to be added]\\
+\small [City, Country]\\
+\and
+Faculty Mentor Name\thanks{Faculty mentor/advisor. To be confirmed after review.}\\
+\small [Department / Institution to be added]\\
+\small [City, Country]
+}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Retail equity-screening systems often report attractive backtests while hiding
+lookahead leakage, weak calibration, or overfit selection rules. This paper
+presents a modest empirical study of a reproducible pipeline for ranking
+short-horizon equity setups on Indian National Stock Exchange (NSE) stocks. For
+each stock and trading day, the system constructs causal technical, relative
+strength, market-breadth, sector, regime, and earnings-proximity features using
+only information available up to the close of day $t$. A concrete trade is then
+defined using an ATR-based entry band, target, stop, and approximately five-day
+holding horizon. The label is produced by a triple-barrier rule: target first is
+a win, stop first is a loss, and unresolved trades exit at the horizon. We train
+a gradient-boosted tree classifier to estimate the probability that a setup hits
+target before stop, calibrate this probability on a time-ordered holdout tail,
+and evaluate all predictions using walk-forward testing with an embargo equal
+to the holding period. The contribution is not a claim of a profitable trading
+system. Instead, we ask whether calibrated, leakage-safe ranking improves over
+the unranked base rate and rule-based ranking when measured honestly out of
+sample. All performance numbers in this draft are placeholders until the
+experiment scripts are run and independently checked.
+\end{abstract}
+
+\noindent\textbf{Keywords:} financial machine learning; probability calibration;
+walk-forward validation; triple-barrier labeling; NSE equities; leakage-safe
+backtesting.\\
+\textbf{Suggested arXiv categories:} cs.LG, q-fin.ST, cs.CE.
+
+\section{Introduction}
+
+Short-horizon stock-selection tools are attractive because they convert noisy
+market data into an apparently simple ranked list of candidates. The same
+simplicity also makes them easy to overstate. A trading model can look useful if
+it is evaluated on future information, tuned repeatedly on the same period,
+or judged only by raw accuracy rather than by calibrated probabilities and
+realistic trade outcomes. These failure modes are especially important for
+student or retail research, where the goal should be reproducibility and honest
+measurement rather than promotional claims.
+
+This paper studies a single question:
+
+\begin{quote}
+\emph{Does calibrated, leakage-safe, walk-forward ranking of NSE equity setups
+beat the unranked base rate and a rule-based ranking baseline out of sample,
+and by how much when the trades are graded in R-multiples after costs?}
+\end{quote}
+
+The system under study is a daily pipeline that defines a concrete short-horizon
+trade for each stock-day and estimates the probability that the trade reaches
+its target before its stop. The model is not evaluated by whether it can predict
+the next close exactly. It is evaluated by whether the ranked setups produce
+better out-of-sample barrier outcomes than simpler baselines.
+
+The intended contribution is deliberately modest:
+
+\begin{enumerate}[leftmargin=*]
+    \item We describe a leakage-safe data pipeline that creates causal
+    stock-day features and triple-barrier labels for short-horizon NSE equity
+    setups.
+    \item We estimate and calibrate setup win probabilities using a
+    time-ordered training and calibration design rather than random
+    cross-validation.
+    \item We report an honest walk-forward evaluation, including classification
+    metrics, probability reliability, economic R-multiple metrics, baselines,
+    ablations, sensitivity checks, and limitations.
+\end{enumerate}
+
+This work should not be read as financial advice or as evidence that the system
+is safe for live trading. A realistic outcome for this type of model may be only
+a thin edge, no edge, or an edge concentrated in specific market regimes. That
+is precisely why the evaluation protocol is the main object of the paper.
+
+\section{Related Work}
+
+Machine learning has been applied widely to equity prediction and asset pricing.
+Large-scale studies such as \citet{gu2020empirical} show that non-linear models
+can extract predictive structure from financial characteristics, but also that
+evaluation design matters. Technical-indicator based equity prediction is a
+smaller and noisier setting: many candidate signals are correlated, non-stationary,
+and sensitive to transaction costs.
+
+This study follows several ideas from financial machine learning practice.
+\citet{lopezdeprado2018afml} emphasizes meta-labeling, triple-barrier labeling,
+and purged or embargoed validation to avoid overlap between training labels and
+test periods. Backtest overfitting is a known risk in strategy research
+\citep{bailey2014probability,bailey2017deflated}; therefore, this paper treats
+parameter sweeps as sensitivity analysis rather than proof.
+
+Probability calibration is also central. A model can rank examples reasonably
+while producing probabilities that do not match realized frequencies.
+\citet{platt1999probabilistic} introduced a widely used sigmoid calibration
+approach for support vector machines, while \citet{niculescu2005predicting}
+compare calibration methods such as Platt scaling and isotonic regression. We
+use isotonic calibration because the desired output is an interpretable estimate
+of setup win probability, not only a ranking score. Calibration is evaluated
+using the Brier score \citep{brier1950verification} and reliability tables.
+Discrimination is summarized using ROC-AUC \citep{fawcett2006roc}.
+
+The model family is gradient-boosted decision trees, implemented using the
+histogram-based gradient boosting classifier provided by scikit-learn
+\citep{pedregosa2011scikit}. Gradient boosting is a strong baseline for tabular
+data with non-linear interactions; related systems include LightGBM
+\citep{ke2017lightgbm}. The contribution here is not a new model architecture.
+It is the construction, calibration, and evaluation of a transparent empirical
+pipeline for a specific stock-selection task.
+
+\section{Data}
+
+\subsection{Source and Universe}
+
+The dataset is built from daily open, high, low, close, and volume (OHLCV) data
+for Indian NSE equities, downloaded or cached through \texttt{yfinance}
+\citep{aroussi2024yfinance}. The market context uses the Nifty 50 index
+(\texttt{\^{}NSEI}). The current project uses approximately 474 NSE stocks for
+training and a smaller large-cap daily-signal universe of approximately 80
+stocks for deployment-style signal generation.
+
+The approximate training table contains 491,000 stock-day rows over about 1,125
+trading days. The unranked base win rate is approximately 31.6\%. Exact values
+should be regenerated from the experiment scripts and inserted before
+submission:
+\texttt{[[RESULT: exact dataset rows]]},
+\texttt{[[RESULT: exact symbol count]]},
+\texttt{[[RESULT: exact date range]]}, and
+\texttt{[[RESULT: exact base win rate]]}.
+
+\subsection{Stock-Day Row Construction}
+
+For every stock $i$ and trading day $t$, the pipeline creates one candidate row
+using only information available up to the close of day $t$. Features are
+computed from historical price, volume, index, sector, breadth, and earnings
+calendar data. The label is computed from future bars $t+1,\ldots,t+H$, where
+$H$ is the holding horizon. Features and labels are therefore separated in time:
+past data defines the input, and future data defines the outcome.
+
+\subsection{Preprocessing}
+
+Rows with insufficient rolling-window history are skipped. Indicators requiring
+20-day, 50-day, or 14-day windows are computed only after enough observations
+exist. The index series is aligned by trading date. The system uses conservative
+handling for ambiguous daily bars because daily OHLCV data cannot tell whether
+the target or stop was hit first within the same session.
+
+\section{Methodology}
+
+\subsection{Feature Set}
+
+Table~\ref{tab:features} summarizes the causal feature groups. Each feature is
+computed as-of day $t$ only.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Causal feature groups used for each stock-day row.}
+\label{tab:features}
+\begin{tabular}{p{0.27\linewidth} p{0.63\linewidth}}
+\toprule
+\textbf{Group} & \textbf{Features and definition} \\
+\midrule
+Trend and momentum &
+Close relative to EMA20; EMA20 relative to EMA50; 5-day and 20-day returns;
+RSI(14); ADX(14). \\
+\addlinespace
+Volatility and range &
+ATR as a percentage of close; daily high-low range as a percentage of close. \\
+\addlinespace
+Volume and liquidity &
+Current volume divided by 20-day average volume; liquidity score used in final
+ranking. \\
+\addlinespace
+Support and resistance &
+Distance from 20-day resistance in ATR units; distance from 20-day support in
+ATR units. \\
+\addlinespace
+Relative and sector strength &
+Relative strength versus the market index; mean sector relative strength;
+sector breadth relative to market breadth. \\
+\addlinespace
+Market regime and breadth &
+Regime score; buy/sell regime alignment; fraction of universe above EMA50 and
+EMA20; fraction advancing over five days; change in breadth. \\
+\addlinespace
+Rule-engine context &
+Direction indicator; buy score; sell score; chart setup quality. \\
+\addlinespace
+Earnings proximity &
+Days since earnings; clipped days until earnings; pre-earnings flag;
+post-earnings flag. Future earnings dates are clipped to reduce leakage from
+unscheduled future events. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Trade Definition and Triple-Barrier Label}
+
+For each row, the rule engine defines a direction, entry band, target, and stop
+using the latest close and average true range (ATR). For a buy setup, the target
+is above the entry and the stop is below it; for a sell setup, the directions
+are reversed. Let $R$ denote the risk distance from entry to stop. Outcomes are
+expressed in R-multiples so trades with different prices and volatility can be
+compared.
+
+The label is assigned over the next $H$ trading sessions:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{WIN} if the target is hit before the stop; the binary label is
+    $y=1$ and realized R is the target-to-risk multiple.
+    \item \textbf{LOSS} if the stop is hit before the target; the binary label is
+    $y=0$ and realized R is $-1$.
+    \item \textbf{TIME\_EXIT} if neither barrier is touched by the horizon; the
+    binary label is conservatively treated as $y=0$, while realized R is marked
+    to the horizon close.
+\end{itemize}
+
+If both target and stop are touched within the same daily bar, the default
+offline experiment scores the trade as a loss. This is pessimistic, but it
+avoids flattering the strategy when intraday ordering is unknown.
+
+\subsection{Model}
+
+The predictive model is a scikit-learn
+\texttt{HistGradientBoostingClassifier}. It is chosen because gradient-boosted
+trees are strong, CPU-efficient models for tabular data with non-linear
+interactions and missingness-resistant splits. The model estimates
+\[
+    \hat{p}_{i,t} = P(y_{i,t}=1 \mid x_{i,t}),
+\]
+where $x_{i,t}$ is the causal feature vector for stock $i$ on day $t$.
+
+The raw classifier output is calibrated with isotonic regression using
+\texttt{CalibratedClassifierCV}. Calibration is fit on the time-ordered tail of
+the training period, not on randomly shuffled folds. This preserves the temporal
+structure of the problem.
+
+\subsection{Expected R and Final Ranking}
+
+For a candidate setup, expected R is computed as
+\[
+    E[R] =
+    p_{\mathrm{win}} \cdot R_{\mathrm{target}}
+    -
+    p_{\mathrm{loss}} \cdot R_{\mathrm{stop}}
+    -
+    c_{\mathrm{txn}}
+    -
+    c_{\mathrm{slip}},
+\]
+where the default transaction and slippage costs are approximately
+$0.03R$ and $0.02R$, respectively.
+
+The deployed ranking score is a weighted combination of calibrated win
+probability, expected R, historical setup win rate, regime alignment, chart
+quality, relative strength, liquidity, model stability, and risk penalties:
+\[
+\begin{aligned}
+\mathrm{final\_score} ={}&
+0.30p_{\mathrm{win}}
++ 0.20E[R]
++ 0.15\mathrm{AdjSetupWinRate} \\
+&+ 0.10\mathrm{RegimeAlignment}
++ 0.10\mathrm{ChartQuality}
++ 0.05\mathrm{RelativeStrength} \\
+&+ 0.05\mathrm{Liquidity}
++ 0.05\mathrm{ModelStability}
+- \mathrm{RiskPenalties}.
+\end{aligned}
+\]
+
+For the balanced profile, a signal is shown only if it clears gates such as
+calibrated $p_{\mathrm{win}} \ge 0.64$, risk--reward $\ge 1.55$, positive
+expected R, and final score $\ge 0.58$. These deployment gates are evaluated
+separately from the broader ranking study. Diversification caps highly
+correlated selections, with pairwise recent-return correlation above 0.92
+treated as a duplicate exposure.
+
+\subsection{Walk-Forward Validation With Embargo}
+
+All reported metrics are based on concatenated out-of-sample predictions from a
+walk-forward design. The default protocol is:
+\begin{enumerate}[leftmargin=*]
+    \item Sort all rows by trading date.
+    \item Use an initial warm-up period of approximately 500 trading days.
+    \item Train only on rows strictly before the test window.
+    \item Remove an embargo gap equal to the holding horizon ($H=5$ days) so
+    training labels cannot overlap the test window.
+    \item Fit calibration on the last 15\% of the training dates.
+    \item Predict the next out-of-sample window, approximately 60 trading days.
+    \item Slide forward and repeat until all available out-of-sample windows are
+    predicted.
+\end{enumerate}
+
+This design is stricter than random cross-validation because no future row is
+allowed to train a past prediction.
+
+\section{Experiments and Results}
+
+\subsection{Experiment Commands}
+
+The following commands regenerate the main experiment outputs from the project
+root after backend environment variables and caches are configured:
+
+\begin{verbatim}
+cd backend
+python scripts/train_ml.py --hold 5 --top-n 5 --cost 0.05
+python scripts/train_ml.py --hold 5 --top-n 10 --cost 0.05
+python scripts/analyze_ml_oos.py
+python scripts/run_backtest.py --risk Balanced --top-n 5 --cost 0.05 --hold 5
+python scripts/run_backtest_sweep.py
+\end{verbatim}
+
+If caches need to be rebuilt, run:
+\begin{verbatim}
+cd backend
+python scripts/train_ml.py --rebuild --hold 5 --top-n 5 --cost 0.05
+\end{verbatim}
+
+\subsection{Main Classification Metrics}
+
+Table~\ref{tab:classification} reports out-of-sample classification quality.
+These values must be filled from \path{scripts/train_ml.py}.
+
+\begin{table}[ht]
+\centering
+\caption{Out-of-sample classification metrics.}
+\label{tab:classification}
+\begin{tabular}{lc}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+OOS rows & \texttt{[[RESULT: OOS row count]]} \\
+OOS trading days & \texttt{[[RESULT: OOS trading days]]} \\
+ROC-AUC & \texttt{[[RESULT: OOS ROC-AUC]]} \\
+Brier score & \texttt{[[RESULT: OOS Brier score]]} \\
+Base win rate, all rows & \texttt{[[RESULT: OOS base win rate]]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calibration Reliability}
+
+Table~\ref{tab:reliability} compares predicted probability buckets with
+realized win rates. A useful probability model should be monotonic and close to
+the diagonal, although financial data may remain noisy even after calibration.
+
+\begin{table}[ht]
+\centering
+\caption{Reliability table for calibrated probabilities.}
+\label{tab:reliability}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccc}
+\toprule
+\textbf{Predicted probability bucket} & \textbf{Count} & \textbf{Mean predicted} & \textbf{Actual win rate} \\
+\midrule
+\texttt{[[RESULT: bucket 1 range]]} & \texttt{[[RESULT: bucket 1 n]]} & \texttt{[[RESULT: bucket 1 pred]]} & \texttt{[[RESULT: bucket 1 actual]]} \\
+\texttt{[[RESULT: bucket 2 range]]} & \texttt{[[RESULT: bucket 2 n]]} & \texttt{[[RESULT: bucket 2 pred]]} & \texttt{[[RESULT: bucket 2 actual]]} \\
+\texttt{[[RESULT: bucket 3 range]]} & \texttt{[[RESULT: bucket 3 n]]} & \texttt{[[RESULT: bucket 3 pred]]} & \texttt{[[RESULT: bucket 3 actual]]} \\
+\texttt{[[RESULT: bucket 4 range]]} & \texttt{[[RESULT: bucket 4 n]]} & \texttt{[[RESULT: bucket 4 pred]]} & \texttt{[[RESULT: bucket 4 actual]]} \\
+\texttt{[[RESULT: bucket 5 range]]} & \texttt{[[RESULT: bucket 5 n]]} & \texttt{[[RESULT: bucket 5 pred]]} & \texttt{[[RESULT: bucket 5 actual]]} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{Economic Test}
+
+The economic evaluation selects top-$N$ setups per day and grades realized R
+after costs. We report decisive R separately from time exits because unresolved
+trades marked to the horizon close can otherwise hide weak barrier performance.
+
+\begin{table}[ht]
+\centering
+\caption{Baseline comparison for top-$N$ selection after costs.}
+\label{tab:economic}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Selection} & \textbf{Trades} & \textbf{Win/Loss/Timeout} & \textbf{Decisive R} & \textbf{Avg R} & \textbf{PF} & \textbf{Wilson LB} \\
+\midrule
+All signals, no selection & \texttt{[[RESULT: all trades]]} & \texttt{[[RESULT: all W/L/T]]} & \texttt{[[RESULT: all decisive R]]} & \texttt{[[RESULT: all avg R]]} & \texttt{[[RESULT: all PF]]} & \texttt{[[RESULT: all Wilson LB]]} \\
+Rule-ranked top-$N$ & \texttt{[[RESULT: rule trades]]} & \texttt{[[RESULT: rule W/L/T]]} & \texttt{[[RESULT: rule decisive R]]} & \texttt{[[RESULT: rule avg R]]} & \texttt{[[RESULT: rule PF]]} & \texttt{[[RESULT: rule Wilson LB]]} \\
+ML-ranked top-$N$ & \texttt{[[RESULT: ML trades]]} & \texttt{[[RESULT: ML W/L/T]]} & \texttt{[[RESULT: ML decisive R]]} & \texttt{[[RESULT: ML avg R]]} & \texttt{[[RESULT: ML PF]]} & \texttt{[[RESULT: ML Wilson LB]]} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+The honest interpretation should be filled after running the experiments:
+\texttt{[[RESULT: honest verdict on whether ML beats rule baseline]]}. If the
+ML-ranked row does not clearly beat the rule-ranked row after costs, the paper
+should state that result directly.
+
+\subsection{Ablations}
+
+Table~\ref{tab:ablations} lists required ablations. These are intended to test
+whether the result depends on calibration, breadth, earnings, and relative or
+sector strength features.
+
+\begin{table}[ht]
+\centering
+\caption{Ablation study.}
+\label{tab:ablations}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variant} & \textbf{ROC-AUC} & \textbf{Brier} & \textbf{Top-$N$ avg R} & \textbf{Top-$N$ decisive R} \\
+\midrule
+Full calibrated model & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Uncalibrated GBM & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Drop market/sector breadth & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Drop earnings proximity & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Drop relative/sector strength & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Logistic regression baseline & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{Sensitivity Checks}
+
+The paper should include sensitivity to top-$N$, costs, and holding horizon.
+Table~\ref{tab:sensitivity} is a placeholder for these results.
+
+\begin{table}[ht]
+\centering
+\caption{Sensitivity checks.}
+\label{tab:sensitivity}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Setting} & \textbf{Trades} & \textbf{Avg R} & \textbf{Decisive R} & \textbf{Profit factor} \\
+\midrule
+Top-3, cost 0.05R & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Top-5, cost 0.05R & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Top-10, cost 0.05R & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Top-5, cost 0.03R & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Top-5, cost 0.10R & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Hold horizon 3 days & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+Hold horizon 10 days & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} & \texttt{[[RESULT]]} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{Figures}
+
+The final paper should include the following figures. The boxes below are
+placeholders so the draft compiles before images are generated.
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}[c][1.3in][c]{0.78\linewidth}
+\centering
+\texttt{[[FIGURE: calibration / reliability diagram]]}\\
+Generate from \texttt{backend/scripts/train\_ml.py} OOS predictions.
+\end{minipage}}
+\caption{Predicted probability versus realized win rate.}
+\label{fig:calibration}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}[c][1.3in][c]{0.78\linewidth}
+\centering
+\texttt{[[FIGURE: distribution of realized R and cumulative R]]}\\
+Generate from \texttt{backend/scripts/ml\_oos.pkl}.
+\end{minipage}}
+\caption{Realized R distribution and cumulative R for selected trades.}
+\label{fig:r_distribution}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}[c][1.3in][c]{0.78\linewidth}
+\centering
+\texttt{[[FIGURE: sensitivity curve for cost or top-N]]}\\
+Generate from top-$N$ and cost sweeps.
+\end{minipage}}
+\caption{Sensitivity of selected-trade R metrics to selection depth or costs.}
+\label{fig:sensitivity}
+\end{figure}
+
+\section{Discussion and Limitations}
+
+Several limitations should be kept explicit.
+
+\textbf{First, daily bars cannot resolve intraday ordering.} If target and stop
+are both touched within one daily candle, the true first hit is unknown. The
+offline experiment treats such cases conservatively, but this may still differ
+from live trade execution.
+
+\textbf{Second, the universe may contain survivorship and coverage bias.} The
+training set uses symbols available in the cached data. If delisted or formerly
+liquid stocks are missing, historical performance may be overstated.
+
+\textbf{Third, the result may be regime dependent.} A model that performs only
+in bullish periods is not necessarily a stock-picking model; it may be a market
+regime filter. The analysis must therefore report slices by year, direction,
+and regime.
+
+\textbf{Fourth, transaction costs are simplified.} A flat R-based cost is useful
+for comparison, but actual execution costs vary by spread, liquidity, slippage,
+order type, and market conditions.
+
+\textbf{Fifth, this is not a live trading study.} The paper evaluates historical
+out-of-sample predictions produced by a walk-forward procedure. Live deployment
+can introduce data delays, corporate-action issues, behavioral selection, and
+execution errors that are not captured here.
+
+\textbf{Finally, calibration can drift.} The feedback loop records realized
+outcomes of live signals, but maintaining calibration over time requires regular
+monitoring. A positive result in one historical sample should be treated as a
+hypothesis for further validation, not as a permanent property of the market.
+
+\section{Conclusion and Future Work}
+
+This paper presents a reproducible, leakage-safe framework for evaluating
+calibrated short-horizon equity setup ranking on NSE stocks. The central claim
+is methodological: stock-selection systems should be judged with causal
+features, future-only labels, time-ordered calibration, walk-forward testing,
+embargoed splits, realistic costs, and transparent baselines. Whether the
+current model adds a statistically and economically meaningful edge remains to
+be filled from the experiment outputs. If the result is weak or regime-specific,
+that is still a useful research outcome because it prevents overclaiming.
+
+Future work includes adding intraday data to resolve target-stop ordering,
+testing delisted-symbol coverage, expanding to other markets, comparing more
+model classes, measuring calibration drift over live paper-trading periods, and
+formalizing uncertainty intervals for top-$N$ economic metrics.
+
+\section*{Acknowledgements}
+
+I thank \texttt{[[MENTOR NAME]]} for reviewing the research question,
+methodology, and manuscript. Any remaining mistakes are my own.
+
+\section*{Data and Code Availability}
+
+The code for the pipeline and experiments is intended to be released at
+\url{https://github.com/Kartik962005/ai-trading-mvp}. Daily OHLCV data are
+obtained through \texttt{yfinance}/Yahoo Finance subject to their terms of use.
+Generated caches and experiment outputs should be documented with exact command
+lines, random seeds, library versions, and train/test split dates before
+submission.
+
+\section*{Educational-Use Disclaimer}
+
+This paper is for educational and research purposes only. It is not investment
+advice, financial advice, or a recommendation to buy, sell, or short any
+security. Historical backtests and walk-forward evaluations do not guarantee
+future results.
+
+\section*{Numbers to Fill From Experiments}
+
+\begin{enumerate}[leftmargin=*]
+    \item Dataset summary: rows, symbols, date range, trading days, exact base
+    win rate. Command: \texttt{python scripts/train\_ml.py --hold 5 --top-n 5 --cost 0.05}.
+    \item Main OOS metrics: ROC-AUC, Brier score, OOS row count, OOS trading
+    days. Command: same as above.
+    \item Reliability table: predicted-probability bucket ranges, counts, mean
+    predicted probability, actual win rate. Command: same as above; copy
+    ``Calibration reliability'' output.
+    \item Economic comparison: ML top-$N$, rule top-$N$, and all-signals rows:
+    trades, W/L/timeout counts, decisive net R, average net R, profit factor,
+    Wilson lower bound, total R. Command: same as above, with \texttt{--top-n 5}
+    and \texttt{--top-n 10}.
+    \item Regime/year/direction slices. Command:
+    run \texttt{analyze\_ml\_oos.py}.
+    \item Rule-engine baseline report. Command:
+    run \texttt{run\_backtest.py} with Balanced risk, top-5, cost 0.05R,
+    and hold horizon 5.
+    \item Sensitivity checks for top-$N$ and cost assumptions. Commands:
+    rerun \texttt{train\_ml.py} with \texttt{--top-n 3}, \texttt{--top-n 5},
+    \texttt{--top-n 10}, and costs \texttt{0.03}, \texttt{0.05}, and
+    \texttt{0.10}.
+    \item Ablation results: calibrated vs uncalibrated, drop breadth, drop
+    earnings, drop relative/sector strength, logistic regression baseline.
+    These may require adding ablation flags/scripts before submission.
+    \item Figures: calibration diagram, realized R distribution/cumulative R,
+    and top-$N$ or cost sensitivity curve.
+    \item Final honest verdict: state whether ML-ranked selection beats the
+    rule-ranked baseline out of sample after costs. Do not soften a negative or
+    inconclusive result.
+\end{enumerate}
+
+\begin{thebibliography}{99}
+
+\bibitem[Lopez de Prado(2018)]{lopezdeprado2018afml}
+Lopez de Prado, M. (2018).
+\newblock \emph{Advances in Financial Machine Learning}.
+\newblock Wiley.
+
+\bibitem[Gu et~al.(2020)]{gu2020empirical}
+Gu, S., Kelly, B., and Xiu, D. (2020).
+\newblock Empirical asset pricing via machine learning.
+\newblock \emph{The Review of Financial Studies}, 33(5):2223--2273.
+
+\bibitem[Platt(1999)]{platt1999probabilistic}
+Platt, J.~C. (1999).
+\newblock Probabilistic outputs for support vector machines and comparisons to
+regularized likelihood methods.
+\newblock In \emph{Advances in Large Margin Classifiers}, pages 61--74. MIT
+Press.
+
+\bibitem[Niculescu-Mizil and Caruana(2005)]{niculescu2005predicting}
+Niculescu-Mizil, A. and Caruana, R. (2005).
+\newblock Predicting good probabilities with supervised learning.
+\newblock In \emph{Proceedings of the 22nd International Conference on Machine
+Learning}, pages 625--632.
+
+\bibitem[Brier(1950)]{brier1950verification}
+Brier, G.~W. (1950).
+\newblock Verification of forecasts expressed in terms of probability.
+\newblock \emph{Monthly Weather Review}, 78(1):1--3.
+
+\bibitem[Fawcett(2006)]{fawcett2006roc}
+Fawcett, T. (2006).
+\newblock An introduction to ROC analysis.
+\newblock \emph{Pattern Recognition Letters}, 27(8):861--874.
+
+\bibitem[Pedregosa et~al.(2011)]{pedregosa2011scikit}
+Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion, B.,
+Grisel, O., Blondel, M., Prettenhofer, P., Weiss, R., Dubourg, V.,
+Vanderplas, J., Passos, A., Cournapeau, D., Brucher, M., Perrot, M., and
+Duchesnay, E. (2011).
+\newblock Scikit-learn: Machine learning in Python.
+\newblock \emph{Journal of Machine Learning Research}, 12:2825--2830.
+
+\bibitem[Ke et~al.(2017)]{ke2017lightgbm}
+Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., and
+Liu, T.-Y. (2017).
+\newblock LightGBM: A highly efficient gradient boosting decision tree.
+\newblock In \emph{Advances in Neural Information Processing Systems}, volume
+30.
+
+\bibitem[Wilson(1927)]{wilson1927probable}
+Wilson, E.~B. (1927).
+\newblock Probable inference, the law of succession, and statistical inference.
+\newblock \emph{Journal of the American Statistical Association},
+22(158):209--212.
+
+\bibitem[Bailey et~al.(2017)]{bailey2014probability}
+Bailey, D.~H., Borwein, J.~M., Lopez de Prado, M., and Zhu, Q.~J. (2017).
+\newblock The probability of backtest overfitting.
+\newblock \emph{Journal of Computational Finance}, 20(4):39--69.
+
+\bibitem[Bailey and Lopez de Prado(2014)]{bailey2017deflated}
+Bailey, D.~H. and Lopez de Prado, M. (2014).
+\newblock The deflated Sharpe ratio: Correcting for selection bias, backtest
+overfitting, and non-normality.
+\newblock \emph{Journal of Portfolio Management}, 40(5):94--107.
+
+\bibitem[Tashman(2000)]{tashman2000outofsample}
+Tashman, L.~J. (2000).
+\newblock Out-of-sample tests of forecasting accuracy: An analysis and review.
+\newblock \emph{International Journal of Forecasting}, 16(4):437--450.
+
+\bibitem[Aroussi(2024)]{aroussi2024yfinance}
+Aroussi, R. (2024).
+\newblock yfinance.
+\newblock \url{https://github.com/ranaroussi/yfinance}.
+
+\end{thebibliography}
+
+\end{document}
