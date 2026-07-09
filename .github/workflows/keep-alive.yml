@@ -1,0 +1,38 @@
+name: Keep backend awake
+
+# Render's free tier sleeps the web service after ~15 min with no traffic. The
+# next user request then eats a 1-2 min cold start, which is what makes prices
+# look stale, screener/Piotroski scans come back empty, and "analyzing" spin for
+# minutes. This job pings the backend every ~10 min, 24/7, so it never idles
+# long enough to fall asleep. The repo is public, so Actions minutes are free.
+#
+# NOTE: GitHub automatically disables scheduled workflows after 60 days with no
+# commits to the repo. If the pings ever stop, push any commit or click
+# "Enable workflow" on this workflow in the Actions tab to restart it.
+
+on:
+  schedule:
+    # Every 10 minutes, all day, every day.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ping backend /health (repeat within the run to cover cron drift)
+        run: |
+          BACKEND="https://ai-trading-backend-jhcl.onrender.com"
+          # Scheduled runs can drift 5-15 min under GitHub load, so ping a few
+          # times spaced ~4 min apart. That keeps the effective interval well
+          # under Render's 15-min idle timeout even if a run is delayed.
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 150 "$BACKEND/health" || echo "000")
+            echo "Ping $i -> HTTP $code"
+            if [ "$i" -lt 3 ]; then sleep 240; fi
+          done
