@@ -8,6 +8,7 @@ import {
   DailySignalPreviewCard,
   HomeFeatureSection,
   HomeHero,
+  HowItWorksStack,
   MarketScanSection,
   MarketSwitcher,
 } from '@/components/home';
@@ -4794,6 +4795,8 @@ function HomeContent() {
                   </div>
                 ))}
               </MarketScanSection>
+
+              <HowItWorksStack />
 
               <DailySignalPreviewCard
                 signedIn={Boolean(user)}

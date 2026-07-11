@@ -16,3 +16,5 @@ export type {
 
 export { HomeFeatureSection } from "./HomeFeatureSection";
 export type { HomeFeatureSectionProps } from "./HomeFeatureSection";
+
+export { HowItWorksStack } from "./HowItWorksStack";
