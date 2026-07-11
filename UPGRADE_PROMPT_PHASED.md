@@ -12,9 +12,9 @@
 > - [ ] Phase 2 — Screener/Ask-AI two-mode UI (NL + raw SQL)  ← NEXT
 > - [ ] Phase 3 — Homepage: analyze only 4–5 stocks (the big speed win)
 > - [ ] Phase 4 — 3D / animated redesign (React Bits) ← IN PROGRESS 2026-07-11
->   - [ ] 4.1 npm i lenis ogl + add 4 components under `frontend/components/reactbits/` (unwired, zero risk) — commit
->   - [ ] 4.2 GradientBlinds as hero background (dynamic ssr:false, desktop-only, reduced-motion gated) — commit
->   - [ ] 4.3 TextPressure hero headline — commit
+>   - [x] 4.1 npm i lenis ogl + add 4 components under `frontend/components/reactbits/` (unwired, zero risk) — commit 3f7315e
+>   - [x] 4.2 GradientBlinds as hero background (dynamic ssr:false, desktop-only, reduced-motion gated; MULTIPLY blend — hero is light-themed so 'lighten' would be invisible) — in HomeHero.tsx
+>   - [x] 4.3 TextPressure "BULLSEYE" brand headline in hero (desktop-only) — same commit as 4.2
 >   - [ ] 4.4 ScrollStack feature section — commit
 >   - [ ] 4.5 BorderGlow on hero/CTA cards (NOT all 24 market cards) — commit
 >   - [ ] 4.6 verify (type-check + dev server + console) & push when owner approves

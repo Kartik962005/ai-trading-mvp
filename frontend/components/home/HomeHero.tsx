@@ -1,5 +1,30 @@
+"use client";
+
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { Button, Card, Stat } from "@/components/ui";
+import TextPressure from "@/components/reactbits/TextPressure";
+
+// WebGL background is client-only and heavy — never SSR it, load it lazily.
+const GradientBlinds = dynamic(() => import("@/components/reactbits/GradientBlinds"), { ssr: false });
+
+/** True only on desktop viewports with no reduced-motion preference. */
+function useHeavyFxEnabled() {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const check = () => setEnabled(window.innerWidth >= 1024 && !media.matches);
+    check();
+    window.addEventListener("resize", check);
+    media.addEventListener?.("change", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      media.removeEventListener?.("change", check);
+    };
+  }, []);
+  return enabled;
+}
 
 export type HomeMarket = "INDIA" | "US";
 
@@ -18,6 +43,7 @@ export function HomeHero({
   signedIn,
   onOpenDailySignals,
 }: HomeHeroProps) {
+  const heavyFx = useHeavyFxEnabled();
   return (
     <section className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_380px] lg:items-stretch">
       <Card
@@ -32,10 +58,43 @@ export function HomeHero({
           aria-hidden
           className="absolute -right-24 -top-28 h-64 w-64 rounded-full bg-cyan-200/35 blur-3xl"
         />
+        {heavyFx && (
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-25">
+            <GradientBlinds
+              gradientColors={["#a5f3fc", "#6ee7b7", "#bae6fd"]}
+              angle={18}
+              noise={0.06}
+              blindCount={14}
+              blindMinWidth={64}
+              spotlightRadius={0.55}
+              spotlightSoftness={1}
+              spotlightOpacity={0.35}
+              mouseDampening={0.2}
+              shineDirection="left"
+              mixBlendMode="multiply"
+            />
+          </div>
+        )}
         <div className="relative max-w-4xl">
           <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">
             Live Market Intelligence
           </span>
+          {heavyFx && (
+            <div aria-hidden className="mt-4 h-[92px] w-full max-w-3xl select-none">
+              <TextPressure
+                text="BULLSEYE"
+                flex
+                width
+                weight
+                italic={false}
+                alpha={false}
+                stroke={false}
+                scale
+                textColor="#0f172a"
+                minFontSize={40}
+              />
+            </div>
+          )}
           <h2 className="mt-5 max-w-4xl font-['Space_Grotesk'] text-4xl font-black leading-[0.98] tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
             Scan live markets. Open the setup worth your attention.
           </h2>
