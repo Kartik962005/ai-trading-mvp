@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import time
 import os
+import random
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -329,6 +330,8 @@ def get_snapshot_fundamentals(ticker: str, *, retries: int = 3, backoff: float =
       (0 = debt-free, 0.5 = 0.5x, 1 = 1x).
     """
     info: dict = {}
+    # Small jitter so concurrent workers don't burst Yahoo's rate limiter in sync.
+    time.sleep(random.uniform(0.05, 0.35))
     for attempt in range(max(1, retries)):
         try:
             info = yf.Ticker(ticker).info or {}

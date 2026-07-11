@@ -31,7 +31,9 @@ from app.services.stock_snapshot_service import (  # noqa: E402
 
 DEFAULT_PERIOD = "18mo"
 DEFAULT_BATCH_SIZE = 120
-DEFAULT_FUNDAMENTAL_WORKERS = 8
+# Yahoo rate-limits the per-ticker .info (quoteSummary) endpoint hard in bulk, so
+# keep fundamentals concurrency low; the lean fetch also paces itself with jitter.
+DEFAULT_FUNDAMENTAL_WORKERS = 4
 
 
 def _num(value: Any) -> float | None:
