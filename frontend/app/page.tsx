@@ -685,6 +685,10 @@ const INDICATOR_NAMES = [
 
 const STOCKS_PER_PAGE = 24;
 const STOCK_PAGE_LIMIT = 100;
+// Only this many top cards are analyzed eagerly on load; the rest analyze lazily
+// as they scroll into view, so the homepage no longer fires ~24 heavy analyses
+// up front (the main cause of the slow first paint).
+const FEATURED_ANALYSIS_COUNT = 6;
 const MARKET_SHUFFLE_VERSION = 'sector-mix-v1';
 
 function stableHash(value: string) {
@@ -1284,12 +1288,54 @@ const MarketAssetCard = ({
   prefetchedAnalysis,
   quickQuote,
   onPreview,
+  onAnalysisReady,
 }: {
   stock: typeof STOCKS[0];
   prefetchedAnalysis?: any;
   quickQuote?: QuoteSnapshot;
   onPreview: (stock: typeof STOCKS[0]) => void;
+  onAnalysisReady?: (ticker: string, analysis: any) => void;
 }) => {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [shouldAnalyze, setShouldAnalyze] = useState(false);
+
+  // Lazy analysis: featured cards arrive pre-analyzed via prefetchedAnalysis;
+  // every other card only requests its analysis once it scrolls into view, so
+  // the page paints prices immediately instead of blocking on a big batch.
+  useEffect(() => {
+    if (prefetchedAnalysis) return;
+    const element = cardRef.current;
+    if (!element || typeof IntersectionObserver === 'undefined') {
+      setShouldAnalyze(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          setShouldAnalyze(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '120px' }
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [prefetchedAnalysis]);
+
+  useSWR(
+    shouldAnalyze && !prefetchedAnalysis ? `/api/v1/analyze/${stock.ticker}` : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 1000 * 60 * 10,
+      onSuccess: data => {
+        if (!data || data.error) return;
+        setCache(`analysis:${stock.ticker}`, data);
+        onAnalysisReady?.(stock.ticker, data);
+      },
+    }
+  );
+
   const analysisView = getAnalysisPresentation(prefetchedAnalysis);
   const isReady = !!analysisView;
   const quickPrice = Number(quickQuote?.price);
@@ -1312,6 +1358,7 @@ const MarketAssetCard = ({
 
   return (
     <div
+      ref={cardRef}
       data-market-card={stock.ticker}
       className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
         border-slate-200/80 hover:border-cyan-200`}
@@ -4094,11 +4141,12 @@ function HomeContent() {
   // ── Prefetch cache: ticker → analysis result ──────────────────────────────
   const [prefetchCache, setPrefetchCache] = useState<Record<string, any>>({});
   const [cachedVisibleAnalysis, setCachedVisibleAnalysis] = useState<Record<string, any> | undefined>(undefined);
-  const visibleAnalysisKey = visibleMarketStocks.length
-    ? `/api/v1/analyze-batch?tickers=${visibleMarketStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
+  const featuredAnalysisStocks = visibleMarketStocks.slice(0, FEATURED_ANALYSIS_COUNT);
+  const visibleAnalysisKey = featuredAnalysisStocks.length
+    ? `/api/v1/analyze-batch?tickers=${featuredAnalysisStocks.map(stock => encodeURIComponent(stock.ticker)).join(',')}`
     : null;
-  const visibleAnalysisComplete = visibleMarketStocks.length > 0
-    && visibleMarketStocks.every(stock => cachedVisibleAnalysis?.[stock.ticker]);
+  const visibleAnalysisComplete = featuredAnalysisStocks.length > 0
+    && featuredAnalysisStocks.every(stock => cachedVisibleAnalysis?.[stock.ticker]);
 
   useEffect(() => {
     const cachedVisible = visibleMarketStocks.reduce((acc, stock) => {
@@ -4738,6 +4786,9 @@ function HomeContent() {
                         prefetchedAnalysis={prefetchCache[s.ticker]}
                         quickQuote={visibleQuotes?.[s.ticker]}
                         onPreview={openPreview}
+                        onAnalysisReady={(nextTicker, nextAnalysis) =>
+                          setPrefetchCache(prev => ({ ...prev, [nextTicker]: nextAnalysis }))
+                        }
                       />
                     ))}
                   </div>
