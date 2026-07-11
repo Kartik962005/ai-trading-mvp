@@ -59,13 +59,13 @@ COLUMN_DOC = {
     "market_cap": "market cap, INR (absolute)",
     "market_cap_cr": "market cap in INR crore (use THIS for cap buckets)",
     "roe": "return on equity, % (e.g. 15 = 15%)",
-    "roce": "return on capital employed, % — CURRENTLY EMPTY in the data, use roe instead",
+    "roce": "return on capital employed, % — not provided by the data source, always NULL; use roe instead",
     "roa": "return on assets, %",
-    "debt_to_equity": "debt/equity as a PERCENT of equity (0 = debt-free, ~50 = 0.5x/low debt, 100 = 1x). For 'low debt' use < 50, 'debt-free' use < 5",
+    "debt_to_equity": "debt/equity RATIO (0 = debt-free, <1 = low debt, 1 = 1x, 2 = 2x). For 'low debt' use < 1, 'debt-free' use < 0.1",
     "revenue_growth": "revenue growth, %",
     "profit_growth": "profit growth, %",
     "earnings_quarterly_growth": "latest quarterly earnings growth, %",
-    "dividend_yield": "dividend yield x100 (86 = 0.86%, 300 = 3%). For 'yield above 3%' use > 300",
+    "dividend_yield": "dividend yield in % (0.86 = 0.86%, 5.67 = 5.67%). For 'yield above 3%' use > 3",
     "operating_margin": "operating margin, %",
     "profit_margin": "net profit margin, %",
     "beta": "beta vs market",
@@ -256,18 +256,18 @@ def _nl_system_prompt(sectors: list[str]) -> str:
         "- Add an ORDER BY that matches the intent (e.g. best momentum -> ORDER BY "
         "ret_1m DESC; cheapest -> trailing_pe ASC).\n"
         "- Always add LIMIT (default 50 unless the user asks for a specific count).\n"
-        "- Data coverage: fundamentals (trailing_pe, roe, debt_to_equity, growth, "
-        "margins, dividend_yield) exist for ~180 large/mid-cap names only; "
-        "price + technical columns (price, change_pct, rsi14, mfi14, ret_1w..ret_1y, "
-        "sma*, ema20, atr14, vol_ratio, volume) cover all ~2045 stocks. Prefer "
-        "technical columns for broad-universe screens and mind the exact units below.\n"
+        "- Data coverage: price + technical columns (price, change_pct, rsi14, mfi14, "
+        "ret_1w..ret_1y, sma*, ema20, atr14, vol_ratio, volume) cover all ~2045 "
+        "stocks. Fundamentals (trailing_pe, roe, debt_to_equity, growth, margins, "
+        "dividend_yield, sector) come from Yahoo and may be missing for some illiquid "
+        "names. roce is always NULL. Mind the exact units below.\n"
         "- Use ONLY these columns:\n"
         f"{cols}\n\n"
         f"Available sector values (match exactly, or use name LIKE '%word%'): {sector_line}\n\n"
         "Examples:\n"
         "Q: cheap profitable companies with low debt\n"
         "A: SELECT symbol, name, price, trailing_pe, roe, debt_to_equity FROM "
-        "stock_snapshot WHERE trailing_pe < 20 AND roe > 15 AND debt_to_equity < 50 "
+        "stock_snapshot WHERE trailing_pe < 20 AND roe > 15 AND debt_to_equity < 1 "
         "ORDER BY roe DESC LIMIT 50\n"
         "Q: oversold smallcaps that fell this month\n"
         "A: SELECT symbol, name, price, rsi14, ret_1m, market_cap_cr FROM "

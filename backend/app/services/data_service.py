@@ -311,6 +311,83 @@ def _statement_to_table(df: pd.DataFrame | None, max_columns: int = 6, max_rows:
     return {"columns": columns, "rows": rows}
 
 
+def get_snapshot_fundamentals(ticker: str, *, retries: int = 3, backoff: float = 1.2) -> dict:
+    """Lean fundamentals for the daily snapshot build.
+
+    Makes a SINGLE ``yfinance .info`` call (with retry/backoff) instead of the
+    heavy per-ticker history + 4 financial statements + NSE quote that
+    ``get_fundamentals_data`` fetches. In a 2,000-stock bulk build from a
+    datacenter IP, that heavy path gets rate-limited into ~90% failures; the lean
+    path keeps fundamentals populated for the whole universe.
+
+    Units are normalised here so the stored snapshot is intuitive:
+    - percentages that Yahoo returns as fractions (ROE, ROA, margins, growth) are
+      x100 -> real percent;
+    - ``dividendYield`` is ALREADY a percent in this yfinance build, so it is
+      stored as-is (no x100);
+    - ``debtToEquity`` is Yahoo's percent-of-equity, divided by 100 -> a ratio
+      (0 = debt-free, 0.5 = 0.5x, 1 = 1x).
+    """
+    info: dict = {}
+    for attempt in range(max(1, retries)):
+        try:
+            info = yf.Ticker(ticker).info or {}
+            if info.get("sector") or info.get("trailingPE") or info.get("marketCap"):
+                break
+        except Exception as exc:  # noqa: BLE001 - retry on transient rate limits
+            print(f"[Snapshot] .info attempt {attempt + 1} failed for {ticker}: {exc}")
+            info = {}
+        if attempt < retries - 1:
+            time.sleep(backoff * (attempt + 1))
+
+    def _pct(key: str):  # Yahoo fraction (0.15) -> percent (15.0)
+        value = info.get(key)
+        return round(float(value) * 100, 4) if isinstance(value, (int, float)) else None
+
+    def _plain(key: str):
+        value = info.get(key)
+        return round(float(value), 4) if isinstance(value, (int, float)) else None
+
+    dividend_yield = info.get("dividendYield")  # already a percent in this build
+    debt_to_equity = info.get("debtToEquity")   # Yahoo percent-of-equity
+    summary = {
+        "current_price": _plain("currentPrice") or _plain("regularMarketPrice"),
+        "previous_close": _plain("previousClose"),
+        "market_cap": _plain("marketCap"),
+        "market_cap_unit": "raw",
+        "high_52_week": _plain("fiftyTwoWeekHigh"),
+        "low_52_week": _plain("fiftyTwoWeekLow"),
+        "trailing_pe": _plain("trailingPE"),
+        "forward_pe": _plain("forwardPE"),
+        "price_to_book": _plain("priceToBook"),
+        "return_on_equity": _pct("returnOnEquity"),
+        "return_on_capital": None,  # yfinance .info exposes no ROCE; see COLUMN_DOC
+        "return_on_assets": _pct("returnOnAssets"),
+        "debt_to_equity": round(float(debt_to_equity) / 100, 4) if isinstance(debt_to_equity, (int, float)) else None,
+        "revenue_growth": _pct("revenueGrowth"),
+        "earnings_growth": _pct("earningsGrowth"),
+        "earnings_quarterly_growth": _pct("earningsQuarterlyGrowth"),
+        "dividend_yield": round(float(dividend_yield), 4) if isinstance(dividend_yield, (int, float)) else None,
+        "operating_margins": _pct("operatingMargins"),
+        "profit_margins": _pct("profitMargins"),
+        "beta": _plain("beta"),
+        "enterprise_value": _plain("enterpriseValue"),
+        "total_cash": _plain("totalCash"),
+        "total_debt": _plain("totalDebt"),
+    }
+    company = {
+        "name": info.get("longName") or info.get("shortName"),
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+    }
+    return {
+        "ticker": ticker,
+        "company": company,
+        "summary": summary,
+        "source": "yfinance .info" if info else "unavailable",
+    }
+
+
 def get_fundamentals_data(ticker: str):
     now = time.time()
     if ticker in _fundamentals_cache and now - _fundamentals_cache[ticker]["ts"] < FUNDAMENTALS_TTL:
@@ -403,11 +480,11 @@ def get_fundamentals_data(ticker: str):
             "forward_pe": _clean_scalar(info.get("forwardPE")),
             "book_value": _clean_scalar(info.get("bookValue")),
             "price_to_book": _clean_scalar(info.get("priceToBook")),
-            "dividend_yield": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None,
+            "dividend_yield": _clean_scalar(info.get("dividendYield")) if info.get("dividendYield") is not None else None,
             "return_on_equity": _clean_scalar((info.get("returnOnEquity") or 0) * 100) if info.get("returnOnEquity") is not None else None,
             "return_on_capital": _clean_scalar((info.get("returnOnCapital") or info.get("returnOnCapitalEmployed") or 0) * 100) if _first_non_null(info.get("returnOnCapital"), info.get("returnOnCapitalEmployed")) is not None else None,
             "return_on_assets": _clean_scalar((info.get("returnOnAssets") or 0) * 100) if info.get("returnOnAssets") is not None else None,
-            "debt_to_equity": _clean_scalar(info.get("debtToEquity")),
+            "debt_to_equity": (_clean_scalar((info.get("debtToEquity") or 0) / 100) if info.get("debtToEquity") is not None else None),
             "profit_margins": _clean_scalar((info.get("profitMargins") or 0) * 100) if info.get("profitMargins") is not None else None,
             "operating_margins": _clean_scalar((info.get("operatingMargins") or 0) * 100) if info.get("operatingMargins") is not None else None,
             "revenue_growth": _clean_scalar((info.get("revenueGrowth") or 0) * 100) if info.get("revenueGrowth") is not None else None,
@@ -430,11 +507,11 @@ def get_fundamentals_data(ticker: str):
             {"label": "Sector P/E", "value": _clean_scalar(nse_quote.get("sector_pe")), "kind": "number"},
             {"label": "Forward P/E", "value": _clean_scalar(info.get("forwardPE")), "kind": "number"},
             {"label": "Price / Book", "value": _clean_scalar(info.get("priceToBook")), "kind": "number"},
-            {"label": "Dividend Yield", "value": _clean_scalar((info.get("dividendYield") or 0) * 100) if info.get("dividendYield") is not None else None, "kind": "percent"},
+            {"label": "Dividend Yield", "value": _clean_scalar(info.get("dividendYield")) if info.get("dividendYield") is not None else None, "kind": "percent"},
             {"label": "ROE", "value": _clean_scalar((info.get("returnOnEquity") or 0) * 100) if info.get("returnOnEquity") is not None else None, "kind": "percent"},
             {"label": "ROCE", "value": _clean_scalar((info.get("returnOnCapital") or info.get("returnOnCapitalEmployed") or 0) * 100) if _first_non_null(info.get("returnOnCapital"), info.get("returnOnCapitalEmployed")) is not None else None, "kind": "percent"},
             {"label": "ROA", "value": _clean_scalar((info.get("returnOnAssets") or 0) * 100) if info.get("returnOnAssets") is not None else None, "kind": "percent"},
-            {"label": "Debt / Equity", "value": _clean_scalar(info.get("debtToEquity")), "kind": "number"},
+            {"label": "Debt / Equity", "value": (_clean_scalar((info.get("debtToEquity") or 0) / 100) if info.get("debtToEquity") is not None else None), "kind": "number"},
             {"label": "Profit Margin", "value": _clean_scalar((info.get("profitMargins") or 0) * 100) if info.get("profitMargins") is not None else None, "kind": "percent"},
             {"label": "Operating Margin", "value": _clean_scalar((info.get("operatingMargins") or 0) * 100) if info.get("operatingMargins") is not None else None, "kind": "percent"},
         ],

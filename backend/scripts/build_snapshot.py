@@ -21,7 +21,7 @@ REPO_ROOT = BACKEND_ROOT.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.data_service import get_fundamentals_data  # noqa: E402
+from app.services.data_service import get_snapshot_fundamentals  # noqa: E402
 from app.services.screener_service import _download_ohlcv, _technical_metrics, _ticker_frame  # noqa: E402
 from app.services.stock_snapshot_service import (  # noqa: E402
     load_frontend_stock_universe,
@@ -55,7 +55,7 @@ def _market_cap_values(summary: dict[str, Any]) -> tuple[float | None, float | N
 def _fundamentals_for(stock: dict[str, Any]) -> dict[str, Any]:
     ticker = stock["ticker"]
     try:
-        return get_fundamentals_data(ticker)
+        return get_snapshot_fundamentals(ticker)
     except Exception as exc:
         print(f"[Snapshot] fundamentals failed for {ticker}: {exc}")
         return {"ticker": ticker, "company": {}, "summary": {}, "source": "unavailable"}
