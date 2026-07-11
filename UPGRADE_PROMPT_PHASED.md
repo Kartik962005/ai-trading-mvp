@@ -11,7 +11,14 @@
 > - [x] Phase 1 — Intelligent NL→SQL screener (backend brain) — DONE 2026-07-11, see status below
 > - [ ] Phase 2 — Screener/Ask-AI two-mode UI (NL + raw SQL)  ← NEXT
 > - [ ] Phase 3 — Homepage: analyze only 4–5 stocks (the big speed win)
-> - [ ] Phase 4 — 3D / animated redesign (React Bits)
+> - [ ] Phase 4 — 3D / animated redesign (React Bits) ← IN PROGRESS 2026-07-11
+>   - [ ] 4.1 npm i lenis ogl + add 4 components under `frontend/components/reactbits/` (unwired, zero risk) — commit
+>   - [ ] 4.2 GradientBlinds as hero background (dynamic ssr:false, desktop-only, reduced-motion gated) — commit
+>   - [ ] 4.3 TextPressure hero headline — commit
+>   - [ ] 4.4 ScrollStack feature section — commit
+>   - [ ] 4.5 BorderGlow on hero/CTA cards (NOT all 24 market cards) — commit
+>   - [ ] 4.6 verify (type-check + dev server + console) & push when owner approves
+>   (each step is an independent local commit; resume from the first unticked box)
 > - [ ] Phase 5 — General performance pass
 >
 > **Phase 1 status (backend, verified against live data + Groq):**
