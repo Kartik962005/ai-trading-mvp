@@ -52,6 +52,7 @@ app.add_middleware(
 from app.services.data_service import get_latest_quote, get_latest_quotes_batch, get_historical_data, get_fundamentals_data, get_chart_data
 from app.services.screener_service import screen_stocks
 from app.services.smart_search_service import smart_search
+from app.services.intelligent_screener_service import intelligent_smart_search
 from app.services.stock_ai_service import run_stock_ai_search
 from app.services.ask_ai_service import run_ask_ai, movers_snapshot_status
 from app.services.ask_ai_history_service import (
@@ -336,6 +337,8 @@ class SmartScreenerRequest(BaseModel):
     stocks: list[ScreenerStock]
     screeners: list[dict[str, Any]] = []
     sectors: list[dict[str, Any]] = []
+    # 'auto' detects SQL vs natural language; 'sql' / 'nl' force a path (UI toggle).
+    mode: str = "auto"
 
 
 class ScreenerEnrichRequest(BaseModel):
@@ -451,7 +454,7 @@ async def smart_screener_search(request: Request, body: SmartScreenerRequest):
             stock.model_dump() if hasattr(stock, "model_dump") else stock.dict()
             for stock in body.stocks
         ]
-        return smart_search(body.prompt, stocks, body.screeners, body.sectors)
+        return intelligent_smart_search(body.prompt, stocks, body.screeners, body.sectors, body.mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

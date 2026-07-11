@@ -3,7 +3,7 @@ uvicorn[standard]
 pydantic
 pandas
 numpy
-yfinance
+yfinance==1.3.0  # pinned: unpinned upgrades from Yahoo API changes silently break the daily snapshot job
 supabase
 python-dotenv
 slowapi
@@ -13,3 +13,4 @@ groq
 scikit-learn
 joblib
 pyarrow
+sqlglot==30.12.0  # sandboxed SQL parsing/validation + in-memory execution for the intelligent screener
