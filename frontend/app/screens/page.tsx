@@ -26,6 +26,10 @@ const lightPillClass =
 
 const BACKEND = '/api/backend';
 
+type ScreenMode = 'auto' | 'nl' | 'sql';
+
+type AggregateTableData = { columns: string[]; rows: (string | number | null)[][] };
+
 type QueryResult = {
   title: string;
   query: string;
@@ -33,6 +37,10 @@ type QueryResult = {
   explanation?: string;
   source?: string;
   intent?: SmartSearchIntent;
+  generatedSql?: string;
+  mode?: string;
+  error?: string;
+  table?: AggregateTableData;
 };
 
 type SmartSearchIntent = 'CUSTOM_FILTER' | 'PRE_DEFINED_SCREENER' | 'STOCK_INFO' | 'SECTOR_FILTER' | 'GENERAL_CHAT';
@@ -50,6 +58,12 @@ type SmartSearchResponse = {
   matchedRules?: string[];
   explanation?: string;
   source?: string;
+  // Phase 1 intelligent screener fields:
+  generated_sql?: string;
+  mode?: string;
+  error?: string;
+  table?: AggregateTableData;
+  count?: number;
 };
 
 const examples = [
@@ -69,12 +83,13 @@ function candidateStocksForPrompt(prompt: string) {
   return STOCKS.filter(stock => stock.exchange === 'NSE');
 }
 
-async function runSmartScreener(prompt: string, stocks: Stock[], sectors: ReturnType<typeof getAvailableSectors>) {
+async function runSmartScreener(prompt: string, stocks: Stock[], sectors: ReturnType<typeof getAvailableSectors>, mode: ScreenMode = 'auto') {
   const response = await fetch(`${BACKEND}/api/v1/screener/smart-search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt,
+      mode,
       stocks,
       screeners: ALL_SCREENS.map(screen => ({
         slug: screen.slug,
@@ -103,6 +118,61 @@ function formatCellValue(value: string | number | null | undefined) {
   if (typeof value === 'number') return Number.isInteger(value) ? value.toLocaleString('en-IN') : value.toFixed(2);
   if (value === null || value === undefined || value === '') return '-';
   return String(value);
+}
+
+function GeneratedSqlPanel({ sql, mode }: { sql: string; mode?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(sql);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — no-op */
+    }
+  };
+  return (
+    <div className="mb-4 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 shadow-inner">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-widest text-cyan-300">
+          {mode === 'sql' ? 'Your SQL' : 'Generated SQL'}
+        </span>
+        <button
+          type="button"
+          onClick={copy}
+          className="rounded-md border border-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-200 transition hover:bg-white/10"
+        >
+          {copied ? 'Copied ✓' : 'Copy'}
+        </button>
+      </div>
+      <pre className="overflow-x-auto text-xs leading-relaxed text-emerald-200 font-['JetBrains_Mono']"><code>{sql}</code></pre>
+    </div>
+  );
+}
+
+function AggregateTable({ table }: { table: AggregateTableData }) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+      <table className="w-full min-w-[360px] text-left text-xs">
+        <thead className="bg-slate-100 text-slate-600">
+          <tr>
+            {table.columns.map(column => (
+              <th key={column} className="px-3 py-2 font-black uppercase tracking-wider">{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={rowIndex} className="border-t border-slate-100">
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} className="px-3 py-2 text-slate-700 font-['JetBrains_Mono']">{formatCellValue(cell)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function inferRequestedColumns(rows: ScreenMetricRow[], query: string) {
@@ -344,6 +414,7 @@ function MetricTable({ rows, query, title }: { rows: ScreenMetricRow[]; query: s
 export default function ScreensPage() {
   const sectors = useMemo(() => getAvailableSectors(), []);
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<ScreenMode>('auto');
   const [result, setResult] = useState<QueryResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchingMessage, setSearchingMessage] = useState('');
@@ -361,9 +432,36 @@ export default function ScreensPage() {
     if (!clean) return;
     setQuery(clean);
     setIsSearching(true);
-    setSearchingMessage('Routing your request through Bullseye AI...');
+    setSearchingMessage(mode === 'sql' ? 'Running your SQL against the live snapshot…' : 'Translating your request into SQL…');
     try {
-      const live = await runSmartScreener(clean, candidateStocksForPrompt(clean), sectors);
+      const live = await runSmartScreener(clean, candidateStocksForPrompt(clean), sectors, mode);
+
+      // Phase 1/2 intelligent path (NL→SQL or raw SQL): the backend returns
+      // generated_sql / error / table. Handle it directly — these rows already
+      // carry full snapshot metrics, so no extra enrich round-trip is needed.
+      if (live.generated_sql !== undefined || live.error) {
+        const rows = live.error ? [] : (live.rows || []);
+        setResult({
+          title: live.error
+            ? 'Query error'
+            : rows.length
+              ? `${rows.length} match${rows.length === 1 ? '' : 'es'}`
+              : live.table
+                ? 'Aggregate result'
+                : 'No matches',
+          query: live.generated_sql || clean,
+          rows,
+          explanation: live.explanation,
+          source: live.source,
+          intent: 'CUSTOM_FILTER',
+          generatedSql: live.generated_sql,
+          mode: live.mode,
+          error: live.error,
+          table: live.table,
+        });
+        return;
+      }
+
       const intent = live.router?.intent;
       const aiMessage = live.router?.ai_response_message || live.explanation;
 
@@ -514,6 +612,30 @@ export default function ScreensPage() {
               </div>
 
               <div className="mt-4 rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-3 sm:mt-6">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-widest text-slate-400">Mode</span>
+                  {(['auto', 'nl', 'sql'] as const).map(option => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setMode(option)}
+                      className={`rounded-full px-3 py-1 font-['Space_Grotesk'] text-[11px] font-black uppercase tracking-wider transition ${
+                        mode === option
+                          ? 'bg-cyan-600 text-white shadow-[0_6px_18px_rgba(6,182,212,0.35)]'
+                          : 'border border-cyan-200 bg-white text-slate-500 hover:border-cyan-400 hover:text-cyan-700'
+                      }`}
+                    >
+                      {option === 'auto' ? 'Auto' : option === 'nl' ? 'English' : 'SQL'}
+                    </button>
+                  ))}
+                  <span className="text-[10px] text-slate-400">
+                    {mode === 'sql'
+                      ? 'Write SQL over stock_snapshot'
+                      : mode === 'nl'
+                        ? 'Plain English → SQL'
+                        : 'Auto-detects English or SQL'}
+                  </span>
+                </div>
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
                   <textarea
                     value={query}
@@ -525,7 +647,11 @@ export default function ScreensPage() {
                         runQuery();
                       }
                     }}
-                    placeholder="Ask AI: stocks that gained last 4 consecutive days and whose average volume is above last week average"
+                    placeholder={
+                      mode === 'sql'
+                        ? 'SELECT symbol, name, price, roe, trailing_pe FROM stock_snapshot WHERE roe > 20 AND debt_to_equity < 50 ORDER BY roe DESC LIMIT 20'
+                        : 'Ask AI: profitable stocks under PE 20 with ROE above 15 and low debt, best 1 month momentum first'
+                    }
                     className="min-h-14 flex-1 resize-none rounded-2xl border border-cyan-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-16 font-['JetBrains_Mono']"
                   />
                   <Button
@@ -535,7 +661,7 @@ export default function ScreensPage() {
                     disabled={!query.trim() || isSearching}
                     className="lg:w-36"
                   >
-                    {isSearching ? 'Thinking…' : 'Ask AI'}
+                    {isSearching ? 'Thinking…' : mode === 'sql' ? 'Run SQL' : 'Ask AI'}
                   </Button>
                 </div>
                 <details className="mt-3">
@@ -564,27 +690,39 @@ export default function ScreensPage() {
 
             {result && (
               <section ref={resultsRef} className="scroll-mt-24 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
-                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <span className={lightPillClass}>AI screener result</span>
-                    <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-black text-slate-950 sm:text-2xl">{result.title}</h2>
-                    {result.explanation && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">{result.explanation}</p>}
-                    {result.source && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{result.source}</p>}
-                  </div>
-                  <details className="max-w-xl rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="mb-4">
+                  <span className={lightPillClass}>AI screener result</span>
+                  <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-black text-slate-950 sm:text-2xl">{result.title}</h2>
+                  {result.explanation && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">{result.explanation}</p>}
+                  {result.source && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{result.source}</p>}
+                </div>
+
+                {result.generatedSql ? (
+                  <GeneratedSqlPanel sql={result.generatedSql} mode={result.mode} />
+                ) : result.query ? (
+                  <details className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <summary className="cursor-pointer text-[10px] font-black uppercase tracking-widest text-slate-500">Matched rules</summary>
                     <pre className="mt-3 overflow-x-auto text-xs leading-relaxed text-slate-700"><code>{result.query}</code></pre>
                   </details>
-                </div>
-                {result.rows.length ? (
+                ) : null}
+
+                {result.error ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
+                    <p className="font-['Space_Grotesk'] font-black">Couldn&apos;t run that query</p>
+                    <p className="mt-1 leading-relaxed">{result.error}</p>
+                    <p className="mt-2 text-xs text-rose-500">Only read-only <code>SELECT</code> queries over <code>stock_snapshot</code> are allowed.</p>
+                  </div>
+                ) : result.rows.length ? (
                   <MetricTable rows={result.rows} query={result.query || query} title={result.title} />
+                ) : result.table ? (
+                  <AggregateTable table={result.table} />
                 ) : result.intent === 'GENERAL_CHAT' ? (
                   <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 text-sm leading-relaxed text-slate-700">
                     {result.explanation || 'Ask for a preset screen, sector, ticker lookup, or technical filter to fetch stock rows.'}
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                    No stocks matched this prompt. I did not return broad or random fallback rows.
+                    No stocks matched this prompt. Try loosening a condition — I did not return broad or random fallback rows.
                   </div>
                 )}
               </section>
