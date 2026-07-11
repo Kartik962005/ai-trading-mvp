@@ -16,7 +16,7 @@
 >   - [x] 4.2 GradientBlinds as hero background (dynamic ssr:false, desktop-only, reduced-motion gated; MULTIPLY blend — hero is light-themed so 'lighten' would be invisible) — in HomeHero.tsx
 >   - [x] 4.3 TextPressure "BULLSEYE" brand headline in hero (desktop-only) — same commit as 4.2
 >   - [x] 4.4 ScrollStack "How it works" section (components/home/HowItWorksStack.tsx, inserted after MarketScanSection; scoped scroller so page scroll is never hijacked; static grid fallback on mobile/reduced-motion)
->   - [ ] 4.5 BorderGlow on hero/CTA cards (NOT all 24 market cards) — commit
+>   - [x] 4.5 BorderGlow on the hero "Session Snapshot" card (desktop-only, Card fallback; NOT the 24 market cards)
 >   - [ ] 4.6 verify (type-check + dev server + console) & push when owner approves
 >   (each step is an independent local commit; resume from the first unticked box)
 > - [ ] Phase 5 — General performance pass

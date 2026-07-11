@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { Button, Card, Stat } from "@/components/ui";
 import TextPressure from "@/components/reactbits/TextPressure";
+import BorderGlow from "@/components/reactbits/BorderGlow";
 
 // WebGL background is client-only and heavy — never SSR it, load it lazily.
 const GradientBlinds = dynamic(() => import("@/components/reactbits/GradientBlinds"), { ssr: false });
@@ -122,33 +123,57 @@ export function HomeHero({
         </div>
       </Card>
 
-      <Card
-        padding="lg"
-        className="grid content-between gap-5 border-white/70 bg-white/82 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl"
-      >
-        <div>
-          <div className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">
-            Session Snapshot
-          </div>
-          <p className="mt-3 text-sm leading-6 text-slate-500">
-            Current homepage scope is tuned for quick market triage before opening a single-stock dashboard.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Card padding="sm" className="border-slate-200 bg-slate-50">
-            <Stat label="Market" value={activeMarket} hint={activeMarket === "INDIA" ? "NSE / BSE" : "NASDAQ / NYSE"} />
+      {(() => {
+        const snapshotContent = (
+          <>
+            <div>
+              <div className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">
+                Session Snapshot
+              </div>
+              <p className="mt-3 text-sm leading-6 text-slate-500">
+                Current homepage scope is tuned for quick market triage before opening a single-stock dashboard.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Card padding="sm" className="border-slate-200 bg-slate-50">
+                <Stat label="Market" value={activeMarket} hint={activeMarket === "INDIA" ? "NSE / BSE" : "NASDAQ / NYSE"} />
+              </Card>
+              <Card padding="sm" className="border-slate-200 bg-slate-50">
+                <Stat label="Visible" value={visibleCount} hint={`of ${totalCount} tracked`} />
+              </Card>
+              <Card padding="sm" className="border-slate-200 bg-slate-50">
+                <Stat label="Signals" value="FISO" hint="verdict + confidence" tone="accent" />
+              </Card>
+              <Card padding="sm" className="border-slate-200 bg-slate-50">
+                <Stat label="Flow" value="Live" hint="quotes + preview" tone="positive" />
+              </Card>
+            </div>
+          </>
+        );
+
+        return heavyFx ? (
+          <BorderGlow
+            backgroundColor="#ffffff"
+            borderRadius={24}
+            edgeSensitivity={26}
+            glowColor="190 85 55"
+            glowIntensity={0.85}
+            glowRadius={34}
+            colors={["#22d3ee", "#34d399", "#38bdf8"]}
+            fillOpacity={0.35}
+            className="shadow-[0_18px_55px_rgba(15,23,42,0.08)]"
+          >
+            <div className="grid content-between gap-5 p-6">{snapshotContent}</div>
+          </BorderGlow>
+        ) : (
+          <Card
+            padding="lg"
+            className="grid content-between gap-5 border-white/70 bg-white/82 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl"
+          >
+            {snapshotContent}
           </Card>
-          <Card padding="sm" className="border-slate-200 bg-slate-50">
-            <Stat label="Visible" value={visibleCount} hint={`of ${totalCount} tracked`} />
-          </Card>
-          <Card padding="sm" className="border-slate-200 bg-slate-50">
-            <Stat label="Signals" value="FISO" hint="verdict + confidence" tone="accent" />
-          </Card>
-          <Card padding="sm" className="border-slate-200 bg-slate-50">
-            <Stat label="Flow" value="Live" hint="quotes + preview" tone="positive" />
-          </Card>
-        </div>
-      </Card>
+        );
+      })()}
     </section>
   );
 }
