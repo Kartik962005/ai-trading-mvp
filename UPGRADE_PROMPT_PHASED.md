@@ -17,7 +17,15 @@
 >   - [x] 4.3 TextPressure "BULLSEYE" brand headline in hero (desktop-only) — same commit as 4.2
 >   - [x] 4.4 ScrollStack "How it works" section (components/home/HowItWorksStack.tsx, inserted after MarketScanSection; scoped scroller so page scroll is never hijacked; static grid fallback on mobile/reduced-motion)
 >   - [x] 4.5 BorderGlow on the hero "Session Snapshot" card (desktop-only, Card fallback; NOT the 24 market cards)
->   - [ ] 4.6 verify (type-check + dev server + console) & push when owner approves
+>   - [~] 4.6 verify: tsc clean for all steps; SSR renders new section; LIVE network
+>     shows analyze-batch with exactly 6 tickers (Phase 3 confirmed working) and
+>     quotes/batch firing → app hydrates fine. Browser-pane DOM inspection was
+>     frozen/flaky all session (screenshots time out) so heavy-FX visuals not
+>     eyeballed — production `npm run build` used as the deterministic check.
+>     GOTCHA hit: Turbopack's persistent cache in `.next` kept serving a stale
+>     module graph ("HowItWorksStack doesn't exist") across SERVER RESTARTS after
+>     the barrel export was added mid-session — fix was `rm -rf .next` + restart.
+>     Vercel builds fresh, so prod is unaffected. NOT PUSHED yet — owner approves.
 >   (each step is an independent local commit; resume from the first unticked box)
 > - [ ] Phase 5 — General performance pass
 >
