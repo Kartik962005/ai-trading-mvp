@@ -1,14 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { Button, Card, Stat } from "@/components/ui";
 import TextPressure from "@/components/reactbits/TextPressure";
 import BorderGlow from "@/components/reactbits/BorderGlow";
-
-// WebGL background is client-only and heavy — never SSR it, load it lazily.
-const GradientBlinds = dynamic(() => import("@/components/reactbits/GradientBlinds"), { ssr: false });
 
 /** True only on desktop viewports with no reduced-motion preference. */
 function useHeavyFxEnabled() {
@@ -59,23 +55,6 @@ export function HomeHero({
           aria-hidden
           className="absolute -right-24 -top-28 h-64 w-64 rounded-full bg-cyan-200/35 blur-3xl"
         />
-        {heavyFx && (
-          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-25">
-            <GradientBlinds
-              gradientColors={["#a5f3fc", "#6ee7b7", "#bae6fd"]}
-              angle={18}
-              noise={0.06}
-              blindCount={14}
-              blindMinWidth={64}
-              spotlightRadius={0.55}
-              spotlightSoftness={1}
-              spotlightOpacity={0.35}
-              mouseDampening={0.2}
-              shineDirection="left"
-              mixBlendMode="multiply"
-            />
-          </div>
-        )}
         <div className="relative max-w-4xl">
           <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">
             Live Market Intelligence
@@ -91,7 +70,7 @@ export function HomeHero({
                 alpha={false}
                 stroke={false}
                 scale
-                textColor="#0f172a"
+                textColor="#f8fafc"
                 minFontSize={40}
               />
             </div>
@@ -153,7 +132,7 @@ export function HomeHero({
 
         return heavyFx ? (
           <BorderGlow
-            backgroundColor="#ffffff"
+            backgroundColor="#0a1020"
             borderRadius={24}
             edgeSensitivity={26}
             glowColor="190 85 55"

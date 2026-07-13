@@ -12,6 +12,7 @@ import {
   MarketScanSection,
   MarketSwitcher,
 } from '@/components/home';
+import { HomeAmbientBackground } from '@/components/home/HomeAmbientBackground';
 import BlurText from '@/components/ui/BlurText';
 
 const BACKEND = '/api/backend';
@@ -4565,13 +4566,10 @@ function HomeContent() {
         </div>
       )}
 
-      <div className="bullseye-light min-h-screen overflow-x-hidden text-slate-900 selection:bg-cyan-500/20 selection:text-slate-950 flex flex-col font-['Inter']">
+      <div className="bullseye-light min-h-screen overflow-x-hidden bg-[#04070f] text-slate-100 selection:bg-cyan-500/20 selection:text-cyan-100 flex flex-col font-['Inter']">
 
-        {/* BACKGROUND */}
-        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-          <div className="absolute inset-0 market-visual opacity-90" />
-          <div className="market-scan absolute top-0 h-full w-1/3 bg-gradient-to-r from-transparent via-cyan-300/20 to-transparent blur-xl" />
-        </div>
+        {/* IMMERSIVE BACKGROUND — dark base + Lightfall WebGL light-rain */}
+        <HomeAmbientBackground />
 
         {/* TICKER TAPE */}
         <div className="relative z-20 w-full bg-black/60 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
@@ -4755,7 +4753,7 @@ function HomeContent() {
 
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
-            <div className="animate-in fade-in duration-700 w-full flex flex-col gap-6">
+            <div className="bullseye-night animate-in fade-in duration-700 w-full flex flex-col gap-6">
               <HomeHero
                 activeMarket={activeMarket}
                 visibleCount={visibleMarketStocks.length}

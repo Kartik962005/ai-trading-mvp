@@ -98,3 +98,79 @@ body {
   0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-3px); }
 }
+
+/* ── Immersive dark homepage (`.bullseye-night`) ─────────────────────────────
+   The discovery hub was built in a light theme with explicit Tailwind utilities
+   (bg-white/85, text-slate-950, border-slate-200…). Rather than hand-edit every
+   element, this scoped block retints those recurring light utilities into the
+   dark-glass language the rest of the app already uses, so the whole hub reads
+   as one dark surface floating over the fixed Lightfall background. Reversible:
+   remove the `bullseye-night` class from the hub wrapper. Attribute selectors
+   ([class~="…"]) match a whole class token, so Tailwind's `/` fractions need no
+   escaping. */
+.bullseye-night {
+  color: #e2e8f0;
+}
+/* White / near-white card surfaces → translucent dark glass. */
+.bullseye-night :is(
+  [class~="bg-white"],
+  [class~="bg-white/85"],
+  [class~="bg-white/82"],
+  [class~="bg-white/80"],
+  [class~="bg-white/75"],
+  [class~="bg-white/70"]
+) {
+  background-color: rgba(255, 255, 255, 0.045) !important;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+/* Light inset chips / rails → subtle glass. */
+.bullseye-night :is(
+  [class~="bg-slate-50"],
+  [class~="bg-slate-100"],
+  [class~="bg-cyan-50"],
+  [class~="bg-cyan-50/70"]
+) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+/* Dark text → light. */
+.bullseye-night :is(
+  [class~="text-slate-950"],
+  [class~="text-slate-900"],
+  [class~="text-slate-800"]
+) {
+  color: #f1f5f9 !important;
+}
+.bullseye-night :is([class~="text-slate-700"], [class~="text-slate-600"]) {
+  color: #cbd5e1 !important;
+}
+.bullseye-night :is([class~="text-slate-500"], [class~="text-slate-400"]) {
+  color: #94a3b8 !important;
+}
+/* Accent chip text brightens for dark bg. */
+.bullseye-night :is([class~="text-cyan-700"], [class~="text-cyan-600"]) {
+  color: #67e8f9 !important;
+}
+/* Light borders → faint light hairlines. */
+.bullseye-night :is(
+  [class~="border-slate-200"],
+  [class~="border-slate-200/80"],
+  [class~="border-slate-100"],
+  [class~="border-white/70"],
+  [class~="border-white/60"],
+  [class~="border-cyan-200"],
+  [class~="border-cyan-200/80"],
+  [class~="border-cyan-200/60"]
+) {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+/* Keep solid accent buttons readable: restore dark ink on bright fills. */
+.bullseye-night [class~="bg-cyan-400"][class~="text-slate-950"],
+.bullseye-night [class~="bg-cyan-300"][class~="text-slate-950"] {
+  color: #04121a !important;
+}
+/* The mini SVG chart canvas must stay dark, not glass. */
+.bullseye-night svg[class~="bg-white"] {
+  background-color: #0b1220 !important;
+  backdrop-filter: none;
+}
