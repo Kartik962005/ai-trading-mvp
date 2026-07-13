@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Button, Card, Stat } from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { Button, Card } from "@/components/ui";
 import TextPressure from "@/components/reactbits/TextPressure";
 import BorderGlow from "@/components/reactbits/BorderGlow";
 
@@ -103,29 +103,35 @@ export function HomeHero({
       </Card>
 
       {(() => {
+        const tiles: Array<{ label: string; value: ReactNode; hint: string; tone: string }> = [
+          { label: "Market", value: "INDIA", hint: "NSE / BSE", tone: "text-white" },
+          { label: "Visible", value: visibleCount, hint: `of ${totalCount} featured`, tone: "text-white" },
+          { label: "Signals", value: "FISO", hint: "verdict + confidence", tone: "text-cyan-300" },
+          { label: "Flow", value: "Live", hint: "quotes + preview", tone: "text-emerald-300" },
+        ];
         const snapshotContent = (
           <>
             <div>
-              <div className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">
+              <div className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
                 Session Snapshot
               </div>
-              <p className="mt-3 text-sm leading-6 text-slate-500">
+              <p className="mt-3 text-sm leading-6 text-slate-300">
                 Current homepage scope is tuned for quick market triage before opening a single-stock dashboard.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Card padding="sm" className="border-slate-200 bg-slate-50">
-                <Stat label="Market" value={activeMarket} hint={activeMarket === "INDIA" ? "NSE / BSE" : "NASDAQ / NYSE"} />
-              </Card>
-              <Card padding="sm" className="border-slate-200 bg-slate-50">
-                <Stat label="Visible" value={visibleCount} hint={`of ${totalCount} tracked`} />
-              </Card>
-              <Card padding="sm" className="border-slate-200 bg-slate-50">
-                <Stat label="Signals" value="FISO" hint="verdict + confidence" tone="accent" />
-              </Card>
-              <Card padding="sm" className="border-slate-200 bg-slate-50">
-                <Stat label="Flow" value="Live" hint="quotes + preview" tone="positive" />
-              </Card>
+              {tiles.map((tile) => (
+                <div
+                  key={tile.label}
+                  className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-slate-900/70 p-3"
+                >
+                  <span className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.16em] text-cyan-300">
+                    {tile.label}
+                  </span>
+                  <span className={`font-['JetBrains_Mono'] text-base font-bold ${tile.tone}`}>{tile.value}</span>
+                  <span className="text-[11px] text-slate-400">{tile.hint}</span>
+                </div>
+              ))}
             </div>
           </>
         );

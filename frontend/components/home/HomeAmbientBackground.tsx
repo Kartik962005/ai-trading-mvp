@@ -11,10 +11,15 @@ const Lightfall = dynamic(() => import("@/components/reactbits/Lightfall"), { ss
 
 export function HomeAmbientBackground() {
   const [enabled, setEnabled] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const check = () => setEnabled(window.innerWidth >= 768 && !media.matches);
+    const check = () => {
+      // Animate on ALL screen sizes (including mobile); only reduced-motion opts out.
+      setEnabled(!media.matches);
+      setIsMobile(window.innerWidth < 768);
+    };
     check();
     window.addEventListener("resize", check);
     media.addEventListener?.("change", check);
@@ -32,16 +37,18 @@ export function HomeAmbientBackground() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(1100px 620px at 50% -8%, rgba(34,211,238,0.12), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(82,39,255,0.10), transparent 55%)",
+            "radial-gradient(1000px 560px at 50% 30%, rgba(34,211,238,0.08), transparent 60%), radial-gradient(900px 600px at 85% 40%, rgba(82,39,255,0.09), transparent 55%)",
         }}
       />
       {enabled && (
         <div className="absolute inset-0 opacity-90">
           <Lightfall
+            // Lower DPR + fewer streaks on phones keeps the WebGL cheap there.
+            dpr={isMobile ? 1 : undefined}
             colors={["#A6C8FF", "#5227FF", "#FF9FFC", "#22d3ee"]}
             backgroundColor="#0A29FF"
             speed={0.7}
-            streakCount={7}
+            streakCount={isMobile ? 5 : 7}
             streakWidth={1}
             streakLength={1}
             glow={1}

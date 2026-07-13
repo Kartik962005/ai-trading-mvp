@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
@@ -10,7 +10,6 @@ import {
   HomeHero,
   HowItWorksStack,
   MarketScanSection,
-  MarketSwitcher,
 } from '@/components/home';
 import { HomeAmbientBackground } from '@/components/home/HomeAmbientBackground';
 import BlurText from '@/components/ui/BlurText';
@@ -685,12 +684,12 @@ const INDICATOR_NAMES = [
   'Zig Zag',
 ];
 
-const STOCKS_PER_PAGE = 24;
-const STOCK_PAGE_LIMIT = 100;
-// Only this many top cards are analyzed eagerly on load; the rest analyze lazily
-// as they scroll into view, so the homepage no longer fires ~24 heavy analyses
-// up front (the main cause of the slow first paint).
-const FEATURED_ANALYSIS_COUNT = 6;
+// Homepage is intentionally a lean, fast "featured" view: only a handful of
+// India stocks, all analyzed eagerly (few enough to stay fast). Deep browsing
+// lives in the Screener.
+const STOCKS_PER_PAGE = 7;
+const STOCK_PAGE_LIMIT = 7;
+const FEATURED_ANALYSIS_COUNT = 7;
 const MARKET_SHUFFLE_VERSION = 'sector-mix-v1';
 
 function stableHash(value: string) {
@@ -1358,12 +1357,31 @@ const MarketAssetCard = ({
     ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
     : 'from-cyan-300 to-sky-300';
 
+  // Cursor-driven 3D tilt (cheap — only ~7 cards on the homepage). Mutates the
+  // DOM node directly to avoid re-rendering on every mousemove.
+  const handleTilt = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const element = cardRef.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const px = (event.clientX - rect.left) / rect.width;
+    const py = (event.clientY - rect.top) / rect.height;
+    const rotateX = (0.5 - py) * 9;
+    const rotateY = (px - 0.5) * 12;
+    element.style.transform = `perspective(760px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) translateY(-4px) scale(1.02)`;
+  };
+  const resetTilt = () => {
+    if (cardRef.current) cardRef.current.style.transform = '';
+  };
+
   return (
     <div
       ref={cardRef}
       data-market-card={stock.ticker}
-      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] transition-all duration-300 group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(15,23,42,0.08)] hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(8,145,178,0.16)]
-        border-slate-200/80 hover:border-cyan-200`}
+      onMouseMove={handleTilt}
+      onMouseLeave={resetTilt}
+      style={{ transformStyle: 'preserve-3d', transition: 'transform 0.15s ease, box-shadow 0.3s ease' }}
+      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(0,0,0,0.35)] hover:shadow-[0_30px_80px_rgba(8,145,178,0.28)] will-change-transform
+        border-slate-200/80 hover:border-cyan-300`}
     >
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
       <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-100/55 blur-2xl opacity-0 transition-opacity group-hover:opacity-100" />
@@ -4572,19 +4590,19 @@ function HomeContent() {
         <HomeAmbientBackground />
 
         {/* TICKER TAPE */}
-        <div className="relative z-20 w-full bg-black/60 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+        <div className="relative z-20 w-full bg-[#050810]/90 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
           <IndexTickerTape />
         </div>
 
         {/* NAV */}
-        <nav className="relative z-20 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 border-b border-white/5 bg-black/20 px-3 py-3 backdrop-blur-sm sm:gap-3 sm:px-6 sm:py-4 lg:flex-nowrap lg:gap-5">
+        <nav className="relative z-20 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 border-b border-white/10 bg-[#060a14]/85 px-3 py-3 backdrop-blur-xl sm:gap-3 sm:px-6 sm:py-4 lg:flex-nowrap lg:gap-5">
           <div className="min-w-0 cursor-pointer group shrink-0" onClick={goHome}>
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-200 bg-gradient-to-br from-white via-cyan-100 to-emerald-100 sm:h-11 sm:w-11">
                 <span className="font-black text-cyan-700 font-['Space_Grotesk'] text-sm sm:text-base">BE</span>
               </div>
               <h1 className="hidden text-xl font-black uppercase tracking-[0.16em] font-['Space_Grotesk'] min-[430px]:block sm:text-3xl sm:tracking-[0.18em]">
-                <span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span>
+                <span className="text-white">BULLS</span><span className="text-cyan-400">EYE</span>
               </h1>
             </div>
             <p className="ml-[52px] mt-1 hidden text-[10px] font-bold uppercase tracking-widest text-zinc-400 font-['Space_Grotesk'] lg:block">
@@ -4761,8 +4779,6 @@ function HomeContent() {
                 signedIn={Boolean(user)}
                 onOpenDailySignals={openDailySignalSettings}
               />
-
-              <MarketSwitcher activeMarket={activeMarket} onMarketChange={setActiveMarket} />
 
               <MarketScanSection
                 activeMarket={activeMarket}
