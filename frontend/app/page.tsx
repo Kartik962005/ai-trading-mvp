@@ -30,7 +30,9 @@ import {
   formatMarketCap,
   formatRatioValue,
   humanizeLabel,
+  getLevenshteinDistance,
 } from '@/lib/format';
+import { buildMarketNewsRead, type NewsStory } from '@/lib/news';
 import {
   stableMarketShuffle,
   asNumber,
@@ -44,11 +46,6 @@ import {
   formatIndicatorValue,
   getIndicatorColor,
 } from '@/lib/indicators';
-type NewsStory = {
-  title: string;
-  source?: string;
-  url?: string | null;
-};
 type MarketScope = 'INDIA' | 'US';
 type DashboardView = 'overview' | 'details';
 type ChartRange = '1d' | '1w' | '1mo' | '1y' | 'max';
@@ -764,59 +761,6 @@ function buildPreviewChartPath(chartData: any, width = 720, height = 190) {
     .join(' ');
 }
 
-function isEnglishNewsTitle(title: string) {
-  const normalized = title.normalize('NFKD');
-  const letters = normalized.match(/\p{L}/gu) ?? [];
-  if (!letters.length) return true;
-  const englishLetters = normalized.match(/[A-Za-z]/g) ?? [];
-  return englishLetters.length / letters.length >= 0.85;
-}
-
-function splitNewsHeadline(headline: string) {
-  const parts = String(headline).split(/\s(?:—|â€”)\s/);
-  return {
-    title: parts[0]?.trim() || String(headline),
-    source: parts.slice(1).join(' - ').trim(),
-  };
-}
-
-function storyFromHeadline(headline: string): NewsStory {
-  const { title, source } = splitNewsHeadline(headline);
-  return { title, source };
-}
-
-function buildMarketNewsRead(title: string) {
-  const lower = title.toLowerCase();
-  if (/\b(rate|inflation|fed|rbi|bond|yield|oil|dollar)\b/.test(lower)) {
-    return 'Macro driver that can affect risk appetite and market breadth.';
-  }
-  if (/\b(earnings|profit|results|revenue|guidance)\b/.test(lower)) {
-    return 'Earnings flow that can shift sector leadership and stock selection.';
-  }
-  if (/\b(nifty|sensex|nasdaq|s&p|dow|market)\b/.test(lower)) {
-    return 'Broad index context to compare against individual stock setups.';
-  }
-  return 'Market context item to review before acting on individual signals.';
-}
-
-function getLevenshteinDistance(s: string, t: string) {
-  if (!s.length) return t.length;
-  if (!t.length) return s.length;
-  const arr: number[][] = [];
-  for (let i = 0; i <= t.length; i++) {
-    arr[i] = [i];
-    for (let j = 1; j <= s.length; j++) {
-      arr[i][j] = i === 0
-        ? j
-        : Math.min(
-            arr[i - 1][j] + 1,
-            arr[i][j - 1] + 1,
-            arr[i - 1][j - 1] + (s[j - 1] === t[i - 1] ? 0 : 1)
-          );
-    }
-  }
-  return arr[t.length][s.length];
-}
 
 function buildMarketAnswer(prompt: string, analysis: any, ticker: string, currency: string, chartData: any) {
   const clean = prompt.toLowerCase();
