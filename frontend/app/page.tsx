@@ -45,6 +45,7 @@ import {
   buildPreviewChartPath,
 } from '@/lib/chart';
 import { buildMarketAnswer } from '@/lib/market-answer';
+import { Reveal } from '@/components/motion/Reveal';
 import {
   stableMarketShuffle,
   asNumber,
@@ -4214,22 +4215,30 @@ function HomeContent() {
                 ))}
               </MarketScanSection>
 
-              <HowItWorksStack />
+              <Reveal>
+                <HowItWorksStack />
+              </Reveal>
 
-              <DailySignalPreviewCard
-                signedIn={Boolean(user)}
-                userEmail={user?.email}
-                signals={dailySignalPreview}
-                isSaving={notificationSaving || notificationLoading}
-                error={notificationError}
-                message={notificationMessage}
-                onOpenSettings={openDailySignalSettings}
-                onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
-              />
+              <Reveal>
+                <DailySignalPreviewCard
+                  signedIn={Boolean(user)}
+                  userEmail={user?.email}
+                  signals={dailySignalPreview}
+                  isSaving={notificationSaving || notificationLoading}
+                  error={notificationError}
+                  message={notificationMessage}
+                  onOpenSettings={openDailySignalSettings}
+                  onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
+                />
+              </Reveal>
 
-              <GlobalNewsPanel />
+              <Reveal>
+                <GlobalNewsPanel />
+              </Reveal>
 
-              <HomeFeatureSection onOpenDailySignals={openDailySignalSettings} />
+              <Reveal>
+                <HomeFeatureSection onOpenDailySignals={openDailySignalSettings} />
+              </Reveal>
             </div>
           )}
 
