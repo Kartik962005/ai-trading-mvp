@@ -50,22 +50,28 @@ ticker + auth/daily-signal modals + all data hooks + two themes) is why redesign
 break. Make it a thin composition of modules. **No visual change intended** — pure
 structure + speed.
 
-- [ ] **A1 — Baseline & guardrails.** Add `@next/bundle-analyzer`; record current
-  homepage bundle size + a Lighthouse run (desktop+mobile) into
-  `docs/perf-baseline.md`. This is the number every later phase is graded against.
-- [ ] **A2 — Extract the stock detail view** (the `StockCard` dialog + its chart)
-  into `components/stock/StockDetailModal.tsx`. Biggest single chunk.
+- [x] **A1 — Baseline & guardrails.** `docs/perf-baseline.md` written (page.tsx
+  5,235 lines, ~2.0 MB client JS). Lighthouse still TODO (preview pane broken).
+- [x] **A2·pure — Extract pure helpers** (the safe, build-verified track): moved
+  into 9 lib modules — `client-cache`, `analysis`, `supabase-browser`, `format`,
+  `indicators`, `news`, `stock`, `chart`, `market-answer`. page.tsx **5,235 →
+  4,640 lines**. Commits ff56268..a2ce258. DONE.
+- [ ] **A2·components — Extract the stock detail view** (`StockCard` dialog +
+  chart, ~600 lines) into `components/stock/StockDetailModal.tsx`. STATEFUL —
+  needs a click-through to verify (preview pane currently broken).
 - [ ] **A3 — Extract shell pieces**: nav, ticker tape, account menu, auth modal,
-  daily-signal modal, global-news panel → `components/shell/*` and
-  `components/home/*`. `page.tsx` should read like a table of contents.
-- [ ] **A4 — Extract data logic** into hooks: `useMarketQuotes`, `useAnalysis`,
-  `useStockSearch`, etc. under `hooks/`. Pure functions, no JSX.
-- [ ] **A5 — Fonts → `next/font`.** Remove the render-blocking Google Fonts
-  `@import` inside components (TextPressure etc.); self-host via next/font.
-- [ ] **A6 — Split heavy imports** with `dynamic()` (charts, 3D, detail modal,
-  markdown) so they don't ship in the first load.
-- [ ] **A7 — Re-measure** vs A1 baseline; commit the delta. Target: first-load JS
-  down meaningfully, Lighthouse up.
+  daily-signal modal, global-news panel → `components/shell/*`, `components/home/*`.
+  STATEFUL — needs verification.
+- [ ] **A4 — Extract data logic** into hooks under `hooks/`.
+- [ ] **A5 — Fonts → `next/font`** (remove render-blocking `@import`s).
+- [ ] **A6 — Split heavy imports** with `dynamic()` (charts, 3D, modal). ← the
+  actual first-load speed win.
+- [ ] **A7 — Re-measure** vs A1 baseline; commit the delta.
+
+STATUS: Phase A is **~40% done**. A1 + the entire zero-risk pure-helper track (A2·pure)
+are complete. What remains (A2·components, A3–A7) is the stateful/perf work — the
+big line-count crushers and the real bundle win — and needs a working preview to
+verify safely.
 
 Acceptance: `page.tsx` under ~800 lines; bundle + Lighthouse measurably better;
 app behaves identically. Commit per step.
