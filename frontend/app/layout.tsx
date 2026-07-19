@@ -38,6 +38,14 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${plusJakarta.variable} h-full antialiased`}
     >
+      <head>
+        {/* Start the Google Fonts connection early — the pages still load the
+            font CSS via @import (Space Grotesk / JetBrains Mono / Inter), and
+            preconnect shaves the connection setup off that fetch. Additive and
+            safe: it changes no rendering, only warms the connection. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      </head>
       <body className="min-h-full flex flex-col">
         {children}
         <BackendWarmup />
