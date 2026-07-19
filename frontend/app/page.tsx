@@ -34,6 +34,12 @@ import {
 } from '@/lib/format';
 import { buildMarketNewsRead, type NewsStory } from '@/lib/news';
 import {
+  type MarketScope,
+  resolveMarket,
+  canShowDetailedAnalysis,
+  formatFaceValue,
+} from '@/lib/stock';
+import {
   stableMarketShuffle,
   asNumber,
   mean,
@@ -46,7 +52,6 @@ import {
   formatIndicatorValue,
   getIndicatorColor,
 } from '@/lib/indicators';
-type MarketScope = 'INDIA' | 'US';
 type DashboardView = 'overview' | 'details';
 type ChartRange = '1d' | '1w' | '1mo' | '1y' | 'max';
 
@@ -879,24 +884,6 @@ function buildMarketAnswer(prompt: string, analysis: any, ticker: string, curren
   return null;
 }
 
-function resolveMarket(exchange: string): MarketScope {
-  return exchange === 'NASDAQ' || exchange === 'NYSE' ? 'US' : 'INDIA';
-}
-
-function isIndianStock(stock?: typeof STOCKS[number] | null) {
-  return !!stock && resolveMarket(stock.exchange) === 'INDIA';
-}
-
-function canShowDetailedAnalysis(stock?: typeof STOCKS[number] | null) {
-  return !!stock && (resolveMarket(stock.exchange) === 'INDIA' || resolveMarket(stock.exchange) === 'US');
-}
-
-function formatFaceValue(stock?: typeof STOCKS[number] | null, fallback?: any) {
-  const value = Number(fallback ?? stock?.faceValue);
-  if (!Number.isFinite(value)) return '-';
-  const currency = stock?.currency ?? '';
-  return `${currency}${formatIndianNumber(value, value < 1 ? 4 : 2)}`;
-}
 
 
 // ─── TICKER TAPE ─────────────────────────────────────────────────────────────
