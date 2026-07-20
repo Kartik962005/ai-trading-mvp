@@ -1,81 +1,64 @@
 "use client";
 
-// "How Bullseye works" — four dark cards that stack as you scroll the PAGE using
-// CSS position: sticky. No lenis / scoped scroller, so it never hijacks scroll
-// (you don't need to hover a card to scroll) and it works on mobile too.
+// How it works — four cards that stack as you scroll the PAGE using CSS
+// position: sticky (no scroll hijack, works on mobile). Restyled into the
+// redesign language: editorial serif, black cards, gold step numerals.
+
+import { SectionShell } from "./SectionShell";
 
 const STEPS = [
   {
     step: "01",
     title: "Scan the market",
-    body: "Live NSE & BSE quotes with FISO verdicts on a handful of featured stocks — the homepage stays fast, verdicts stream in as you scroll.",
-    accent: "#22d3ee",
+    body: "Live NSE and BSE quotes with an honest verdict on a short list of featured stocks — the page stays fast, verdicts fill in as you scroll.",
   },
   {
     step: "02",
     title: "Screen in English or SQL",
-    body: "Type “profitable smallcaps with low debt and RSI under 40” — or raw SQL. The AI turns it into a real query over 2,000+ stocks and shows you the SQL it ran.",
-    accent: "#34d399",
+    body: "Type “profitable smallcaps with low debt and RSI under 40”, or write raw SQL. The AI turns it into a real query across 2,000+ stocks and shows you the SQL it ran.",
   },
   {
     step: "03",
-    title: "Analyze with honest conviction",
-    body: "Every setup ships entry, target and stop-loss with a day-level conviction label. Weak day? Bullseye says “sit out” instead of forcing a trade.",
-    accent: "#38bdf8",
+    title: "Analyse with conviction",
+    body: "Every setup ships an entry, a target and a stop-loss with a day-level conviction score. Weak day? It tells you to sit out instead of forcing a trade.",
   },
   {
     step: "04",
     title: "Get signals by email",
-    body: "Daily post-close signal emails on your schedule — ranked picks, reasoning included, no spam on no-signal days.",
-    accent: "#a78bfa",
+    body: "Ranked picks delivered after close on your schedule, reasoning included — and nothing at all on days with no signal worth sending.",
   },
 ];
 
 export function HowItWorksStack() {
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_55px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:rounded-3xl sm:p-6">
-      <span className="inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
-        How it works
-      </span>
-      <h2 className="mt-3 font-['Space_Grotesk'] text-2xl font-black tracking-tight text-white sm:text-3xl">
-        From market noise to one clear setup
-      </h2>
-
-      {/* Sticky-stack: each card pins a little lower than the last as the page
-          scrolls, so they gather into a deck. Extra bottom padding gives scroll
-          room for the effect. */}
-      <div className="relative mt-6 pb-[30vh]">
+    <SectionShell
+      eyebrow="How it works"
+      title={
+        <>
+          From market noise to <em className="italic text-accent">one clear setup</em>.
+        </>
+      }
+      description="Four steps, in the order you actually use them."
+    >
+      {/* Sticky stack: each card pins slightly lower than the last as the page
+          scrolls, gathering into a deck. */}
+      <div className="relative pb-[26vh]">
         {STEPS.map((step, i) => (
-          <div
-            key={step.step}
-            className="sticky"
-            style={{ top: `${96 + i * 22}px`, zIndex: i + 1 }}
-          >
-            <div
-              className="mb-6 overflow-hidden rounded-[28px] border border-white/10 bg-slate-900/85 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:p-8"
-              style={{ boxShadow: `0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 ${step.accent}33` }}
-            >
-              <div
-                aria-hidden
-                className="absolute inset-x-0 top-0 h-1"
-                style={{ background: `linear-gradient(90deg, ${step.accent}, transparent)` }}
-              />
-              <span
-                className="font-['JetBrains_Mono'] text-xs font-black tracking-[0.3em]"
-                style={{ color: step.accent }}
-              >
-                {step.step}
-              </span>
-              <h3 className="mt-3 font-['Space_Grotesk'] text-2xl font-black tracking-tight text-white sm:text-3xl">
+          <div key={step.step} className="sticky" style={{ top: `${104 + i * 20}px`, zIndex: i + 1 }}>
+            <div className="mb-6 overflow-hidden rounded-3xl border border-hairline bg-ink-soft/95 p-8 shadow-[0_28px_70px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:p-10">
+              <div className="flex items-baseline gap-5">
+                <span className="font-numeric text-[13px] tracking-[0.3em] text-accent">{step.step}</span>
+                <span aria-hidden className="h-px flex-1 bg-hairline" />
+              </div>
+              <h3 className="mt-6 max-w-[22ch] font-display text-[clamp(1.7rem,3.2vw,2.6rem)] leading-[1.06] text-paper">
                 {step.title}
               </h3>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">{step.body}</p>
-              <div className="mt-6 h-1 w-16 rounded-full" style={{ backgroundColor: step.accent }} />
+              <p className="mt-4 max-w-[62ch] font-body text-[15px] leading-8 text-paper-muted">{step.body}</p>
             </div>
           </div>
         ))}
       </div>
-    </section>
+    </SectionShell>
   );
 }
 

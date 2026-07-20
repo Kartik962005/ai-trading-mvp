@@ -6,11 +6,13 @@ import useSWR from 'swr';
 import { STOCKS } from './stocks';
 import {
   DailySignalPreviewCard,
-  HomeFeatureSection,
   HowItWorksStack,
-  MarketScanSection,
 } from '@/components/home';
 import { HeroSection } from '@/components/home/HeroSection';
+import { SectionShell } from '@/components/home/SectionShell';
+import { LiveScanSection } from '@/components/home/LiveScanSection';
+import { AboutSection } from '@/components/home/AboutSection';
+import { SiteFooter } from '@/components/home/SiteFooter';
 import { HomeAmbientBackground } from '@/components/home/HomeAmbientBackground';
 import BlurText from '@/components/ui/BlurText';
 
@@ -4171,27 +4173,20 @@ function HomeContent() {
 
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
-            <div className="bullseye-night animate-in fade-in duration-700 w-full flex flex-col gap-6">
+            <div className="bullseye-night animate-in fade-in duration-700 w-full flex flex-col">
               <HeroSection
                 signedIn={Boolean(user)}
                 onOpenDailySignals={openDailySignalSettings}
                 ticker={<IndexTickerTape />}
               />
 
-              <MarketScanSection
-                activeMarket={activeMarket}
+              <LiveScanSection
                 visibleCount={visibleMarketStocks.length}
                 totalCount={marketStocks.length}
-                page={marketPage}
-                pageCount={marketPageCount}
                 columnCount={assetColumnCount}
-                onPageChange={(page) => {
-                  setMarketPage(page);
-                  setExpandedTicker(null);
-                }}
               >
                 {assetColumns.map((columnStocks, columnIndex) => (
-                  <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-4 sm:gap-5">
+                  <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-5">
                     {columnStocks.map(s => (
                       <MarketAssetCard
                         key={s.ticker}
@@ -4206,32 +4201,49 @@ function HomeContent() {
                     ))}
                   </div>
                 ))}
-              </MarketScanSection>
+              </LiveScanSection>
+
+              <HowItWorksStack />
+
+              <SectionShell
+                eyebrow="Daily signals"
+                title={
+                  <>
+                    Get the short list <em className="italic text-accent">in your inbox</em>.
+                  </>
+                }
+                description="Ranked picks after close, on your schedule — and nothing on days with no signal worth sending."
+              >
+                <Reveal>
+                  <DailySignalPreviewCard
+                    signedIn={Boolean(user)}
+                    userEmail={user?.email}
+                    signals={dailySignalPreview}
+                    isSaving={notificationSaving || notificationLoading}
+                    error={notificationError}
+                    message={notificationMessage}
+                    onOpenSettings={openDailySignalSettings}
+                    onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
+                  />
+                </Reveal>
+              </SectionShell>
+
+              <SectionShell
+                eyebrow="Market context"
+                title="What moved the market today"
+                description="Macro and earnings flow worth reading before you act on any single signal."
+                compact
+              >
+                <Reveal>
+                  <GlobalNewsPanel />
+                </Reveal>
+              </SectionShell>
 
               <Reveal>
-                <HowItWorksStack />
+                <AboutSection />
               </Reveal>
 
-              <Reveal>
-                <DailySignalPreviewCard
-                  signedIn={Boolean(user)}
-                  userEmail={user?.email}
-                  signals={dailySignalPreview}
-                  isSaving={notificationSaving || notificationLoading}
-                  error={notificationError}
-                  message={notificationMessage}
-                  onOpenSettings={openDailySignalSettings}
-                  onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
-                />
-              </Reveal>
-
-              <Reveal>
-                <GlobalNewsPanel />
-              </Reveal>
-
-              <Reveal>
-                <HomeFeatureSection onOpenDailySignals={openDailySignalSettings} />
-              </Reveal>
+              <SiteFooter />
             </div>
           )}
 
