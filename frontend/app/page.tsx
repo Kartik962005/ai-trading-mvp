@@ -47,7 +47,7 @@ import {
   buildPreviewChartPath,
 } from '@/lib/chart';
 import { buildMarketAnswer } from '@/lib/market-answer';
-import { Reveal } from '@/components/motion/Reveal';
+import { Scroll3D } from '@/components/motion/Scroll3D';
 import {
   stableMarketShuffle,
   asNumber,
@@ -4188,16 +4188,17 @@ function HomeContent() {
                 {assetColumns.map((columnStocks, columnIndex) => (
                   <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-5">
                     {columnStocks.map(s => (
-                      <MarketAssetCard
-                        key={s.ticker}
-                        stock={s}
-                        prefetchedAnalysis={prefetchCache[s.ticker]}
-                        quickQuote={visibleQuotes?.[s.ticker]}
-                        onPreview={openPreview}
-                        onAnalysisReady={(nextTicker, nextAnalysis) =>
-                          setPrefetchCache(prev => ({ ...prev, [nextTicker]: nextAnalysis }))
-                        }
-                      />
+                      <Scroll3D key={s.ticker} intensity={1.15} depth={340}>
+                        <MarketAssetCard
+                          stock={s}
+                          prefetchedAnalysis={prefetchCache[s.ticker]}
+                          quickQuote={visibleQuotes?.[s.ticker]}
+                          onPreview={openPreview}
+                          onAnalysisReady={(nextTicker, nextAnalysis) =>
+                            setPrefetchCache(prev => ({ ...prev, [nextTicker]: nextAnalysis }))
+                          }
+                        />
+                      </Scroll3D>
                     ))}
                   </div>
                 ))}
@@ -4214,7 +4215,7 @@ function HomeContent() {
                 }
                 description="Ranked picks after close, on your schedule — and nothing on days with no signal worth sending."
               >
-                <Reveal>
+                <Scroll3D intensity={0.9}>
                   <DailySignalPreviewCard
                     signedIn={Boolean(user)}
                     userEmail={user?.email}
@@ -4225,7 +4226,7 @@ function HomeContent() {
                     onOpenSettings={openDailySignalSettings}
                     onSendNow={deliveryMode => { void sendNotificationEmailNow(deliveryMode); }}
                   />
-                </Reveal>
+                </Scroll3D>
               </SectionShell>
 
               <SectionShell
@@ -4234,14 +4235,14 @@ function HomeContent() {
                 description="Macro and earnings flow worth reading before you act on any single signal."
                 compact
               >
-                <Reveal>
+                <Scroll3D intensity={0.9}>
                   <GlobalNewsPanel />
-                </Reveal>
+                </Scroll3D>
               </SectionShell>
 
-              <Reveal>
+              <Scroll3D intensity={0.9}>
                 <AboutSection />
-              </Reveal>
+              </Scroll3D>
 
               <SiteFooter />
             </div>

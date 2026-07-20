@@ -94,7 +94,10 @@ const VERTEX = /* glsl */ `
     vHot = hot;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float twinkle = 0.72 + 0.28 * sin(uTime * 1.6 + aRand * 42.0);
-    gl_PointSize = uSize * (1.0 + hot * 2.6) * twinkle * (300.0 / max(0.001, -mv.z));
+    // Perspective attenuation. This factor must stay small — at ~300 every node
+    // draws ~100px wide and 2k additive points merge into one white blob.
+    gl_PointSize = uSize * (1.0 + hot * 1.8) * twinkle * (34.0 / max(0.001, -mv.z));
+    gl_PointSize = clamp(gl_PointSize, 0.6, 7.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -107,9 +110,10 @@ const FRAGMENT = /* glsl */ `
     vec2 c = gl_PointCoord - 0.5;
     float dist = length(c);
     if (dist > 0.5) discard;
-    float alpha = smoothstep(0.5, 0.0, dist);
+    float alpha = smoothstep(0.5, 0.05, dist);
     vec3 col = mix(uBase, uHot, vHot);
-    gl_FragColor = vec4(col, alpha * (0.5 + vHot * 0.5));
+    // Keep total additive energy low so the scene never washes the page out.
+    gl_FragColor = vec4(col, alpha * (0.30 + vHot * 0.45));
   }
 `;
 
@@ -125,7 +129,7 @@ function Globe({ progress }: { progress: React.RefObject<number> }) {
     () => ({
       uTime: { value: 0 },
       uHighlight: { value: new THREE.Vector3(1, 0, 0) },
-      uSize: { value: 3.4 },
+      uSize: { value: 1.6 },
       uBase: { value: new THREE.Color(EMERALD) },
       uHot: { value: new THREE.Color(GOLD) },
     }),
@@ -160,7 +164,7 @@ function Globe({ progress }: { progress: React.RefObject<number> }) {
     }
 
     if (arcMatRef.current) {
-      arcMatRef.current.opacity = 0.10 + Math.sin(p * Math.PI) * 0.22;
+      arcMatRef.current.opacity = 0.05 + Math.sin(p * Math.PI) * 0.10;
     }
 
     // Camera: orbit + dive toward a cluster, then pull back out at the end.
@@ -210,7 +214,7 @@ function Globe({ progress }: { progress: React.RefObject<number> }) {
           ref={arcMatRef}
           color={EMERALD}
           transparent
-          opacity={0.18}
+          opacity={0.08}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
