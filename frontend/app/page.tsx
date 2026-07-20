@@ -3996,31 +3996,31 @@ function HomeContent() {
 
 
         {/* NAV */}
-        <nav className="relative z-20 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 border-b border-white/10 bg-[#060a14]/85 px-3 py-3 backdrop-blur-xl sm:gap-3 sm:px-6 sm:py-4 lg:flex-nowrap lg:gap-5">
-          <div className="min-w-0 cursor-pointer group shrink-0" onClick={goHome}>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-200 bg-gradient-to-br from-white via-cyan-100 to-emerald-100 sm:h-11 sm:w-11">
-                <span className="font-black text-cyan-700 font-['Space_Grotesk'] text-sm sm:text-base">BE</span>
-              </div>
-              <h1 className="hidden text-xl font-black uppercase tracking-[0.16em] font-['Space_Grotesk'] min-[430px]:block sm:text-3xl sm:tracking-[0.18em]">
-                <span className="text-white">BULLS</span><span className="text-cyan-400">EYE</span>
-              </h1>
-            </div>
-            <p className="ml-[52px] mt-1 hidden text-[10px] font-bold uppercase tracking-widest text-zinc-400 font-['Space_Grotesk'] lg:block">
-              AI-Powered Market Intelligence
-            </p>
-          </div>
+        <nav className="relative z-20 mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-3 px-5 py-6 sm:px-8 lg:flex-nowrap lg:gap-8">
+          <button
+            type="button"
+            onClick={goHome}
+            className="group flex shrink-0 items-center gap-2.5 text-left"
+            aria-label="Bullseye home"
+          >
+            <span
+              aria-hidden
+              className="inline-flex h-[7px] w-[7px] rounded-full bg-accent shadow-[0_0_14px_rgba(245,196,81,0.85)] transition-transform duration-300 group-hover:scale-125"
+            />
+            <span className="font-display text-[26px] leading-none text-paper sm:text-[28px]">
+              Bulls<span className="text-accent">eye</span>
+            </span>
+          </button>
 
-          <div className="relative order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1">
-            <div className="absolute inset-0 bg-cyan-500/5 rounded-xl blur-lg sm:rounded-2xl"></div>
+          <div className="relative order-last w-full min-w-0 lg:order-none lg:w-auto lg:max-w-[380px] lg:flex-1">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => input.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={(e) => { if (e.key === 'Enter' && suggestions.length > 0) selectStock(suggestions[0]); }}
-              className="relative z-10 h-11 w-full rounded-xl border border-white/10 bg-black/60 px-3 text-[11px] uppercase tracking-[0.16em] text-white shadow-2xl outline-none transition-all placeholder-zinc-500 hover:border-cyan-500/50 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 sm:h-12 sm:rounded-2xl sm:px-5 sm:text-sm sm:tracking-widest font-['JetBrains_Mono']"
-              placeholder="SEARCH ASSETS, NOT HOPE."
+              className="relative z-10 h-11 w-full rounded-full border border-hairline bg-glass px-5 font-body text-[13px] text-paper outline-none backdrop-blur-md transition-all placeholder:text-paper-muted/70 hover:border-white/20 focus:border-accent/60 focus:bg-glass-strong"
+              placeholder="Search any stock…"
             />
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute z-50 mt-2 max-h-[72vh] w-full min-w-[min(82vw,320px)] overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-black/95 shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-3xl sm:min-w-full">
@@ -4040,16 +4040,15 @@ function HomeContent() {
           <Link
             href="/ask-ai"
             onClick={() => setShowProfileMenu(false)}
-            className="force-light-text ml-auto inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-400/60 bg-gradient-to-r from-cyan-600 to-emerald-500 px-3 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_12px_32px_rgba(6,182,212,0.28)] transition-all hover:from-cyan-500 hover:to-emerald-400 hover:shadow-[0_14px_38px_rgba(6,182,212,0.4)] sm:h-12 sm:rounded-2xl sm:px-5 sm:text-xs sm:tracking-[0.2em] lg:ml-0"
+            className="ml-auto inline-flex shrink-0 items-center font-body text-[13px] font-medium text-paper-muted transition duration-300 hover:text-paper"
           >
-            <span aria-hidden="true">✦</span>
             Ask AI
           </Link>
 
           <Link
             href="/screens"
             onClick={() => setShowProfileMenu(false)}
-            className="force-light-text inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-slate-900 bg-slate-950 px-3 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition-all hover:border-cyan-500 hover:bg-cyan-600 sm:h-12 sm:rounded-2xl sm:px-5 sm:text-xs sm:tracking-[0.2em]"
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-accent px-5 font-body text-[13px] font-semibold text-black transition duration-300 hover:bg-accent-dim"
           >
             Screener
           </Link>
