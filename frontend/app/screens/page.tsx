@@ -551,84 +551,102 @@ export default function ScreensPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f8fcff] text-slate-950 font-['Inter'] selection:bg-cyan-500/20">
-      <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
-        .screens-grid-bg {
-          background:
-            radial-gradient(circle at 16% 8%, rgba(6,182,212,0.22), transparent 30%),
-            radial-gradient(circle at 82% 6%, rgba(16,185,129,0.18), transparent 28%),
-            linear-gradient(180deg, #f8fcff 0%, #edf7f8 45%, #ffffff 100%);
-        }
-        .screens-grid-bg:before {
-          content: "";
-          position: fixed;
-          inset: 0;
-          pointer-events: none;
-          background-image:
-            linear-gradient(120deg, rgba(6,182,212,0.13), transparent 28%, rgba(16,185,129,0.10) 62%, transparent),
-            linear-gradient(rgba(8,145,178,0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(8,145,178,0.08) 1px, transparent 1px);
-          background-size: 42px 42px;
-          mask-image: linear-gradient(to bottom, black 0%, transparent 76%);
-        }
-      ` }} />
+    <main className="bullseye-night relative min-h-screen bg-black font-body text-paper selection:bg-accent/25">
+      {/* Ambient scene — same language as the homepage, quieter so the data reads. */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-black" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(820px 520px at 22% 6%, rgba(52,211,153,0.10), transparent 62%), radial-gradient(680px 460px at 82% 10%, rgba(245,196,81,0.07), transparent 58%)',
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.72) 45%, rgba(0,0,0,0.92) 100%)',
+          }}
+        />
+      </div>
 
-      <div className="screens-grid-bg relative min-h-screen">
-        <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
-          <div className="mx-auto grid max-w-[1600px] grid-cols-1 items-center gap-3 px-3 py-3 sm:px-6 md:grid-cols-[auto_minmax(260px,1fr)_auto]">
-            <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-br from-white via-cyan-100 to-emerald-100 text-sm font-black text-cyan-700 shadow-[0_16px_40px_rgba(8,145,178,0.18)] sm:h-11 sm:w-11 sm:rounded-2xl sm:text-base">
-                BE
-              </div>
-              <div className="min-w-0">
-                <div className="font-['Space_Grotesk'] text-xl font-black uppercase tracking-[0.14em] sm:text-2xl sm:tracking-[0.18em]">
-                  BULLS<span className="text-cyan-500">EYE</span>
-                </div>
-                <div className="hidden text-[10px] font-bold uppercase tracking-widest text-slate-400 sm:block">AI-powered stock screens</div>
-              </div>
+      <div className="relative z-10 min-h-screen">
+        <header className="relative z-40 border-b border-hairline bg-black/55 backdrop-blur-xl">
+          <div className="mx-auto grid max-w-[1400px] grid-cols-1 items-center gap-4 px-5 py-5 sm:px-8 md:grid-cols-[auto_minmax(240px,1fr)_auto]">
+            <Link href="/" className="flex min-w-0 items-center gap-2.5">
+              <span
+                aria-hidden
+                className="inline-flex h-[7px] w-[7px] shrink-0 rounded-full bg-accent shadow-[0_0_14px_rgba(245,196,81,0.85)]"
+              />
+              <span className="font-display text-[26px] leading-none text-paper">
+                Bulls<span className="text-accent">eye</span>
+              </span>
             </Link>
             <StockSearch compact />
-            <div className="hidden items-center gap-2 md:flex">
-              <Link href="/ask-ai" className="force-light-text inline-flex h-12 items-center justify-center gap-1.5 rounded-2xl border border-cyan-400/60 bg-gradient-to-r from-cyan-600 to-emerald-500 px-4 font-['Space_Grotesk'] text-xs font-black uppercase tracking-[0.18em] text-white shadow-[0_12px_32px_rgba(6,182,212,0.28)] transition hover:from-cyan-500 hover:to-emerald-400">
-                <span aria-hidden="true">✦</span> Ask AI
+            <div className="hidden items-center gap-6 md:flex">
+              <Link
+                href="/ask-ai"
+                className="font-body text-[13px] font-medium text-paper-muted transition duration-300 hover:text-paper"
+              >
+                Ask AI
               </Link>
-              <Link href="/" className="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 font-['Space_Grotesk'] text-xs font-black uppercase tracking-[0.2em] text-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.08)] transition hover:border-cyan-300 hover:text-cyan-700">
+              <Link
+                href="/"
+                className="inline-flex h-10 items-center justify-center rounded-full bg-accent px-5 font-body text-[13px] font-semibold text-black transition duration-300 hover:bg-accent-dim"
+              >
                 Home
               </Link>
             </div>
           </div>
         </header>
 
-        <section className="relative z-10 mx-auto grid max-w-[1600px] grid-cols-1 gap-4 px-3 py-4 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[minmax(0,1fr)_390px]">
-          <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
-            <section className="overflow-hidden rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-7">
+        <section className="relative z-10 mx-auto grid max-w-[1400px] grid-cols-1 gap-6 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex min-w-0 flex-col gap-6">
+            <section>
               <div className="max-w-3xl">
-                <span className={lightPillClass}>Screens</span>
-                <h1 className="mt-3 font-['Space_Grotesk'] text-2xl font-black tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">Explore category-wise stocks</h1>
-                <p className="mt-2 text-xs leading-relaxed text-slate-500 sm:mt-3 sm:text-base">
-                  Ask in plain English. Price, volume, technicals, and supported fundamentals are screened against Bullseye&apos;s latest backend snapshot.
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className="h-px w-8 bg-accent/60" />
+                  <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
+                    Screens
+                  </span>
+                </div>
+                <h1 className="mt-5 font-display text-[clamp(2.2rem,5vw,3.6rem)] font-normal leading-[1.02] text-paper">
+                  Ask for a screen in <em className="italic text-accent">plain English</em>.
+                </h1>
+                <p className="mt-4 max-w-[58ch] font-body text-[15px] leading-8 text-paper-muted">
+                  Price, volume, technicals and supported fundamentals, screened against Bullseye&apos;s
+                  latest market snapshot — or write the SQL yourself.
                 </p>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-3 sm:mt-6">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-widest text-slate-400">Mode</span>
+              <div
+                className="mt-7 rounded-[22px] border border-accent/30 p-5"
+                style={{
+                  background:
+                    'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
+                  boxShadow: '0 26px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(245,196,81,0.14)',
+                }}
+              >
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-paper-muted">
+                    Mode
+                  </span>
                   {(['auto', 'nl', 'sql'] as const).map(option => (
                     <button
                       key={option}
                       type="button"
                       onClick={() => setMode(option)}
-                      className={`rounded-full px-3 py-1 font-['Space_Grotesk'] text-[11px] font-black uppercase tracking-wider transition ${
+                      className={`rounded-full px-3.5 py-1.5 font-body text-[11px] font-semibold uppercase tracking-wider transition duration-300 ${
                         mode === option
-                          ? 'bg-cyan-600 text-white shadow-[0_6px_18px_rgba(6,182,212,0.35)]'
-                          : 'border border-cyan-200 bg-white text-slate-500 hover:border-cyan-400 hover:text-cyan-700'
+                          ? 'bg-accent text-black'
+                          : 'border border-hairline text-paper-muted hover:border-accent/50 hover:text-paper'
                       }`}
                     >
                       {option === 'auto' ? 'Auto' : option === 'nl' ? 'English' : 'SQL'}
                     </button>
                   ))}
-                  <span className="text-[10px] text-slate-400">
+                  <span className="font-body text-[11px] text-paper-muted">
                     {mode === 'sql'
                       ? 'Write SQL over stock_snapshot'
                       : mode === 'nl'
@@ -652,27 +670,28 @@ export default function ScreensPage() {
                         ? 'SELECT symbol, name, price, roe, trailing_pe FROM stock_snapshot WHERE roe > 20 AND debt_to_equity < 50 ORDER BY roe DESC LIMIT 20'
                         : 'Ask AI: profitable stocks under PE 20 with ROE above 15 and low debt, best 1 month momentum first'
                     }
-                    className="min-h-14 flex-1 resize-none rounded-2xl border border-cyan-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 sm:min-h-16 font-['JetBrains_Mono']"
+                    className="min-h-16 flex-1 resize-none rounded-2xl border border-hairline bg-white/[0.03] px-5 py-4 font-numeric text-[13px] leading-6 text-paper outline-none transition placeholder:text-paper-muted/60 focus:border-accent/55 focus:bg-white/[0.05]"
                   />
-                  <Button
+                  <button
                     type="button"
-                    size="lg"
                     onClick={() => runQuery()}
                     disabled={!query.trim() || isSearching}
-                    className="lg:w-36"
+                    className="inline-flex h-12 shrink-0 items-center justify-center rounded-full bg-accent px-7 font-body text-[13px] font-semibold text-black transition duration-300 hover:bg-accent-dim disabled:opacity-50 lg:w-40"
                   >
                     {isSearching ? 'Thinking…' : mode === 'sql' ? 'Run SQL' : 'Ask AI'}
-                  </Button>
+                  </button>
                 </div>
-                <details className="mt-3">
-                  <summary className="cursor-pointer font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">Examples</summary>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                <details className="mt-4">
+                  <summary className="cursor-pointer font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">
+                    Examples
+                  </summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {examples.map(example => (
                       <button
                         key={example}
                         type="button"
                         onClick={() => runQuery(example)}
-                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-[11px] text-slate-600 transition hover:border-cyan-400 hover:text-cyan-700 sm:text-xs"
+                        className="rounded-full border border-hairline px-3.5 py-1.5 font-body text-[12px] text-paper-muted transition duration-300 hover:border-accent/50 hover:text-paper"
                       >
                         {example}
                       </button>
@@ -680,9 +699,9 @@ export default function ScreensPage() {
                   </div>
                 </details>
                 {isSearching && (
-                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-cyan-200 bg-white/80 px-3 py-2 text-xs font-bold text-cyan-700">
-                    <span className="h-1.5 w-1.5 animate-ping rounded-full bg-cyan-500" aria-hidden />
-                    {searchingMessage || 'Routing your request through Bullseye AI...'}
+                  <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-accent/25 bg-accent/[0.06] px-4 py-2.5 font-body text-[12px] text-accent">
+                    <span className="h-1.5 w-1.5 animate-ping rounded-full bg-accent" aria-hidden />
+                    {searchingMessage || 'Routing your request through Bullseye AI…'}
                   </div>
                 )}
               </div>
