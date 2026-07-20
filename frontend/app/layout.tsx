@@ -1,7 +1,37 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Space_Grotesk, Plus_Jakarta_Sans } from "next/font/google";
+import {
+  Geist,
+  Geist_Mono,
+  Space_Grotesk,
+  Plus_Jakarta_Sans,
+  Instrument_Serif,
+  Inter,
+  JetBrains_Mono,
+} from "next/font/google";
 import "./globals.css";
 import BackendWarmup from "@/components/BackendWarmup";
+
+// ── Redesign type system ────────────────────────────────────────────────────
+// Editorial serif display + clean sans body + mono for all numbers/prices.
+const displaySerif = Instrument_Serif({
+  variable: "--font-instrument",
+  weight: ["400"],
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const bodySans = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const numericMono = JetBrains_Mono({
+  variable: "--font-jbmono",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +66,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${plusJakarta.variable} h-full antialiased`}
+      className={`${displaySerif.variable} ${bodySans.variable} ${numericMono.variable} ${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${plusJakarta.variable} h-full antialiased`}
     >
       <head>
         {/* Start the Google Fonts connection early — the pages still load the

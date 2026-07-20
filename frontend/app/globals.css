@@ -99,6 +99,35 @@ body {
   40% { opacity: 1; transform: translateY(-3px); }
 }
 
+/* ── Redesign design tokens (2026 homepage rebuild) ──────────────────────────
+   Editorial serif display + clean sans body + mono numerals, on black with
+   emerald primary and gold reserved for actions/active state. Consumed as
+   Tailwind utilities: font-display / font-body / font-numeric, bg-ink,
+   text-primary, text-accent, etc. */
+@theme {
+  --font-display: var(--font-instrument), ui-serif, Georgia, "Times New Roman", serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-numeric: var(--font-jbmono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-ink: #000000;
+  --color-ink-soft: #07090c;
+  --color-glass: rgba(255, 255, 255, 0.04);
+  --color-glass-strong: rgba(255, 255, 255, 0.07);
+  --color-hairline: rgba(255, 255, 255, 0.10);
+  --color-primary: #34d399;
+  --color-primary-dim: #10b981;
+  --color-accent: #f5c451;
+  --color-accent-dim: #d9a531;
+  --color-paper: #f7f7f5;
+  --color-paper-muted: #a1a1aa;
+}
+
+/* Editorial headline defaults — Instrument Serif is optically large, so it
+   wants tighter leading and a hair of negative tracking at display sizes. */
+.font-display {
+  letter-spacing: -0.015em;
+}
+
 /* ── Immersive dark homepage (`.bullseye-night`) ─────────────────────────────
    The discovery hub was built in a light theme with explicit Tailwind utilities
    (bg-white/85, text-slate-950, border-slate-200…). Rather than hand-edit every

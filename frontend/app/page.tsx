@@ -7,10 +7,10 @@ import { STOCKS } from './stocks';
 import {
   DailySignalPreviewCard,
   HomeFeatureSection,
-  HomeHero,
   HowItWorksStack,
   MarketScanSection,
 } from '@/components/home';
+import { HeroSection } from '@/components/home/HeroSection';
 import { HomeAmbientBackground } from '@/components/home/HomeAmbientBackground';
 import BlurText from '@/components/ui/BlurText';
 
@@ -3994,10 +3994,6 @@ function HomeContent() {
         {/* IMMERSIVE BACKGROUND — dark base + Lightfall WebGL light-rain */}
         <HomeAmbientBackground />
 
-        {/* TICKER TAPE */}
-        <div className="relative z-20 w-full bg-[#050810]/90 backdrop-blur-xl border-b border-white/10 overflow-hidden py-3 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
-          <IndexTickerTape />
-        </div>
 
         {/* NAV */}
         <nav className="relative z-20 mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-2 border-b border-white/10 bg-[#060a14]/85 px-3 py-3 backdrop-blur-xl sm:gap-3 sm:px-6 sm:py-4 lg:flex-nowrap lg:gap-5">
@@ -4177,12 +4173,10 @@ function HomeContent() {
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
             <div className="bullseye-night animate-in fade-in duration-700 w-full flex flex-col gap-6">
-              <HomeHero
-                activeMarket={activeMarket}
-                visibleCount={visibleMarketStocks.length}
-                totalCount={marketStocks.length}
+              <HeroSection
                 signedIn={Boolean(user)}
                 onOpenDailySignals={openDailySignalSettings}
+                ticker={<IndexTickerTape />}
               />
 
               <MarketScanSection
