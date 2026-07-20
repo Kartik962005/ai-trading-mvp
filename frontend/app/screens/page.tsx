@@ -18,12 +18,6 @@ import { STOCKS } from '../stocks';
 import { enrichScreenRows } from './enrichRows';
 import { Button } from '@/components/ui';
 
-// Legible eyebrow pill for the LIGHT screener surfaces. (The shared Badge
-// primitive uses cyan-300 text tuned for dark backgrounds, which is low-contrast
-// on white — see DESIGN_SYSTEM light/dark note.)
-const lightPillClass =
-  "inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 font-['Space_Grotesk'] text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700";
-
 const BACKEND = '/api/backend';
 
 type ScreenMode = 'auto' | 'nl' | 'sql';
@@ -418,7 +412,6 @@ export default function ScreensPage() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchingMessage, setSearchingMessage] = useState('');
-  const [expandedSector, setExpandedSector] = useState<string | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
 
   const scrollToResults = () => {
@@ -546,10 +539,6 @@ export default function ScreensPage() {
     }
   };
 
-  const openSector = (sector: string) => {
-    setExpandedSector(current => current === sector ? null : sector);
-  };
-
   return (
     <main className="bullseye-night relative min-h-screen bg-black font-body text-paper selection:bg-accent/25">
       {/* Ambient scene — same language as the homepage, quieter so the data reads. */}
@@ -601,8 +590,8 @@ export default function ScreensPage() {
           </div>
         </header>
 
-        <section className="relative z-10 mx-auto grid max-w-[1400px] grid-cols-1 gap-6 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="flex min-w-0 flex-col gap-6">
+        <section className="relative z-10 mx-auto flex w-full max-w-[1120px] flex-col gap-16 px-5 py-14 sm:px-8">
+          <div className="flex min-w-0 flex-col gap-8">
             <section>
               <div className="max-w-3xl">
                 <div className="flex items-center gap-3">
@@ -708,9 +697,17 @@ export default function ScreensPage() {
             </section>
 
             {result && (
-              <section ref={resultsRef} className="scroll-mt-24 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_20px_70px_rgba(15,23,42,0.10)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
+              <section
+                ref={resultsRef}
+                className="scroll-mt-24 rounded-[22px] border border-hairline p-6 sm:p-7"
+                style={{
+                  background:
+                    'linear-gradient(145deg, rgba(20,22,19,0.92) 0%, rgba(8,10,9,0.96) 55%, rgba(16,18,15,0.92) 100%)',
+                  boxShadow: '0 26px 70px rgba(0,0,0,0.55)',
+                }}
+              >
                 <div className="mb-4">
-                  <span className={lightPillClass}>AI screener result</span>
+                  <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">AI screener result</span>
                   <h2 className="mt-2 font-['Space_Grotesk'] text-xl font-black text-slate-950 sm:text-2xl">{result.title}</h2>
                   {result.explanation && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">{result.explanation}</p>}
                   {result.source && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{result.source}</p>}
@@ -747,22 +744,51 @@ export default function ScreensPage() {
               </section>
             )}
 
+          </div>
+
+          {/* ── SCREEN LIBRARY ──────────────────────────────────────────────
+              Was a stack of cramped cards inside the narrow left column; now a
+              full-width browsable library with one rhythm per category. */}
+          <div className="flex flex-col gap-14">
+            <div className="flex items-center gap-3">
+              <span aria-hidden className="h-px w-8 bg-accent/60" />
+              <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
+                Screen library
+              </span>
+            </div>
+
             {SCREEN_SECTIONS.map(section => (
-              <section key={section.title} className="rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl sm:rounded-3xl sm:p-6">
-                <h2 className="font-['Space_Grotesk'] text-lg font-black text-slate-950 sm:text-xl">{section.title}</h2>
-                <p className="mt-1 text-xs text-slate-500 sm:text-sm">{section.subtitle}</p>
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <section key={section.title}>
+                <h2 className="font-display text-[clamp(1.5rem,2.6vw,2.1rem)] leading-tight text-paper">
+                  {section.title}
+                </h2>
+                <p className="mt-2 max-w-[62ch] font-body text-[14px] leading-7 text-paper-muted">
+                  {section.subtitle}
+                </p>
+                <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {section.items.map(item => (
                     <Link
                       key={item.slug}
                       href={`/screens/${item.slug}`}
-                      className="group min-h-[76px] rounded-xl border border-slate-200/80 bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-cyan-50/70 hover:shadow-[0_18px_45px_rgba(8,145,178,0.12)] sm:min-h-[92px] sm:rounded-2xl sm:p-4"
+                      className="group relative flex min-h-[128px] flex-col justify-between overflow-hidden rounded-[18px] border border-hairline p-5 transition duration-300 hover:-translate-y-1 hover:border-accent/55"
+                      style={{
+                        background:
+                          'linear-gradient(145deg, rgba(20,22,19,0.92) 0%, rgba(8,10,9,0.96) 55%, rgba(16,18,15,0.92) 100%)',
+                        boxShadow: '0 18px 46px rgba(0,0,0,0.5)',
+                      }}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="font-['Space_Grotesk'] text-sm font-black leading-snug text-slate-950">{item.title}</span>
-                        <span className="text-cyan-500 transition group-hover:translate-x-1">›</span>
+                      <div>
+                        <h3 className="font-display text-[19px] leading-snug text-paper transition group-hover:text-accent">
+                          {item.title}
+                        </h3>
+                        <p className="mt-2 line-clamp-2 font-body text-[12.5px] leading-6 text-paper-muted">
+                          {item.description}
+                        </p>
                       </div>
-                      <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-slate-500 sm:mt-2 sm:text-xs">{item.description}</p>
+                      <span className="mt-4 inline-flex items-center gap-1.5 font-body text-[11px] uppercase tracking-[0.18em] text-paper-muted transition group-hover:text-accent">
+                        Run screen
+                        <span aria-hidden className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+                      </span>
                     </Link>
                   ))}
                 </div>
@@ -770,72 +796,62 @@ export default function ScreensPage() {
             ))}
           </div>
 
-          <aside className="lg:sticky lg:top-[92px] lg:self-start">
-            <div className="rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl sm:rounded-3xl sm:p-5">
-              <h2 className="font-['Space_Grotesk'] text-lg font-black sm:text-xl">Browse sectors</h2>
-              <p className="mt-1 text-xs text-slate-500">Only sectors with stocks in the Bullseye database are shown.</p>
-              <div className="mt-4 flex max-h-[62vh] flex-col gap-2 overflow-y-auto pr-1">
-                {sectors.map(sector => {
-                  const isOpen = expandedSector === sector.name;
-                  const previewRows = isOpen ? getRowsForSector(sector.name).slice(0, 5) : [];
-
-                  return (
-                    <div
-                      key={sector.name}
-                      className={`rounded-xl border bg-white transition ${isOpen ? 'border-cyan-300 shadow-[0_16px_38px_rgba(8,145,178,0.12)]' : 'border-slate-200 hover:border-cyan-300'}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => openSector(sector.name)}
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[11px] text-slate-600 transition hover:bg-cyan-50 hover:text-cyan-700 sm:text-xs"
-                      >
-                        <span>{sector.name}</span>
-                        <span className="shrink-0 text-slate-400">{sector.count}</span>
-                      </button>
-
-                      {isOpen && (
-                        <div className="border-t border-slate-100 px-3 pb-3 pt-2">
-                          <div className="flex flex-col gap-1.5">
-                            {previewRows.map(row => (
-                              <Link
-                                key={row.stock.ticker}
-                                href={`/?ticker=${encodeURIComponent(row.stock.ticker)}`}
-                                className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600 transition hover:bg-cyan-50 hover:text-cyan-700"
-                              >
-                                <span className="min-w-0 truncate font-bold">{row.stock.name}</span>
-                                <span className="shrink-0 font-['JetBrains_Mono'] text-[10px] text-slate-400">{row.stock.symbol}</span>
-                              </Link>
-                            ))}
-                          </div>
-                          <Link
-                            href={`/screens/sector/${encodeURIComponent(sector.name)}`}
-                            className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-slate-950 px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-cyan-600"
-                          >
-                            Show full detailed list
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+          {/* ── BROWSE BY SECTOR ────────────────────────────────────────────
+              Was a cramped scrolling list wedged into a 380px sidebar. Sector
+              navigation is browsing, not a feed, so it is now a full-width row
+              of chips that go straight to the sector page. */}
+          <div>
+            <div className="flex items-center gap-3">
+              <span aria-hidden className="h-px w-8 bg-accent/60" />
+              <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
+                Browse by sector
+              </span>
             </div>
-
-            <div className="mt-4 rounded-2xl border border-white/70 bg-white/82 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-2xl sm:mt-6 sm:rounded-3xl sm:p-5">
-              <h2 className="font-['Space_Grotesk'] text-lg font-black sm:text-xl">Popular stock screens</h2>
-              <div className="mt-4 flex flex-col gap-2">
-                {ALL_SCREENS.slice(0, 10).map(item => (
-                  <Link
-                    key={`quick-${item.slug}`}
-                    href={`/screens/${item.slug}`}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-600 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-700"
-                  >
-                    {item.title}
-                  </Link>
-                ))}
-              </div>
+            <h2 className="mt-5 font-display text-[clamp(1.5rem,2.6vw,2.1rem)] leading-tight text-paper">
+              Start from an industry.
+            </h2>
+            <p className="mt-2 max-w-[62ch] font-body text-[14px] leading-7 text-paper-muted">
+              Only sectors that actually have stocks in the Bullseye database are listed.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-2.5">
+              {sectors.map(sector => (
+                <Link
+                  key={sector.name}
+                  href={`/screens/sector/${encodeURIComponent(sector.name)}`}
+                  className="group inline-flex items-center gap-3 rounded-full border border-hairline px-4 py-2.5 transition duration-300 hover:-translate-y-0.5 hover:border-accent/55"
+                >
+                  <span className="font-body text-[13px] text-paper transition group-hover:text-accent">
+                    {sector.name}
+                  </span>
+                  <span className="font-numeric text-[11px] text-paper-muted">{sector.count}</span>
+                </Link>
+              ))}
             </div>
-          </aside>
+          </div>
+
+          {/* ── POPULAR SCREENS ─────────────────────────────────────────── */}
+          <div>
+            <div className="flex items-center gap-3">
+              <span aria-hidden className="h-px w-8 bg-accent/60" />
+              <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
+                Popular
+              </span>
+            </div>
+            <h2 className="mt-5 font-display text-[clamp(1.5rem,2.6vw,2.1rem)] leading-tight text-paper">
+              Most-run screens.
+            </h2>
+            <div className="mt-7 flex flex-wrap gap-2.5">
+              {ALL_SCREENS.slice(0, 10).map(item => (
+                <Link
+                  key={`quick-${item.slug}`}
+                  href={`/screens/${item.slug}`}
+                  className="inline-flex items-center rounded-full border border-hairline px-4 py-2.5 font-body text-[13px] text-paper-muted transition duration-300 hover:-translate-y-0.5 hover:border-accent/55 hover:text-paper"
+                >
+                  {item.title}
+                </Link>
+              ))}
+            </div>
+          </div>
         </section>
       </div>
     </main>
