@@ -6,8 +6,8 @@ import useSWR from 'swr';
 import { STOCKS } from './stocks';
 import {
   DailySignalPreviewCard,
-  HowItWorksStack,
 } from '@/components/home';
+import { SignalCardStory } from '@/components/home/SignalCardStory';
 import { HeroSection } from '@/components/home/HeroSection';
 import { SectionShell } from '@/components/home/SectionShell';
 import { LiveScanSection } from '@/components/home/LiveScanSection';
@@ -4204,7 +4204,7 @@ function HomeContent() {
                 ))}
               </LiveScanSection>
 
-              <HowItWorksStack />
+              <SignalCardStory />
 
               <SectionShell
                 eyebrow="Daily signals"
