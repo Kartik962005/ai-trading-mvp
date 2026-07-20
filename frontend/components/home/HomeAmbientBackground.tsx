@@ -1,72 +1,60 @@
 "use client";
 
-// Full-viewport immersive background for the homepage: a dark base + soft
-// vignette always render (so mobile / reduced-motion get a clean dark theme),
-// and the React Bits Lightfall WebGL "light rain" streams on top on desktop.
+// Full-viewport immersive background for the homepage: the Candlestick Canyon
+// 3D scene (three.js) that the camera flies through as the page scrolls.
+// A dark base always renders underneath, so reduced-motion users and any
+// device without WebGL still get a clean, consistent dark page.
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
-const Lightfall = dynamic(() => import("@/components/reactbits/Lightfall"), { ssr: false });
+const CandlestickCanyon = dynamic(() => import("@/components/three/CandlestickCanyon"), {
+  ssr: false,
+});
 
 export function HomeAmbientBackground() {
   const [enabled, setEnabled] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const check = () => {
-      // Animate on ALL screen sizes (including mobile); only reduced-motion opts out.
-      setEnabled(!media.matches);
-      setIsMobile(window.innerWidth < 768);
+      // Runs on every screen size — only reduced-motion opts out.
+      const supportsWebGL = (() => {
+        try {
+          const canvas = document.createElement("canvas");
+          return !!(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+        } catch {
+          return false;
+        }
+      })();
+      setEnabled(!media.matches && supportsWebGL);
     };
     check();
-    window.addEventListener("resize", check);
     media.addEventListener?.("change", check);
-    return () => {
-      window.removeEventListener("resize", check);
-      media.removeEventListener?.("change", check);
-    };
+    return () => media.removeEventListener?.("change", check);
   }, []);
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-      {/* Dark base — guarantees a consistent dark theme even before/without WebGL. */}
-      <div className="absolute inset-0 bg-[#04070f]" />
+      {/* Dark base — always present so the page never flashes light. */}
+      <div className="absolute inset-0 bg-[#03060e]" />
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(1000px 560px at 50% 30%, rgba(34,211,238,0.08), transparent 60%), radial-gradient(900px 600px at 85% 40%, rgba(82,39,255,0.09), transparent 55%)",
+            "radial-gradient(900px 520px at 50% 42%, rgba(59,169,255,0.10), transparent 62%)",
         }}
       />
-      {enabled && (
-        <div className="absolute inset-0 opacity-90">
-          <Lightfall
-            // Lower DPR + fewer streaks on phones keeps the WebGL cheap there.
-            dpr={isMobile ? 1 : undefined}
-            colors={["#A6C8FF", "#5227FF", "#FF9FFC", "#22d3ee"]}
-            backgroundColor="#0A29FF"
-            speed={0.7}
-            streakCount={isMobile ? 5 : 7}
-            streakWidth={1}
-            streakLength={1}
-            glow={1}
-            density={0.9}
-            twinkle={1}
-            zoom={2.2}
-            backgroundGlow={0.9}
-            opacity={1}
-            mouseInteraction
-            mouseStrength={1}
-            mouseRadius={0.6}
-          />
-        </div>
-      )}
-      {/* Fade the streaks toward the bottom so lower content stays legible. */}
+
+      {enabled && <CandlestickCanyon />}
+
+      {/* Vignette so foreground content stays readable over the scene. */}
       <div
         className="absolute inset-0"
-        style={{ background: "linear-gradient(180deg, transparent 0%, rgba(4,7,15,0.35) 60%, rgba(4,7,15,0.72) 100%)" }}
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(3,6,14,0.72) 0%, rgba(3,6,14,0.28) 26%, rgba(3,6,14,0.45) 70%, rgba(3,6,14,0.86) 100%)",
+        }}
       />
     </div>
   );
