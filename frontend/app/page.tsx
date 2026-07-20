@@ -1039,33 +1039,49 @@ const GlobalNewsPanel = () => {
   ];
 
   return (
-    <section className="global-news-panel rounded-3xl border border-white/10 bg-white/[0.05] p-5 shadow-[0_22px_70px_rgba(15,23,42,0.18)] sm:p-6">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)]" />
-          <h2 className="global-news-heading text-xs font-black uppercase tracking-[0.22em] text-cyan-100 font-['Space_Grotesk']">Global Market News</h2>
-        </div>
-        <span className="global-news-pill rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-100 font-['JetBrains_Mono']">
-          Live context
-        </span>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-5">
-        {stories.slice(0, 5).map((story, index) => (
-          <article key={`${story.title}-${index}`} className="global-news-card rounded-2xl border border-white/10 bg-slate-950/70 p-4 transition-colors hover:border-cyan-300/35">
-            <div className="global-news-source text-[9px] font-black uppercase tracking-widest text-cyan-300 font-['JetBrains_Mono']">{story.source}</div>
-            {story.url ? (
-              <a href={story.url} target="_blank" rel="noreferrer" className="global-news-title mt-2 block text-sm font-black leading-5 text-white transition hover:text-cyan-200 font-['Space_Grotesk']">
-                {story.title}
-              </a>
-            ) : (
-              <h3 className="global-news-title mt-2 text-sm font-black leading-5 text-white font-['Space_Grotesk']">{story.title}</h3>
-            )}
-            <p className="global-news-copy mt-3 text-[11px] leading-5 text-slate-300 font-['JetBrains_Mono']">{buildMarketNewsRead(story.title)}</p>
-            {story.url && <div className="mt-3 text-[9px] font-black uppercase tracking-widest text-cyan-200/80 font-['JetBrains_Mono']">Open source</div>}
-          </article>
-        ))}
-      </div>
-    </section>
+    <div className="grid gap-4 lg:grid-cols-3">
+      {stories.slice(0, 3).map((story, index) => (
+        <article
+          key={`${story.title}-${index}`}
+          className="group relative overflow-hidden rounded-[20px] border border-hairline p-6 transition duration-300 hover:border-accent/40"
+          style={{
+            background:
+              'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
+            boxShadow: '0 22px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(245,196,81,0.14)',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-[5px] w-[5px] rounded-full bg-accent" />
+            <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
+              {story.source || 'Market'}
+            </span>
+          </div>
+
+          {story.url ? (
+            <a
+              href={story.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 block font-display text-[21px] leading-snug text-paper transition group-hover:text-accent"
+            >
+              {story.title}
+            </a>
+          ) : (
+            <h3 className="mt-4 font-display text-[21px] leading-snug text-paper">{story.title}</h3>
+          )}
+
+          <p className="mt-3 font-body text-[13px] leading-6 text-paper-muted">
+            {buildMarketNewsRead(story.title)}
+          </p>
+
+          {story.url && (
+            <div className="mt-5 font-body text-[11px] uppercase tracking-[0.2em] text-paper-muted transition group-hover:text-accent">
+              Read source →
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
   );
 };
 
