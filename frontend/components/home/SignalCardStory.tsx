@@ -40,6 +40,7 @@ export function SignalCardStory() {
   const stageRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const beatRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const captionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -56,10 +57,16 @@ export function SignalCardStory() {
       const travel = Math.max(1, rect.height - vh);
       const p = clamp01(-rect.top / travel);
 
-      // Only show the fixed stage while this section owns the viewport.
+      // Only show the fixed stage AND its captions while this section owns the
+      // viewport — otherwise the last beat stays pinned over the rest of the page.
       const inView = rect.top <= 0 && rect.bottom >= vh * 0.9;
       stage.style.opacity = inView ? "1" : "0";
       stage.style.visibility = inView ? "visible" : "hidden";
+      const captions = captionsRef.current;
+      if (captions) {
+        captions.style.opacity = inView ? "1" : "0";
+        captions.style.visibility = inView ? "visible" : "hidden";
+      }
 
       const flip = seg(p, 0.16, 0.34);
       const fan = seg(p, 0.36, 0.56);
@@ -171,7 +178,11 @@ export function SignalCardStory() {
       </div>
 
       {/* Beat captions, stacked in the middle of the stage. */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-[12vh] z-20 flex justify-center px-6">
+      <div
+        ref={captionsRef}
+        className="pointer-events-none fixed inset-x-0 bottom-[12vh] z-20 flex justify-center px-6 transition-opacity duration-300"
+        style={{ opacity: 0, visibility: "hidden" }}
+      >
         <div className="relative h-32 w-full max-w-[720px] text-center">
           {BEATS.map((beat, i) => (
             <div

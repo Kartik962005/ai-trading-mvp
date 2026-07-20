@@ -52,8 +52,10 @@ export function HomeAmbientBackground() {
       <div
         className="absolute inset-0"
         style={{
+          // Hero stays open so the globe reads; everything below is scrimmed
+          // hard so body copy never competes with the scene behind it.
           background:
-            "linear-gradient(180deg, rgba(0,0,0,0.70) 0%, rgba(0,0,0,0.25) 28%, rgba(0,0,0,0.42) 68%, rgba(0,0,0,0.88) 100%)",
+            "linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.18) 20%, rgba(0,0,0,0.60) 42%, rgba(0,0,0,0.80) 70%, rgba(0,0,0,0.93) 100%)",
         }}
       />
     </div>

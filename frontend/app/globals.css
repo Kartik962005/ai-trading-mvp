@@ -119,7 +119,9 @@ body {
   --color-accent: #f5c451;
   --color-accent-dim: #d9a531;
   --color-paper: #f7f7f5;
-  --color-paper-muted: #a1a1aa;
+  /* Kept deliberately bright: this sits over a live 3D scene, so the usual
+     zinc-400 muted tone disappears into the background glow. */
+  --color-paper-muted: #c6c6cd;
 }
 
 /* Editorial headline defaults — Instrument Serif is optically large, so it

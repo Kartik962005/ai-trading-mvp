@@ -563,9 +563,9 @@ const INDICATOR_NAMES = [
 // Homepage is intentionally a lean, fast "featured" view: only a handful of
 // India stocks, all analyzed eagerly (few enough to stay fast). Deep browsing
 // lives in the Screener.
-const STOCKS_PER_PAGE = 7;
-const STOCK_PAGE_LIMIT = 7;
-const FEATURED_ANALYSIS_COUNT = 7;
+const STOCKS_PER_PAGE = 6;
+const STOCK_PAGE_LIMIT = 6;
+const FEATURED_ANALYSIS_COUNT = 6;
 const MARKET_SHUFFLE_VERSION = 'sector-mix-v1';
 
 
@@ -751,18 +751,7 @@ const MarketAssetCard = ({
 
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
-  const verdictColor = isReady
-    ? (isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400')
-    : 'text-cyan-600';
   const verdictBadge = isReady ? analysisView.displayVerdict.replace('Strong ', '') : 'Analyzing';
-
-  // Mini verdict dot shown even before hover when prefetch is done
-  const dotColor = isReady
-    ? (isBull ? 'bg-green-400' : isHold ? 'bg-zinc-400' : 'bg-red-400')
-    : 'bg-cyan-400';
-  const signalGradient = isReady
-    ? (isBull ? 'from-emerald-400 to-cyan-400' : isHold ? 'from-slate-400 to-cyan-300' : 'from-rose-400 to-orange-300')
-    : 'from-cyan-300 to-sky-300';
 
   // Cursor-driven 3D tilt (cheap — only ~7 cards on the homepage). Mutates the
   // DOM node directly to avoid re-rendering on every mousemove.
@@ -786,59 +775,82 @@ const MarketAssetCard = ({
       data-market-card={stock.ticker}
       onMouseMove={handleTilt}
       onMouseLeave={resetTilt}
-      style={{ transformStyle: 'preserve-3d', transition: 'transform 0.15s ease, box-shadow 0.3s ease' }}
-      className={`relative w-full min-h-[164px] p-4 sm:p-5 border bg-white/85 backdrop-blur-md rounded-[22px] group flex flex-col justify-start overflow-hidden select-none shadow-[0_18px_55px_rgba(0,0,0,0.35)] hover:shadow-[0_30px_80px_rgba(8,145,178,0.28)] will-change-transform
-        border-slate-200/80 hover:border-cyan-300`}
+      style={{
+        transformStyle: 'preserve-3d',
+        transition: 'transform 0.15s ease, box-shadow 0.3s ease, border-color 0.3s ease',
+        background:
+          'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
+        boxShadow: '0 22px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(245,196,81,0.14)',
+      }}
+      className="group relative flex w-full select-none flex-col overflow-hidden rounded-[20px] border border-accent/25 p-6 will-change-transform hover:border-accent/55"
     >
-      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${signalGradient}`} />
-      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-100/55 blur-2xl opacity-0 transition-opacity group-hover:opacity-100" />
-      <div className="relative flex justify-between items-start gap-2 mb-5">
+      {/* Verdict edge */}
+      <div
+        className="absolute inset-x-0 top-0 h-[2px]"
+        style={{
+          background: isReady
+            ? (isBull ? '#34d399' : isHold ? 'rgba(255,255,255,0.25)' : '#fb7185')
+            : 'rgba(245,196,81,0.55)',
+        }}
+      />
+
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <span className="block truncate text-[11px] font-black font-['JetBrains_Mono'] text-slate-500 transition-colors group-hover:text-cyan-600">{stock.symbol}</span>
-          <span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500 font-['JetBrains_Mono']">{stock.exchange}</span>
+          <div className="truncate font-numeric text-[15px] tracking-tight text-paper">{stock.symbol}</div>
+          <div className="mt-1.5 font-body text-[10px] uppercase tracking-[0.2em] text-paper-muted">
+            {stock.exchange}
+          </div>
         </div>
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Live verdict dot — green/red/grey based on prefetch status */}
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} title={isReady ? analysisView.displayVerdict : 'Running FISO analysis'} />
-          <button
-            type="button"
-            onPointerDown={(e) => { e.stopPropagation(); onPreview(stock); }}
-            onClick={(e) => { e.stopPropagation(); onPreview(stock); }}
-            className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-cyan-600 hover:bg-cyan-50 hover:border-cyan-300 transition-all flex items-center justify-center shrink-0 shadow-sm"
-            aria-label={`Open ${stock.symbol} preview`}
-            title="Open preview"
-          >
-            <span className="text-xs transition-transform group-hover:-rotate-90">⌄</span>
-          </button>
-        </div>
-      </div>
-      <div className="relative font-black text-base text-slate-950 font-['Space_Grotesk'] leading-snug line-clamp-2 min-h-11">{stock.name}</div>
-
-      <div className="relative mt-3 flex min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-2 sm:px-3">
-        <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400 sm:text-[10px] sm:tracking-widest">Price</span>
-        <span className="min-w-0 truncate text-right font-['JetBrains_Mono'] text-xs font-black text-slate-950 sm:text-sm">
-          {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : 'Fetching'}
-        </span>
-      </div>
-      <div className="relative mt-2 flex min-w-0 items-center justify-between gap-2 px-1">
-        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Face Value</span>
-        <span className="text-[10px] font-black text-slate-600 font-['JetBrains_Mono']">{formatFaceValue(stock)}</span>
+        <button
+          type="button"
+          onPointerDown={(e) => { e.stopPropagation(); onPreview(stock); }}
+          onClick={(e) => { e.stopPropagation(); onPreview(stock); }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline text-paper-muted transition duration-300 hover:border-accent/60 hover:text-accent"
+          aria-label={`Open ${stock.symbol} preview`}
+          title="Open preview"
+        >
+          <span className="text-xs transition-transform duration-300 group-hover:rotate-45">↗</span>
+        </button>
       </div>
 
-      <div className="relative mt-5 flex items-center justify-between gap-3">
-        <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+      <div className="relative mt-4 line-clamp-2 min-h-[3.2rem] font-display text-[20px] leading-snug text-paper">
+        {stock.name}
+      </div>
+
+      <div className="relative mt-5 flex items-end justify-between gap-3 border-t border-hairline pt-4">
+        <div>
+          <div className="font-body text-[9px] uppercase tracking-[0.22em] text-paper-muted">Price</div>
+          <div className="mt-1.5 font-numeric text-[19px] leading-none text-paper">
+            {Number.isFinite(quickPrice) && quickPrice > 0
+              ? `${stock.currency}${quickPrice.toLocaleString()}`
+              : '—'}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="font-body text-[9px] uppercase tracking-[0.22em] text-paper-muted">Face value</div>
+          <div className="mt-1.5 font-numeric text-[13px] leading-none text-paper-muted">
+            {formatFaceValue(stock)}
+          </div>
+        </div>
+      </div>
+
+      <div className="relative mt-5 flex items-center gap-3">
+        <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/10">
           <div
             className="h-full rounded-full transition-all duration-1000"
             style={{
-              width: `${isReady ? analysisView.confidenceLevel : 28}%`,
-              opacity: isReady ? 1 : 0.75,
+              width: `${isReady ? analysisView.confidenceLevel : 22}%`,
               backgroundColor: isReady
-                ? (isBull ? '#4ade80' : isHold ? '#71717a' : '#f87171')
-                : '#22d3ee',
+                ? (isBull ? '#34d399' : isHold ? '#a1a1aa' : '#fb7185')
+                : '#f5c451',
             }}
           />
         </div>
-        <span className={`shrink-0 text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk'] ${verdictColor}`}>
+        <span
+          className={`shrink-0 font-body text-[10px] font-semibold uppercase tracking-[0.18em] ${
+            isReady ? (isBull ? 'text-primary' : isHold ? 'text-paper-muted' : 'text-rose-300') : 'text-accent'
+          }`}
+        >
           {verdictBadge}
         </span>
       </div>
