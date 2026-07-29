@@ -73,11 +73,20 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
         value: row => `${row.stock.name} (${row.stock.symbol})`,
         render: row => (
           <>
-            <Link href={`/?ticker=${encodeURIComponent(row.stock.ticker)}`} className="font-['Space_Grotesk'] text-sm font-bold text-cyan-700 hover:text-cyan-500">
+            <Link
+              href={`/?ticker=${encodeURIComponent(row.stock.ticker)}`}
+              className="font-display text-[16px] leading-snug text-paper transition hover:text-accent"
+            >
               {row.stock.name}
             </Link>
-            <div className="mt-0.5 text-[10px] font-['JetBrains_Mono'] text-slate-400">{row.stock.symbol} - {row.stock.exchange}</div>
-            {row.reason && <div className="mt-1 max-w-[300px] text-[10px] leading-relaxed text-slate-500">{row.reason}</div>}
+            <div className="mt-1 font-numeric text-[10px] tracking-wide text-paper-muted">
+              {row.stock.symbol} · {row.stock.exchange}
+            </div>
+            {row.reason && (
+              <div className="mt-1.5 max-w-[300px] font-body text-[11px] leading-relaxed text-paper-muted/80">
+                {row.reason}
+              </div>
+            )}
           </>
         ),
       },
@@ -102,10 +111,12 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
         value: row => row.score,
         render: row => (
           <>
-            <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-black text-cyan-700">{row.score}</span>
+            <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-numeric text-[11px] text-primary">
+              {row.score}
+            </span>
             {row.technical && (
-              <div className="mt-2 whitespace-nowrap text-[10px] font-['JetBrains_Mono'] text-slate-500">
-                {row.technical.gainStreakDays ?? 0}d up / {row.technical.volumeRatioVsPreviousWeek?.toFixed(2) ?? '-'}x vol
+              <div className="mt-2 whitespace-nowrap font-numeric text-[10px] text-paper-muted">
+                {row.technical.gainStreakDays ?? 0}d up · {row.technical.volumeRatioVsPreviousWeek?.toFixed(2) ?? '-'}x vol
               </div>
             )}
           </>
@@ -141,36 +152,57 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/80 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{rows.length} rows - {visibleColumns.length} columns</div>
-        <div className="flex flex-wrap items-center gap-1">
-          <button type="button" onClick={downloadCsv} className="h-8 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:border-emerald-400">Download CSV</button>
+    <div
+      className="overflow-hidden rounded-[20px] border border-hairline"
+      style={{
+        background:
+          'linear-gradient(145deg, rgba(18,20,17,0.92) 0%, rgba(7,9,8,0.96) 55%, rgba(14,16,13,0.92) 100%)',
+        boxShadow: '0 26px 70px rgba(0,0,0,0.55)',
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-3">
+        <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">
+          {rows.length} rows · {visibleColumns.length} columns
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={downloadCsv}
+            className="inline-flex h-8 items-center rounded-full bg-accent px-4 font-body text-[10px] font-semibold uppercase tracking-widest text-black transition duration-300 hover:bg-accent-dim"
+          >
+            Download CSV
+          </button>
           {removableHiddenCount > 0 && (
-            <button type="button" onClick={() => setHiddenColumns(new Set())} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:border-cyan-300">Reset columns</button>
+            <button
+              type="button"
+              onClick={() => setHiddenColumns(new Set())}
+              className="inline-flex h-8 items-center rounded-full border border-hairline px-3 font-body text-[10px] font-medium uppercase tracking-widest text-paper-muted transition hover:border-accent/50 hover:text-paper"
+            >
+              Reset columns
+            </button>
           )}
-          <button type="button" onClick={() => changeZoom(-0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom out">-</button>
-          <button type="button" onClick={() => setTableZoom(0.78)} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:border-cyan-300">{Math.round(tableZoom * 100)}%</button>
-          <button type="button" onClick={() => changeZoom(0.08)} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-700" aria-label="Zoom in">+</button>
+          <button type="button" onClick={() => changeZoom(-0.08)} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-hairline text-sm text-paper-muted transition hover:border-accent/50 hover:text-paper" aria-label="Zoom out">−</button>
+          <button type="button" onClick={() => setTableZoom(0.78)} className="inline-flex h-8 items-center rounded-full border border-hairline px-3 font-numeric text-[11px] text-paper-muted transition hover:border-accent/50 hover:text-paper">{Math.round(tableZoom * 100)}%</button>
+          <button type="button" onClick={() => changeZoom(0.08)} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-hairline text-sm text-paper-muted transition hover:border-accent/50 hover:text-paper" aria-label="Zoom in">+</button>
         </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left" style={{ zoom: tableZoom, minWidth: tableMinWidth } as CSSProperties}>
-          <thead className="bg-slate-950 text-white">
-            <tr>
+          <thead>
+            <tr className="border-b border-hairline bg-white/[0.03]">
               {visibleColumns.map(column => (
-                <th key={column.id} className="px-4 py-3 text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']">
-                  <span className="inline-flex items-center gap-2">
+                <th key={column.id} className="px-4 py-4 font-body text-[10px] font-medium uppercase tracking-[0.18em] text-paper-muted">
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
                     {column.label}
                     {column.removable && (
                       <button
                         type="button"
                         onClick={() => removeColumn(column.id)}
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-[10px] text-slate-200 transition hover:border-red-200 hover:bg-red-500 hover:text-white"
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-hairline text-[9px] text-paper-muted transition hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-200"
                         aria-label={`Remove ${column.label} column`}
                         title={`Remove ${column.label}`}
                       >
-                        x
+                        ✕
                       </button>
                     )}
                   </span>
@@ -180,9 +212,18 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={row.stock.ticker} className="border-t border-slate-100 odd:bg-white even:bg-slate-50/70 hover:bg-cyan-50/70">
+              <tr key={row.stock.ticker} className="border-b border-white/[0.05] transition-colors hover:bg-white/[0.035]">
                 {visibleColumns.map(column => (
-                  <td key={`${row.stock.ticker}-${column.id}`} className={`px-4 py-3 ${column.id === 'name' || column.id === 'score' ? '' : "text-xs font-['JetBrains_Mono'] text-slate-700"}`}>
+                  <td
+                    key={`${row.stock.ticker}-${column.id}`}
+                    className={
+                      column.id === 'name' || column.id === 'score'
+                        ? 'px-4 py-4 align-top'
+                        : column.id === 'serial'
+                          ? 'px-4 py-4 align-top font-numeric text-[12px] text-paper-muted'
+                          : 'px-4 py-4 align-top font-numeric text-[13px] text-paper'
+                    }
+                  >
                     {column.render ? column.render(row, index) : formatCellValue(column.value(row, index))}
                   </td>
                 ))}

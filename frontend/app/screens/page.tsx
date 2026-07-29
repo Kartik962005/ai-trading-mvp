@@ -146,20 +146,20 @@ function GeneratedSqlPanel({ sql, mode }: { sql: string; mode?: string }) {
 
 function AggregateTable({ table }: { table: AggregateTableData }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="w-full min-w-[360px] text-left text-xs">
-        <thead className="bg-slate-100 text-slate-600">
-          <tr>
+    <div className="overflow-x-auto rounded-2xl border border-hairline">
+      <table className="w-full min-w-[360px] text-left">
+        <thead>
+          <tr className="border-b border-hairline bg-white/[0.03]">
             {table.columns.map(column => (
-              <th key={column} className="px-3 py-2 font-black uppercase tracking-wider">{column}</th>
+              <th key={column} className="px-4 py-3 font-body text-[10px] font-medium uppercase tracking-[0.18em] text-paper-muted">{column}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {table.rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-t border-slate-100">
+            <tr key={rowIndex} className="border-b border-white/[0.05] transition-colors hover:bg-white/[0.035]">
               {row.map((cell, cellIndex) => (
-                <td key={cellIndex} className="px-3 py-2 text-slate-700 font-['JetBrains_Mono']">{formatCellValue(cell)}</td>
+                <td key={cellIndex} className="px-4 py-3 font-numeric text-[13px] text-paper">{formatCellValue(cell)}</td>
               ))}
             </tr>
           ))}
