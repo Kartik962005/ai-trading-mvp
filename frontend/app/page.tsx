@@ -3322,22 +3322,23 @@ function HomeContent() {
       const chart = createChart(container, {
         width: initW,
         height: initH,
-        layout: { background: { color: 'transparent' }, textColor: '#475569' },
-        grid: { vertLines: { color: 'rgba(15,23,42,0.08)' }, horzLines: { color: 'rgba(15,23,42,0.08)' } },
+        layout: { background: { color: 'transparent' }, textColor: '#c6c6cd' },
+        grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
         crosshair: { mode: 1 },
         timeScale: {
           timeVisible: chartRange === '1d' || chartRange === '1w',
           secondsVisible: false,
-          borderColor: 'rgba(15,23,42,0.12)',
+          borderColor: 'rgba(255,255,255,0.12)',
           fixLeftEdge: chartRange !== 'max',
           fixRightEdge: true,
           rightOffset: 5,
         },
+        rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)' },
       });
 
       const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#22c55e', downColor: '#ef4444',
-        borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+        upColor: '#34d399', downColor: '#fb7185',
+        borderVisible: false, wickUpColor: '#34d399', wickDownColor: '#fb7185'
       });
       const isIntraday = chartRange === '1d' || chartRange === '1w';
       const formattedData = chartData
@@ -3361,11 +3362,11 @@ function HomeContent() {
           const indicatorChart = createChart(pane, {
             width: paneWidth,
             height: indicatorHeight,
-            layout: { background: { color: '#ffffff' }, textColor: '#475569' },
-            grid: { vertLines: { color: 'rgba(15,23,42,0.05)' }, horzLines: { color: 'rgba(15,23,42,0.06)' } },
+            layout: { background: { color: 'transparent' }, textColor: '#c6c6cd' },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
             crosshair: { mode: 1 },
             rightPriceScale: {
-              borderColor: 'rgba(15,23,42,0.12)',
+              borderColor: 'rgba(255,255,255,0.12)',
               scaleMargins: { top: 0.18, bottom: 0.18 },
             },
             timeScale: {
@@ -3833,15 +3834,19 @@ function HomeContent() {
           color: #ffffff !important;
         }
         .stock-view-toggle-active {
-          color: #083344 !important;
-          background: rgba(207, 250, 254, 0.96) !important;
-          border-color: rgba(6, 182, 212, 0.45) !important;
-          box-shadow: 0 12px 28px rgba(6, 182, 212, 0.16);
+          color: #000000 !important;
+          background: #f5c451 !important;
+          border-color: #f5c451 !important;
+          box-shadow: 0 12px 28px rgba(245, 196, 81, 0.22);
         }
         .stock-view-toggle-idle {
-          color: #475569 !important;
-          background: rgba(255, 255, 255, 0.72) !important;
-          border-color: rgba(148, 163, 184, 0.30) !important;
+          color: #c6c6cd !important;
+          background: rgba(255, 255, 255, 0.04) !important;
+          border-color: rgba(255, 255, 255, 0.12) !important;
+        }
+        .stock-view-toggle-idle:hover {
+          background: rgba(255, 255, 255, 0.07) !important;
+          border-color: rgba(245, 196, 81, 0.4) !important;
         }
         /* Active chart range button: preserve white text in light mode */
         .chart-range-btn-active { color: #ffffff !important; }
@@ -4278,19 +4283,19 @@ function HomeContent() {
 
           {/* ── VIEW 2: STOCK DASHBOARD ── */}
           {ticker && (
-            <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 w-full min-w-0 flex flex-col gap-6">
+            <div className="bullseye-night animate-in fade-in slide-in-from-bottom-8 duration-700 w-full min-w-0 flex flex-col gap-6">
 
               {/* Header */}
               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between border-b border-white/10 pb-5 gap-3 relative">
-                <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 h-[1px] bg-gradient-to-r from-transparent via-[rgba(245,196,81,0.4)] to-transparent" />
                 <div>
                   <button onClick={goHome}
-                    className="text-zinc-400 font-bold uppercase text-[10px] hover:text-cyan-400 transition-colors flex items-center gap-2 tracking-[0.2em] mb-3 bg-white/5 hover:bg-cyan-500/5 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10 hover:border-cyan-400/30">
+                    className="mb-4 inline-flex items-center gap-2 rounded-full border border-hairline bg-glass px-3.5 py-1.5 font-body text-[11px] font-medium text-paper-muted backdrop-blur-md transition duration-300 hover:border-accent/50 hover:text-accent">
                     ← Overview
                   </button>
-                  <h1 className="break-words font-black text-4xl sm:text-5xl lg:text-6xl text-white uppercase tracking-normal font-['Space_Grotesk'] drop-shadow-[0_2px_20px_rgba(6,182,212,0.2)]">{ticker}</h1>
+                  <h1 className="break-words font-numeric text-4xl font-bold uppercase tracking-tight text-paper sm:text-5xl lg:text-6xl">{ticker}</h1>
                   {selectedStock?.name && (
-                    <div className="mt-2 text-sm text-zinc-400 font-['JetBrains_Mono'] tracking-wide">{selectedStock.name}</div>
+                    <div className="mt-2 font-display text-xl text-paper-muted">{selectedStock.name}</div>
                   )}
                 </div>
                 <div className="flex flex-col sm:items-end gap-3">
@@ -4302,7 +4307,7 @@ function HomeContent() {
                         className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
                           dashboardView === 'overview'
                             ? 'stock-view-toggle-active'
-                            : 'stock-view-toggle-idle hover:bg-white'
+                            : 'stock-view-toggle-idle'
                         }`}
                       >
                         Overview
@@ -4313,7 +4318,7 @@ function HomeContent() {
                         className={`px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] font-['Space_Grotesk'] transition-all ${
                           dashboardView === 'details'
                             ? 'stock-view-toggle-active'
-                            : 'stock-view-toggle-idle hover:bg-white'
+                            : 'stock-view-toggle-idle'
                         }`}
                       >
                         Detailed Analysis
