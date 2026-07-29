@@ -8,7 +8,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
-const CandlestickCity = dynamic(() => import("@/components/three/CandlestickCity"), {
+const MarketGlobe = dynamic(() => import("@/components/three/MarketGlobe"), {
   ssr: false,
 });
 
@@ -46,7 +46,7 @@ export function HomeAmbientBackground() {
         }}
       />
 
-      {enabled && <CandlestickCity />}
+      {enabled && <MarketGlobe />}
 
       {/* Vignette so foreground content stays readable over the scene. */}
       <div
