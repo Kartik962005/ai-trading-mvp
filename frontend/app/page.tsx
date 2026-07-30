@@ -1122,7 +1122,6 @@ const FisoDetailPanel = ({
   const isHold = analysisView.isHold;
   const accentColor = isBull ? 'text-green-400' : isHold ? 'text-zinc-300' : 'text-red-400';
   const accentBg = isBull ? 'bg-green-500/10 border-green-500/30' : isHold ? 'bg-zinc-500/10 border-zinc-500/30' : 'bg-red-500/10 border-red-500/30';
-  const accentGlow = isBull ? 'shadow-[0_0_30px_rgba(74,222,128,0.15)]' : isHold ? '' : 'shadow-[0_0_30px_rgba(239,68,68,0.15)]';
   const targetMovePctValue = analysisView.entry
     ? (analysisView.direction === 'bearish'
       ? ((analysisView.entry - analysisView.target) / analysisView.entry) * 100
@@ -1380,236 +1379,200 @@ const FisoDetailPanel = ({
   return (
     <div className="flex flex-col gap-6">
 
-      {/* ── Row 1: Verdict + Score + Key Metrics ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* Verdict card */}
-        <div className={`min-w-0 lg:col-span-3 rounded-3xl border backdrop-blur-2xl p-5 sm:p-6 flex flex-col justify-between ${accentBg} ${accentGlow} ${isBull ? 'verdict-glow-bull' : (!isBull && !isHold) ? 'verdict-glow-bear' : ''}`}>
-          <div>
-            <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">Algorithm Verdict</span>
-            <div className={`break-words text-4xl font-black uppercase leading-none tracking-normal sm:text-5xl font-['Space_Grotesk'] ${accentColor} mb-4`}>{analysisView.displayVerdict}</div>
+      {/* ── Row 1: Verdict rationale ── the headline numbers (verdict, entry,
+          target, stop, confidence, R:R) live in the hero card at the top of the
+          Overview, so this section carries the *reasoning* instead of repeating
+          them: the trade-setup framing plus either the no-trade gate notes or
+          the projected move context. */}
+      <div
+        className="rounded-[22px] border border-hairline p-6 sm:p-7"
+        style={{
+          background:
+            'linear-gradient(145deg, rgba(18,20,17,0.9) 0%, rgba(7,9,8,0.95) 55%, rgba(14,16,13,0.9) 100%)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-5">
+          <div className="min-w-0">
+            <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
+              Trade setup
+            </span>
+            <div className="mt-2.5 font-display text-[clamp(1.6rem,3vw,2.1rem)] leading-none text-paper">
+              {setupLabel}
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Trade Setup</span>
-            <div className="text-2xl font-['Space_Grotesk'] font-black text-white">{setupLabel}</div>
-            <p className="text-[10px] text-zinc-400 mt-2 font-['JetBrains_Mono']">
-              {isHold
-                ? 'No active trade: price bands are shown for research only.'
-                : 'Target and stop loss are aligned with the displayed verdict.'}
-            </p>
+          <div className="flex items-center gap-1.5">
+            {([
+              ['Sell', analysisView.direction === 'bearish', 'text-rose-300 border-rose-300/40 bg-rose-500/10'],
+              ['Hold', isHold, 'text-accent border-accent/45 bg-accent/10'],
+              ['Buy', analysisView.direction === 'bullish', 'text-primary border-primary/45 bg-primary/10'],
+            ] as Array<[string, boolean, string]>).map(([label, active, activeCls]) => (
+              <span
+                key={label}
+                className={`inline-flex h-8 items-center rounded-full border px-4 font-body text-[10px] font-semibold uppercase tracking-[0.18em] transition ${
+                  active ? activeCls : 'border-hairline text-paper-muted/60'
+                }`}
+              >
+                {label}
+              </span>
+            ))}
           </div>
         </div>
 
-        {/* FISO Score */}
-        <div className="lg:col-span-3 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 flex flex-col justify-between">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">FISO Confidence Level</span>
-          <div>
-            <div className="flex items-end gap-1 mb-3">
-              <span className="text-5xl font-['JetBrains_Mono'] font-bold text-white">{analysisView.confidenceLevel}</span>
-              <span className="text-zinc-600 text-xl mb-1">/100</span>
-            </div>
-            <div className="w-full bg-zinc-800 rounded-full h-2.5 overflow-hidden mb-4">
-              <div className="h-full rounded-full bar-shimmer transition-all duration-1000"
-                style={{ width: `${analysisView.confidenceLevel}%` }} />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-center">
-              {([
-                ['Sell', analysisView.direction === 'bearish'],
-                ['Buy', analysisView.direction === 'bullish'],
-              ] as Array<[string, boolean]>).map(([label, active]) => (
-                <div
-                  key={label}
-                  className={`rounded-lg py-1.5 text-[9px] font-bold uppercase tracking-widest font-['JetBrains_Mono'] ${
-                    active
-                      ? label === 'Buy'
-                        ? 'bg-green-500/25 text-green-400'
-                        : 'bg-red-500/25 text-red-400'
-                      : 'bg-white/5 text-zinc-500'
-                  }`}
-                >
+        <p className="mt-4 max-w-[72ch] font-body text-[13px] leading-7 text-paper-muted">
+          {isHold
+            ? 'No active trade is issued. The price bands shown above are for research context only — Bullseye withholds a target and stop until the setup clears its risk, reward, and data-quality gates.'
+            : 'The entry, target, and stop shown above are aligned with the displayed verdict. Projected move and per-unit risk are broken out below.'}
+        </p>
+
+        {isHold ? (
+          <div className="mt-6 border-t border-hairline pt-6">
+            <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">
+              Why no trade
+            </span>
+            <ul className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+              {(analysisView.risk_notes?.length ? analysisView.risk_notes : ['Risk/reward and confidence gates did not clear.'])
+                .slice(0, 4)
+                .map((note: string) => (
+                  <li key={note} className="flex gap-3 font-body text-[13px] leading-6 text-paper-muted">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+                    <span>{note}</span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-x-12 gap-y-5 border-t border-hairline pt-6 sm:grid-cols-3">
+            {([
+              ['Projected move', `${targetMovePct}%`, analysisView.direction === 'bearish' ? 'downside target' : 'upside target'],
+              ['Stop risk', `${stopRiskPct}%`, analysisView.direction === 'bearish' ? 'upside exposure' : 'downside exposure'],
+              ['Reward : risk', `1 : ${rr}`, 'per unit of risk'],
+            ] as Array<[string, string, string]>).map(([label, value, sub]) => (
+              <div key={label}>
+                <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">
                   {label}
                 </div>
-              ))}
-            </div>
+                <div className="mt-1.5 font-numeric text-xl leading-none text-paper">{value}</div>
+                <div className="mt-1.5 font-body text-[11px] text-paper-muted/70">{sub}</div>
+              </div>
+            ))}
           </div>
-        </div>
-
-        {/* Price targets */}
-        <div className="lg:col-span-6 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">
-            {isHold ? 'No Active Trade' : 'Predictive Price Vectors'}
-          </span>
-          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4">
-            <div className="metric-card-hover bg-cyan-500/5 border border-cyan-500/20 rounded-2xl p-4 hover:border-cyan-400/40 hover:bg-cyan-500/8 transition-all">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">{isHold ? 'Current Price' : 'Entry Price'}</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">{currency}{analysisView.entry?.toLocaleString()}</span>
-              <span className="text-[9px] text-zinc-500 block mt-1">{isHold ? 'Reference only' : 'Current position'}</span>
-            </div>
-            {isHold && (
-              <>
-                <div className="metric-card-hover bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-white/20 transition-all">
-                  <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Decision</span>
-                  <span className="text-xl font-['Space_Grotesk'] font-black uppercase text-zinc-100">Wait</span>
-                  <span className="text-[9px] text-zinc-500 block mt-1">No target or stop issued</span>
-                </div>
-                <div className="col-span-1 min-[420px]:col-span-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-200 font-['Space_Grotesk']">Why no trade</span>
-                  <ul className="mt-3 space-y-2 text-[11px] leading-5 text-zinc-300 font-['JetBrains_Mono']">
-                    {(analysisView.risk_notes?.length ? analysisView.risk_notes : ['Risk/reward and confidence gates did not clear.']).slice(0, 4).map((note: string) => (
-                      <li key={note} className="flex gap-2">
-                        <span className="mt-2 h-1 w-1 rounded-full bg-amber-300" aria-hidden="true" />
-                        <span>{note}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </>
-            )}
-            {!isHold && (
-              <>
-            <div className="metric-card-hover bg-green-500/10 border border-green-400/30 rounded-2xl p-4 hover:border-green-400/50 hover:bg-green-500/15 transition-all">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Target Price</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-green-400">{currency}{analysisView.target?.toLocaleString()}</span>
-              <span className="text-[9px] text-green-500/70 block mt-1">
-                {analysisView.direction === 'bearish' ? `${targetMovePct}% downside target` : `${targetMovePct}% upside target`}
-              </span>
-            </div>
-            <div className="metric-card-hover bg-red-500/10 border border-red-500/30 rounded-2xl p-4 hover:border-red-400/50 hover:bg-red-500/15 transition-all">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Stop Loss</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-red-400">{currency}{analysisView.stop_loss?.toLocaleString()}</span>
-              <span className="text-[9px] text-red-500/70 block mt-1">
-                {analysisView.direction === 'bearish' ? `${stopRiskPct}% upside risk` : `${stopRiskPct}% downside risk`}
-              </span>
-            </div>
-            <div className="metric-card-hover bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-white/20 transition-all">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-1">Risk:Reward</span>
-              <span className="text-xl font-['JetBrains_Mono'] font-bold text-white">1 : {rr}</span>
-              <span className="text-[9px] text-zinc-500 block mt-1">per unit risk</span>
-            </div>
-              </>
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* ── Row 2: Trade Timeline ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-3">
-            {isHold ? 'Trade Status' : 'Trade Timeline'}
+      {/* ── Row 2: Trade Timeline + Position Snapshot ── */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+        <div
+          className="lg:col-span-8 rounded-[22px] border border-hairline p-6 sm:p-7"
+          style={{
+            background:
+              'linear-gradient(145deg, rgba(18,20,17,0.9) 0%, rgba(7,9,8,0.95) 55%, rgba(14,16,13,0.9) 100%)',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+          }}
+        >
+          <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
+            {isHold ? 'Trade status' : 'Trade timeline'}
           </span>
           {isHold ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-400/30 bg-zinc-400/10 text-zinc-200 font-black">H</div>
-                <div>
-                  <div className="text-sm font-black uppercase tracking-widest text-white font-['Space_Grotesk']">No trade planned</div>
-                  <p className="mt-2 max-w-2xl text-[12px] leading-6 text-zinc-400 font-['JetBrains_Mono']">
-                    Bullseye is not issuing a target, stop loss, expected move, or holding period because this stock did not pass the current trade-quality gates.
-                  </p>
-                </div>
+            <div className="mt-5 flex items-start gap-4 rounded-2xl border border-hairline bg-white/[0.02] p-5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-accent/40 bg-accent/10 font-numeric text-sm text-accent">H</div>
+              <div>
+                <div className="font-display text-lg text-paper">No trade planned</div>
+                <p className="mt-2 max-w-2xl font-body text-[12px] leading-6 text-paper-muted">
+                  Bullseye is not issuing a target, stop loss, expected move, or holding period because this stock did not pass the current trade-quality gates.
+                </p>
               </div>
             </div>
           ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between py-2.5 border-b border-white/5">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                  <span className="text-green-400 text-xs font-bold">T</span>
+            <div className="mt-5 flex flex-col">
+              {([
+                ['T', 'Target date', analysis.target_date, `${analysis.estimated_days}d`, 'text-primary', 'border-primary/40 bg-primary/10 text-primary'],
+                ['↗', 'Expected move', 'From current price', `${analysisView.direction === 'bearish' ? '-' : '+'}${targetMovePct}%`, analysisView.direction === 'bearish' ? 'text-rose-300' : 'text-primary', 'border-hairline bg-white/[0.03] text-paper-muted'],
+                ['◇', 'Max risk', 'If stop loss triggered', `${stopRiskPct}%`, 'text-rose-300', 'border-hairline bg-white/[0.03] text-paper-muted'],
+              ] as Array<[string, string, string, string, string, string]>).map(([icon, label, sub, value, valueTone, iconCls], i, arr) => (
+                <div key={label} className={`flex items-center justify-between py-3.5 ${i < arr.length - 1 ? 'border-b border-hairline' : ''}`}>
+                  <div className="flex items-center gap-3.5">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border font-numeric text-xs ${iconCls}`}>{icon}</div>
+                    <div className="min-w-0">
+                      <span className="block font-body text-[13px] text-paper">{label}</span>
+                      <span className="font-body text-[11px] text-paper-muted">{sub}</span>
+                    </div>
+                  </div>
+                  <span className={`font-numeric text-sm ${valueTone}`}>{value}</span>
                 </div>
-                <div className="min-w-0">
-                  <span className="text-xs font-bold text-white block">Target Date</span>
-                  <span className="text-[10px] text-zinc-500">{analysis.target_date}</span>
-                </div>
-              </div>
-              <span className="font-['JetBrains_Mono'] text-green-400 font-bold text-sm">{analysis.estimated_days}d</span>
+              ))}
             </div>
-            <div className="flex items-center justify-between py-2.5 border-b border-white/5">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                  <span className="text-zinc-400 text-xs font-bold">⚡</span>
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Expected Move</span>
-                  <span className="text-[10px] text-zinc-500">From current price</span>
-                </div>
-              </div>
-              <span className={`font-['JetBrains_Mono'] font-bold text-sm ${analysisView.direction === 'bearish' ? 'text-red-400' : 'text-green-400'}`}>
-                {analysisView.direction === 'bearish' ? '-' : '+'}{targetMovePct}%
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2.5">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                  <span className="text-zinc-400 text-xs font-bold">📊</span>
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Max Risk</span>
-                  <span className="text-[10px] text-zinc-500">If stop loss triggered</span>
-                </div>
-              </div>
-              <span className="font-['JetBrains_Mono'] font-bold text-sm text-red-400">{stopRiskPct}%</span>
-            </div>
-          </div>
           )}
         </div>
-        <div className="lg:col-span-4 bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 sm:p-6">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-[0.2em] uppercase font-['Space_Grotesk'] block mb-4">Position Snapshot</span>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">Setup</span>
-              <span className={`text-sm font-black uppercase font-['Space_Grotesk'] ${accentColor}`}>{analysisView.displayVerdict}</span>
+        <div
+          className="lg:col-span-4 rounded-[22px] border border-hairline p-6 sm:p-7"
+          style={{
+            background:
+              'linear-gradient(145deg, rgba(18,20,17,0.9) 0%, rgba(7,9,8,0.95) 55%, rgba(14,16,13,0.9) 100%)',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+          }}
+        >
+          <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">Position snapshot</span>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-hairline bg-white/[0.02] p-4">
+              <span className="mb-2 block font-body text-[9px] uppercase tracking-[0.2em] text-paper-muted">Setup</span>
+              <span className={`font-display text-lg ${isBull ? 'text-primary' : isHold ? 'text-paper' : 'text-rose-300'}`}>{analysisView.displayVerdict}</span>
             </div>
-            <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold block mb-2">
-                {isHold ? 'Trade State' : 'Risk:Reward'}
-              </span>
-              <span className="text-sm font-black text-white font-['JetBrains_Mono']">{isHold ? 'NO TRADE' : `1 : ${rr}`}</span>
+            <div className="rounded-2xl border border-hairline bg-white/[0.02] p-4">
+              <span className="mb-2 block font-body text-[9px] uppercase tracking-[0.2em] text-paper-muted">{isHold ? 'Trade state' : 'Reward : risk'}</span>
+              <span className="font-numeric text-base text-paper">{isHold ? 'No trade' : `1 : ${rr}`}</span>
             </div>
-            <div className="col-span-2 rounded-2xl bg-cyan-500/5 border border-cyan-400/20 p-4">
+            <div className="col-span-2 rounded-2xl border border-accent/25 bg-accent/[0.05] p-4">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Face Value</span>
-                <span className="text-sm font-black text-slate-950 font-['JetBrains_Mono']">{formatFaceValue(stockMeta)}</span>
+                <span className="font-body text-[9px] uppercase tracking-[0.2em] text-paper-muted">Face value</span>
+                <span className="font-numeric text-sm text-paper">{formatFaceValue(stockMeta)}</span>
               </div>
             </div>
-            <div className="col-span-2 rounded-2xl bg-white/5 border border-white/10 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Confidence</span>
-                <span className="text-xs font-black text-white font-['JetBrains_Mono']">{analysisView.confidenceLevel}/100</span>
+            <div className="col-span-2 rounded-2xl border border-hairline bg-white/[0.02] p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-body text-[9px] uppercase tracking-[0.2em] text-paper-muted">Confidence</span>
+                <span className="font-numeric text-xs text-paper">{analysisView.confidenceLevel}/100</span>
               </div>
-              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full rounded-full bg-cyan-400" style={{ width: `${analysisView.confidenceLevel}%` }} />
+              <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-accent" style={{ width: `${analysisView.confidenceLevel}%` }} />
               </div>
             </div>
           </div>
-      </div>
+        </div>
       </div>
 
       {/* ── Section 3: AI Market Search ── */}
-      <div className="ai-market-panel relative overflow-hidden rounded-3xl border border-cyan-300/35 bg-slate-950/95 p-4 text-slate-100 shadow-[0_18px_50px_rgba(8,145,178,0.22)] ring-1 ring-cyan-400/15 sm:p-6">
-        <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(135deg,rgba(8,145,178,0.22),transparent_34%,rgba(15,23,42,0.36)),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_34%)]" />
-        <h3 className="relative text-[10px] font-bold text-cyan-300 tracking-[0.2em] uppercase mb-2 border-b border-cyan-300/20 pb-3 font-['Space_Grotesk'] flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-300 animate-pulse inline-block"></span>
-          AI Market Search
+      <div
+        className="ai-market-panel relative overflow-hidden rounded-[22px] border border-accent/30 p-6 text-paper sm:p-7"
+        style={{
+          background:
+            'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
+          boxShadow: '0 26px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(245,196,81,0.14)',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,196,81,0.12),transparent_42%),radial-gradient(circle_at_bottom_left,rgba(52,211,153,0.08),transparent_44%)]" />
+        <h3 className="relative mb-3 flex items-center gap-2 border-b border-hairline pb-4 font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent"></span>
+          AI market search
         </h3>
-        <p className="relative text-[11px] text-slate-300 font-['JetBrains_Mono'] mb-4">
+        <p className="relative mb-4 font-body text-[13px] leading-7 text-paper-muted">
           Ask prices, trend questions, risk checks, profit/loss, or any buy/sell strategy in plain English.
         </p>
 
-        <div className="relative flex flex-col sm:flex-row gap-3">
+        <div className="relative flex flex-col gap-3 sm:flex-row">
           <input
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask anything: buy Friday close, sell Monday open; price on 12 Feb; should I buy?"
-            className="flex-1 rounded-xl border border-cyan-200 bg-white px-4 py-3.5 text-sm text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] outline-none transition-all placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-300/30 font-['JetBrains_Mono']"
+            className="flex-1 rounded-full border border-hairline bg-black/40 px-5 py-3.5 font-body text-sm text-paper outline-none transition placeholder:text-paper-muted/60 focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
           />
           <button
             onClick={handleAiSearch}
             disabled={isAiRunning || !aiPrompt.trim()}
-            className="rounded-xl border border-cyan-300 bg-cyan-400 px-6 py-3.5 text-xs font-black uppercase tracking-widest text-slate-950 shadow-[0_12px_28px_rgba(34,211,238,0.18)] transition-all hover:bg-cyan-300 disabled:opacity-40 font-['Space_Grotesk'] shrink-0"
+            className="shrink-0 rounded-full bg-accent px-7 py-3.5 font-body text-xs font-semibold uppercase tracking-widest text-black transition duration-300 hover:bg-accent-dim disabled:opacity-40"
           >
-            {isAiRunning ? 'Thinking...' : 'Ask AI'}
+            {isAiRunning ? 'Thinking…' : 'Ask AI'}
           </button>
         </div>
 
@@ -1619,7 +1582,7 @@ const FisoDetailPanel = ({
               key={example}
               type="button"
               onClick={() => setAiPrompt(example)}
-              className="rounded-full border border-cyan-300/25 bg-slate-900/80 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-cyan-100 transition hover:border-cyan-300/70 hover:bg-cyan-300/15 hover:text-white font-['Space_Grotesk']"
+              className="rounded-full border border-hairline bg-white/[0.03] px-3.5 py-2 font-body text-[10px] font-medium uppercase tracking-wider text-paper-muted transition hover:border-accent/50 hover:text-paper"
             >
               {example}
             </button>
@@ -1648,7 +1611,7 @@ const FisoDetailPanel = ({
               value={alertPrompt}
               onChange={event => setAlertPrompt(event.target.value)}
               placeholder="Alert me when RSI crosses above 70"
-              className="h-12 rounded-xl border border-emerald-200 bg-white px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300/30 font-['JetBrains_Mono']"
+              className="h-12 rounded-full border border-hairline bg-black/40 px-5 font-body text-sm text-paper outline-none transition placeholder:text-paper-muted/60 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div className="grid grid-cols-1 gap-3">
@@ -1666,7 +1629,7 @@ const FisoDetailPanel = ({
                 type="button"
                 onClick={saveAlert}
                 disabled={isSavingAlert || (!alertPrompt.trim() && !aiPrompt.trim())}
-                className="h-11 rounded-xl border border-emerald-200 bg-emerald-400 px-5 text-[10px] font-black uppercase tracking-widest text-slate-950 transition hover:bg-emerald-300 disabled:opacity-40 font-['Space_Grotesk']"
+                className="h-11 rounded-full bg-primary px-6 font-body text-[10px] font-semibold uppercase tracking-widest text-black transition hover:opacity-90 disabled:opacity-40"
               >
                 {isSavingAlert ? 'Saving' : 'Create Alert'}
               </button>
@@ -2094,32 +2057,38 @@ const FisoDetailPanel = ({
       </div>
 
       {/* ── Section 4: Bullseye Top 10 Recommended Strategies ── */}
-      <div className="bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.5)]">
-
+      <div
+        className="rounded-[22px] border border-hairline p-6 sm:p-7"
+        style={{
+          background:
+            'linear-gradient(145deg, rgba(18,20,17,0.9) 0%, rgba(7,9,8,0.95) 55%, rgba(14,16,13,0.9) 100%)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+        }}
+      >
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/10 pb-4 mb-6">
+        <div className="mb-6 flex flex-col gap-3 border-b border-hairline pb-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 to-fuchsia-600 flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.3)]">
-              <span className="font-black text-black font-['Space_Grotesk'] text-sm">X</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-accent/40 bg-accent/10">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-white uppercase font-['Space_Grotesk']">
-                <span className="tracking-widest"><span className="text-slate-950">BULLS</span><span className="text-cyan-500">EYE</span></span> will recommend
+              <h3 className="font-display text-xl leading-none text-paper">
+                Bulls<span className="text-accent">eye</span> will recommend
               </h3>
-              <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-['JetBrains_Mono']">
+              <span className="mt-1.5 block font-body text-[10px] uppercase tracking-[0.22em] text-paper-muted">
                 Top 10 strategies ranked by signal score · Best fit first
               </span>
             </div>
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
-            <span className="text-[9px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-800 px-3 py-1.5 rounded-full font-bold uppercase tracking-widest font-['JetBrains_Mono']">
-              {topStrategies.length} Active Signals
+            <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 font-body text-[9px] font-semibold uppercase tracking-widest text-accent">
+              {topStrategies.length} Active signals
             </span>
             {topStrategies.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowAllStrategies(prev => !prev)}
-                className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-cyan-800 hover:bg-cyan-500/10 hover:border-cyan-400/40 transition-all flex items-center justify-center"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-paper-muted transition hover:border-accent/50 hover:text-paper"
                 aria-label={showAllStrategies ? 'Collapse strategies list' : 'Expand strategies list'}
                 aria-expanded={showAllStrategies}
               >
@@ -2137,7 +2106,7 @@ const FisoDetailPanel = ({
           <div className="flex flex-col gap-3">
             {visibleStrategies.map((s: any, rank: number) => {
               const isBestFit = rank === 0;
-              const scoreColor = s.score >= 80 ? '#4ade80' : s.score >= 60 ? '#86efac' : s.score >= 40 ? '#fbbf24' : '#f87171';
+              const scoreColor = s.score >= 80 ? '#34d399' : s.score >= 60 ? '#6ee7b7' : s.score >= 40 ? '#f5c451' : '#fb7185';
               // Rank 0,1 always visible. Rank 2 = blurred sneak peek. Rank 3+ hidden until expanded.
               const isSneak = !showAllStrategies && rank === 2;
               return (
@@ -2147,35 +2116,35 @@ const FisoDetailPanel = ({
                     <div
                       className={`strategy-row relative rounded-2xl p-4 transition-all duration-200 ${
                         isBestFit
-                          ? 'bg-gradient-to-r from-cyan-900/30 to-fuchsia-900/10 border border-cyan-400/40 shadow-[0_0_25px_rgba(6,182,212,0.12)]'
-                          : 'bg-black/30 border border-white/5'
+                          ? 'border border-accent/40 bg-accent/[0.06] shadow-[0_0_30px_rgba(245,196,81,0.10)]'
+                          : 'border border-hairline bg-white/[0.02]'
                       } ${isSneak ? 'blur-[3px] opacity-60 pointer-events-none select-none' : ''}`}
                     >
                       <div className="flex items-start gap-4">
-                        <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm font-['JetBrains_Mono'] ${
-                          isBestFit ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-500'
+                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-numeric text-sm ${
+                          isBestFit ? 'bg-accent text-black' : 'bg-white/[0.04] text-paper-muted'
                         }`}>
                           {String(rank + 1).padStart(2, '0')}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                            <span className={`font-bold text-sm uppercase font-['Space_Grotesk'] ${isBestFit ? 'text-white' : 'text-zinc-200'}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                            <span className="font-display text-[17px] leading-snug text-paper">
                               {s.name}
                             </span>
                             {isBestFit && (
-                              <span className="text-[8px] bg-cyan-400 text-black px-2 py-0.5 rounded-full font-black uppercase tracking-widest">
-                                ★ Best Fit Strategy
+                              <span className="rounded-full bg-accent px-2 py-0.5 font-body text-[8px] font-semibold uppercase tracking-widest text-black">
+                                ★ Best fit
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-zinc-500 leading-relaxed">{s.desc}</p>
+                          <p className="font-body text-[12px] leading-relaxed text-paper-muted">{s.desc}</p>
                         </div>
-                        <div className="shrink-0 flex flex-col items-end gap-1.5">
-                          <span className="text-lg font-['JetBrains_Mono'] font-bold" style={{ color: scoreColor }}>{s.score}</span>
-                          <div className="w-16 strategy-bar bg-white/10">
+                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+                          <span className="font-numeric text-lg" style={{ color: scoreColor }}>{s.score}</span>
+                          <div className="strategy-bar w-16 bg-white/10">
                             <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
                           </div>
-                          <span className="text-[8px] text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest">/100</span>
+                          <span className="font-numeric text-[8px] uppercase tracking-widest text-paper-muted/70">/100</span>
                         </div>
                       </div>
                     </div>
@@ -2189,7 +2158,7 @@ const FisoDetailPanel = ({
                     <button
                       type="button"
                       onClick={() => setShowAllStrategies(prev => !prev)}
-                      className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10 bg-white/5 text-zinc-400 hover:bg-cyan-500/10 hover:border-cyan-400/40 hover:text-cyan-400 transition-all text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']"
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-hairline bg-white/[0.03] py-2.5 font-body text-[10px] font-semibold uppercase tracking-widest text-paper-muted transition hover:border-accent/50 hover:text-paper"
                     >
                       {showAllStrategies ? (
                         <>
@@ -2211,7 +2180,7 @@ const FisoDetailPanel = ({
               <button
                 type="button"
                 onClick={() => setShowAllStrategies(prev => !prev)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10 bg-white/5 text-zinc-400 hover:bg-cyan-500/10 hover:border-cyan-400/40 hover:text-cyan-400 transition-all text-[10px] font-black uppercase tracking-widest font-['Space_Grotesk']"
+                className="flex w-full items-center justify-center gap-2 rounded-full border border-hairline bg-white/[0.03] py-2.5 font-body text-[10px] font-semibold uppercase tracking-widest text-paper-muted transition hover:border-accent/50 hover:text-paper"
               >
                 {showAllStrategies ? (
                   <>
@@ -4341,15 +4310,74 @@ function HomeContent() {
                   Detailed Analysis panel renders its own fundamentals/analytics,
                   so these boxes would otherwise duplicate there. */}
               {dashboardView === 'overview' && (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-start">
-              <FundamentalsSnapshotCard
-                stock={selectedStock}
-                currency={currency}
-                fundamentals={fundamentals}
-                quote={quote}
-                isLoading={fundamentalsLoading}
-              />
-              <div className="relative order-2 min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_22px_70px_rgba(15,23,42,0.14)] sm:p-5 xl:order-1">
+              <div className="flex flex-col gap-5">
+
+              {/* Verdict-first: the actual product output (verdict + entry /
+                  target / stop / confidence) surfaced above the chart. */}
+              {(() => {
+                const v = getAnalysisPresentation(analysis);
+                if (!v) return null;
+                const tone = v.isBullish ? 'text-primary' : v.isBearish ? 'text-rose-300' : 'text-paper';
+                const upside = v.entry ? Math.abs(((v.target - v.entry) / v.entry) * 100) : 0;
+                const downside = v.entry ? Math.abs(((v.entry - v.stop_loss) / v.entry) * 100) : 0;
+                const rr = downside > 0 ? (upside / downside).toFixed(2) : '—';
+                const stats: Array<[string, string]> = [
+                  ['Entry', `${currency}${Number(v.entry).toLocaleString()}`],
+                  ['Target', `${currency}${Number(v.target).toLocaleString()}`],
+                  ['Stop loss', `${currency}${Number(v.stop_loss).toLocaleString()}`],
+                  ['Confidence', `${v.confidenceLevel}/100`],
+                  ['Reward : risk', rr],
+                ];
+                return (
+                  <div
+                    className="rounded-[24px] border border-accent/35 p-6 sm:p-8"
+                    style={{
+                      background:
+                        'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
+                      boxShadow: '0 26px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(245,196,81,0.16)',
+                    }}
+                  >
+                    <div className="flex flex-wrap items-end justify-between gap-6">
+                      <div>
+                        <div className="font-body text-[10px] font-medium uppercase tracking-[0.26em] text-accent">
+                          FISO verdict
+                        </div>
+                        <div className={`mt-3 font-display text-[clamp(2.2rem,5vw,3.4rem)] leading-none ${tone}`}>
+                          {v.displayVerdict}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="h-2 w-40 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-accent"
+                            style={{ width: `${Math.min(100, Math.max(0, Number(v.confidenceLevel)))}%` }}
+                          />
+                        </div>
+                        <span className="font-numeric text-[13px] text-accent">{v.confidenceLevel}</span>
+                      </div>
+                    </div>
+                    <div className="mt-7 flex flex-wrap gap-x-12 gap-y-5 border-t border-hairline pt-6">
+                      {stats.map(([label, value]) => (
+                        <div key={label}>
+                          <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">
+                            {label}
+                          </div>
+                          <div className="mt-1.5 font-numeric text-lg leading-none text-paper">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div
+                className="relative min-w-0 rounded-[24px] border border-hairline p-5 sm:p-6"
+                style={{
+                  background:
+                    'linear-gradient(145deg, rgba(18,20,17,0.9) 0%, rgba(7,9,8,0.95) 55%, rgba(14,16,13,0.9) 100%)',
+                  boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+                }}
+              >
                 <div className="flex items-center justify-between gap-3 mb-4 border-b border-slate-200 pb-3 flex-wrap">
                   <span className="font-bold text-xs text-slate-500 uppercase tracking-[0.2em] font-['Space_Grotesk'] flex items-center gap-2 shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
@@ -4458,8 +4486,8 @@ function HomeContent() {
                     <div>The backend did not return candle rows for this symbol yet. Refresh in a moment.</div>
                   </div>
                 ) : (
-                  <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    <div ref={chartRef} className="w-full h-[300px] sm:h-[390px] overflow-hidden" />
+                  <div className="w-full overflow-hidden rounded-2xl border border-hairline bg-black/30">
+                    <div ref={chartRef} className="w-full h-[340px] sm:h-[440px] overflow-hidden" />
                     {indicatorPanels.length > 0 && (
                       <div>
                         {indicatorPanels.map(panel => (
@@ -4476,11 +4504,19 @@ function HomeContent() {
                   </div>
                 )}
                 {indicatorPanels.length === 0 && chartRowsAvailable && (
-                  <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500 font-['JetBrains_Mono']">
-                    Select an indicator to add a professional study pane below the stock chart.
+                  <div className="mt-3 rounded-2xl border border-dashed border-hairline bg-white/[0.02] px-4 py-3 font-numeric text-xs text-paper-muted">
+                    Select an indicator to add a study pane below the stock chart.
                   </div>
                 )}
               </div>
+
+              <FundamentalsSnapshotCard
+                stock={selectedStock}
+                currency={currency}
+                fundamentals={fundamentals}
+                quote={quote}
+                isLoading={fundamentalsLoading}
+              />
               </div>
               )}
 
@@ -4514,10 +4550,10 @@ function HomeContent() {
 
               {/* ── DISCLAIMER ── shown after every analysis */}
               {((dashboardView === 'overview' && analysis && !analysis.error) || dashboardView === 'details') && (
-                <div className="disclaimer-panel rounded-2xl p-4 flex gap-3">
-                  <span className="text-amber-400 text-lg shrink-0 mt-0.5">⚠️</span>
-                  <p className="text-[11px] font-['JetBrains_Mono'] leading-relaxed font-semibold">
-                    <span className="font-black">Disclaimer: </span>
+                <div className="flex gap-3 rounded-2xl border border-accent/20 bg-accent/[0.04] p-4">
+                  <span className="mt-0.5 shrink-0 text-lg text-accent">⚠️</span>
+                  <p className="font-body text-[11px] leading-relaxed text-paper-muted">
+                    <span className="font-semibold text-paper">Disclaimer: </span>
                     Bullseye is an AI-powered predictive tool and is NOT a SEBI-registered investment advisor.
                     Predictions generated by the app are for educational and informational purposes only,
                     and should not be construed as financial or investment advice. Invest at your own risk.
