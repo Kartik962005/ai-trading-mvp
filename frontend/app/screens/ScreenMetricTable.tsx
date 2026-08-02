@@ -94,15 +94,18 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
       { id: 'pe', label: 'P/E', removable: true, value: row => row.pe },
       { id: 'marketCapCr', label: 'Mar Cap Rs.Cr.', removable: true, value: row => row.marketCapCr },
       ...activeTechnicalColumns,
-      { id: 'revenueGrowth3Yr', label: 'Rev Growth 3Y %', removable: true, value: row => row.revenueGrowth3Yr },
-      { id: 'profitGrowth3Yr', label: 'Profit Growth 3Y %', removable: true, value: row => row.profitGrowth3Yr },
-      { id: 'profitGrowth5Yr', label: 'Profit Growth 5Y %', removable: true, value: row => row.profitGrowth5Yr },
+      // Headings state the horizon we ACTUALLY have. The snapshot carries the
+      // latest reported growth figure, not a 3/5-year series, so it is no
+      // longer labelled "3Y"/"5Y".
+      { id: 'revenueGrowth3Yr', label: 'Rev growth %', removable: true, value: row => row.revenueGrowth3Yr },
+      { id: 'profitGrowth3Yr', label: 'Profit growth %', removable: true, value: row => row.profitGrowth3Yr },
+      { id: 'profitGrowth5Yr', label: 'Profit growth 5Y %', removable: true, value: row => row.profitGrowth5Yr },
       { id: 'roe', label: 'ROE %', removable: true, value: row => row.roe },
       { id: 'avgRoce7Yr', label: 'Avg ROCE 7Y %', removable: true, value: row => row.avgRoce7Yr },
       { id: 'debtToEquity', label: 'Debt/Eq', removable: true, value: row => row.debtToEquity },
-      { id: 'operatingMargin', label: 'Op Margin %', removable: true, value: row => row.operatingMargin },
+      { id: 'operatingMargin', label: 'Op margin %', removable: true, value: row => row.operatingMargin },
       { id: 'piotroskiScore', label: 'Piotroski', removable: true, value: row => row.piotroskiScore },
-      { id: 'divYield', label: 'Div Yld %', removable: true, value: row => row.divYield },
+      { id: 'divYield', label: 'Div yld %', removable: true, value: row => row.divYield },
       { id: 'avgDividendPayout3Yr', label: 'Payout 3Y %', removable: true, value: row => row.avgDividendPayout3Yr },
       {
         id: 'score',
@@ -125,7 +128,33 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
     ];
   }, [query, rows]);
 
-  const visibleColumns = columns.filter(column => !hiddenColumns.has(column.id));
+  // Drop any metric the backend has no data for. Showing a column of solid
+  // dashes (Piotroski, Payout 3Y, the 5Y/7Y horizons we don't compute) reads
+  // as broken data and buries the columns that ARE populated.
+  const emptyColumnIds = useMemo(() => {
+    const empty = new Set<string>();
+    columns.forEach(column => {
+      if (column.id === 'serial' || column.id === 'name' || column.id === 'score') return;
+      const hasValue = rows.some((row, index) => {
+        const value = column.value(row, index);
+        return value !== null && value !== undefined && value !== '';
+      });
+      if (!hasValue) empty.add(column.id);
+    });
+    return empty;
+  }, [columns, rows]);
+
+  // Newest snapshot date across the rows — what the fundamentals actually date from.
+  const snapshotDate = useMemo(() => {
+    const dates = rows
+      .map(row => row.technical?.latestDate)
+      .filter((value): value is string => typeof value === 'string' && value.length >= 8);
+    return dates.length ? dates.sort().at(-1) : null;
+  }, [rows]);
+
+  const visibleColumns = columns.filter(
+    column => !hiddenColumns.has(column.id) && !emptyColumnIds.has(column.id),
+  );
   const removableHiddenCount = columns.filter(column => hiddenColumns.has(column.id)).length;
   const tableMinWidth = Math.max(720, visibleColumns.length * 112);
 
@@ -161,8 +190,24 @@ export default function ScreenMetricTable({ rows, query, title }: { rows: Screen
       }}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-3">
-        <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">
-          {rows.length} rows · {visibleColumns.length} columns
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">
+            {rows.length} rows · {visibleColumns.length} columns
+          </span>
+          {/* Provenance: say plainly how old the fundamentals are. */}
+          {snapshotDate && (
+            <span className="font-numeric text-[10px] text-paper-muted/70">
+              Fundamentals as of {snapshotDate}
+            </span>
+          )}
+          {emptyColumnIds.size > 0 && (
+            <span
+              className="font-numeric text-[10px] text-paper-muted/60"
+              title="Columns with no data for any row in this screen are hidden rather than shown as dashes."
+            >
+              {emptyColumnIds.size} metric{emptyColumnIds.size === 1 ? '' : 's'} unavailable
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button

@@ -94,17 +94,27 @@ def frontend_metric_row(
         "qtrSalesCr": None,
         "qtrProfitVar": _num(row.get("earnings_quarterly_growth")),
         "qtrSalesVar": None,
+        # The snapshot carries ONE revenue-growth and ONE profit-growth figure
+        # (latest reported). It is not a 3-year or 5-year series. Previously the
+        # single profit_growth value was returned as BOTH profitGrowth3Yr and
+        # profitGrowth5Yr, and the current roce as avgRoce7Yr — so the table
+        # showed duplicated numbers under headings claiming different periods.
+        # We do not have those horizons, so we report nothing for them.
         "revenueGrowth3Yr": _num(row.get("revenue_growth")),
         "profitGrowth3Yr": _num(row.get("profit_growth")),
-        "profitGrowth5Yr": _num(row.get("profit_growth")),
+        "profitGrowth5Yr": None,
         "roe": roe,
         "roce": roce,
-        "avgRoce7Yr": roce,
+        "avgRoce7Yr": None,
         "debtToEquity": _num(row.get("debt_to_equity")),
         "operatingMargin": _num(row.get("operating_margin")),
         "piotroskiScore": None,
         "avgPat10Yrs": None,
-        "score": max(50, min(int(score if score is not None else computed_score), 99)),
+        # Score must come from the metrics, not from the row's position in a
+        # hand-ordered preset list (the caller's `score` was literally
+        # `92 - index * 3`). Fall back to the caller only when we have no
+        # snapshot metrics to compute from.
+        "score": max(50, min(int(computed_score if cmp_value is not None else (score or computed_score)), 99)),
         "reason": row_reason,
         "technical": {
             "latestDate": latest_date,
