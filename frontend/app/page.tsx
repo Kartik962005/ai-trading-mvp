@@ -690,8 +690,9 @@ const IndexTickerTape = () => {
   const { data } = useSWR<Record<string, QuoteSnapshot>>(INDEX_QUOTES_KEY, fetcher, {
     fallbackData: cachedQuotes,
     refreshInterval: 60000,
-    revalidateOnMount: !cachedQuotes,
-    revalidateIfStale: !cachedQuotes,
+    // Index levels are prices too — always revalidate.
+    revalidateOnMount: true,
+    revalidateIfStale: true,
     onSuccess: quotes => setCache('index-quotes', quotes),
   });
 
@@ -932,7 +933,7 @@ const StockPreviewModal = ({
   const isBull = analysisView?.isBullish;
   const isHold = analysisView?.isHold;
   const accentText = analysisView
-    ? isBull ? 'text-green-400' : isHold ? 'text-slate-400' : 'text-red-400'
+    ? isBull ? 'text-green-400' : isHold ? 'text-paper-muted' : 'text-red-400'
     : 'text-cyan-500';
   const accentBg = analysisView
     ? isBull ? 'from-emerald-400 to-cyan-300' : isHold ? 'from-slate-300 to-cyan-200' : 'from-rose-400 to-orange-300'
@@ -948,14 +949,14 @@ const StockPreviewModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/35 p-5 backdrop-blur-md sm:p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-5 backdrop-blur-md sm:p-6"
       onMouseDown={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`${stock.name} preview`}
     >
       <div
-        className="relative my-4 flex max-h-[82vh] w-[min(88vw,72rem)] flex-col overflow-y-auto rounded-[24px] border border-cyan-200/70 bg-white shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:max-h-[88vh] sm:min-h-[60vh] sm:w-full sm:rounded-[28px]"
+        className="relative my-4 flex max-h-[82vh] w-[min(88vw,72rem)] flex-col overflow-y-auto rounded-[24px] border border-hairline bg-[#070a09] shadow-[0_40px_120px_rgba(0,0,0,0.7)] sm:max-h-[88vh] sm:min-h-[60vh] sm:w-full sm:rounded-[28px]"
         onMouseDown={event => event.stopPropagation()}
       >
         <div className={`h-1.5 bg-gradient-to-r ${accentBg}`} />
@@ -965,37 +966,37 @@ const StockPreviewModal = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="mb-4 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors hover:border-cyan-300 hover:bg-cyan-50 font-['Space_Grotesk']"
+                className="mb-4 rounded-full border border-hairline bg-white/[0.03]/[0.03] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-paper-muted transition-colors hover:border-accent/50 hover:bg-accent/10 font-body"
               >
                 Back
               </button>
-              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-600 font-['Space_Grotesk']">{stock.symbol} · {stock.exchange}</div>
-              <h2 className="mt-2 text-2xl font-black leading-tight text-slate-950 sm:text-5xl font-['Space_Grotesk']">{stock.name}</h2>
-              <p className="mt-3 max-w-2xl text-xs leading-6 text-slate-500 font-['JetBrains_Mono'] sm:text-sm">
+              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-accent font-body">{stock.symbol} · {stock.exchange}</div>
+              <h2 className="mt-2 font-display text-[28px] font-normal leading-tight text-paper sm:text-[44px]">{stock.name}</h2>
+              <p className="mt-3 max-w-2xl text-xs leading-6 text-paper-muted font-numeric sm:text-sm">
                 Sneak peek of price action, FISO verdict, target zone, and stop-loss risk before opening the full dashboard.
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-right">
-              <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-['Space_Grotesk']">Live Price</div>
-              <div className="mt-1 text-2xl font-black text-slate-950 font-['JetBrains_Mono']">
+            <div className="rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-4 text-right">
+              <div className="text-[10px] font-black uppercase tracking-widest text-paper-muted font-body">Live Price</div>
+              <div className="mt-1 text-2xl font-black text-paper font-numeric">
                 {Number.isFinite(quickPrice) && quickPrice > 0 ? `${stock.currency}${quickPrice.toLocaleString()}` : 'Fetching'}
               </div>
-              <div className={`mt-1 text-xs font-black font-['JetBrains_Mono'] ${quickChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <div className={`mt-1 text-xs font-black font-numeric ${quickChange >= 0 ? 'text-primary' : 'text-rose-300'}`}>
                 {quickChange >= 0 ? '+' : ''}{quickChange.toFixed(2)}%
               </div>
-              <div className="mt-3 border-t border-slate-200 pt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Face Value <span className="text-slate-900 font-['JetBrains_Mono']">{formatFaceValue(stock)}</span>
+              <div className="mt-3 border-t border-hairline pt-2 text-[10px] font-black uppercase tracking-widest text-paper-muted">
+                Face Value <span className="text-paper font-numeric">{formatFaceValue(stock)}</span>
               </div>
             </div>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                <div className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 font-['Space_Grotesk']">Mini Chart</div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-['JetBrains_Mono']">1M preview</div>
+            <div className="overflow-hidden rounded-2xl border border-hairline bg-white/[0.03]">
+              <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+                <div className="text-xs font-black uppercase tracking-[0.2em] text-paper-muted font-body">Mini Chart</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-paper-muted font-numeric">1M preview</div>
               </div>
-              <svg viewBox="0 0 720 230" className="h-44 w-full bg-white sm:h-64" preserveAspectRatio="none" role="img" aria-label={`${stock.name} mini chart`}>
+              <svg viewBox="0 0 720 230" className="h-44 w-full bg-white/[0.03] sm:h-64" preserveAspectRatio="none" role="img" aria-label={`${stock.name} mini chart`}>
                 {Array.from({ length: 7 }, (_, index) => (
                   <line key={`h-${index}`} x1="0" x2="720" y1={index * 38} y2={index * 38} stroke="rgba(15,23,42,0.06)" />
                 ))}
@@ -1005,7 +1006,7 @@ const StockPreviewModal = ({
                 {previewPath ? (
                   <path d={previewPath} fill="none" stroke={isBull ? '#22c55e' : isHold ? '#06b6d4' : '#ef4444'} strokeWidth="3" vectorEffect="non-scaling-stroke" />
                 ) : (
-                  <text x="360" y="118" textAnchor="middle" className="fill-slate-400 text-xs font-bold uppercase tracking-widest">Loading chart</text>
+                  <text x="360" y="118" textAnchor="middle" className="fill-[#c6c6cd] text-xs font-bold uppercase tracking-widest">Loading chart</text>
                 )}
               </svg>
             </div>
@@ -1013,37 +1014,37 @@ const StockPreviewModal = ({
             <div className="grid gap-3">
               {analysisView ? (
                 <>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-['Space_Grotesk']">Verdict</div>
-                    <div className={`mt-2 text-3xl font-black uppercase tracking-widest ${accentText} font-['Space_Grotesk']`}>{analysisView.displayVerdict}</div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="rounded-2xl border border-hairline bg-black/40 p-4">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-paper-muted font-body">Verdict</div>
+                    <div className={`mt-2 text-3xl font-black uppercase tracking-widest ${accentText} font-body`}>{analysisView.displayVerdict}</div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.03]/10">
                       <div className={`h-full rounded-full bg-gradient-to-r ${accentBg}`} style={{ width: `${analysisView.confidenceLevel}%` }} />
                     </div>
-                    <div className="mt-2 text-xs font-black text-white font-['JetBrains_Mono']">{analysisView.confidenceLevel}/100 FISO confidence</div>
+                    <div className="mt-2 text-xs font-black text-paper font-numeric">{analysisView.confidenceLevel}/100 FISO confidence</div>
                   </div>
                   {isHold ? (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">No Active Trade</div>
-                      <div className="mt-2 text-sm font-black text-slate-700 font-['Space_Grotesk']">Target and stop are hidden until the setup becomes actionable.</div>
+                    <div className="rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-4">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-paper-muted">No Active Trade</div>
+                      <div className="mt-2 text-sm font-black text-slate-700 font-body">Target and stop are hidden until the setup becomes actionable.</div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Target</div>
-                        <div className="mt-2 text-lg font-black text-green-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.target}</div>
+                      <div className="rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-4">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-paper-muted">Target</div>
+                        <div className="mt-2 text-lg font-black text-primary font-numeric">{stock.currency}{analysisView.target}</div>
                       </div>
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stop Loss</div>
-                        <div className="mt-2 text-lg font-black text-red-500 font-['JetBrains_Mono']">{stock.currency}{analysisView.stop_loss}</div>
+                      <div className="rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-4">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-paper-muted">Stop Loss</div>
+                        <div className="mt-2 text-lg font-black text-rose-300 font-numeric">{stock.currency}{analysisView.stop_loss}</div>
                       </div>
                     </div>
                   )}
                 </>
               ) : (
-                <div className="flex min-h-52 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+                <div className="flex min-h-52 items-center justify-center rounded-2xl border border-hairline bg-white/[0.03]/[0.03]">
                   <div className="flex flex-col items-center gap-3">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-cyan-500" />
-                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 font-['JetBrains_Mono']">Running analysis</div>
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-hairline border-t-cyan-500" />
+                    <div className="text-[10px] font-black uppercase tracking-widest text-paper-muted font-numeric">Running analysis</div>
                   </div>
                 </div>
               )}
@@ -1054,7 +1055,7 @@ const StockPreviewModal = ({
                   event.stopPropagation();
                   onSelect(stock);
                 }}
-                className="rounded-2xl border border-cyan-200 bg-cyan-50 px-5 py-4 text-xs font-black uppercase tracking-[0.2em] text-slate-950 transition-colors hover:bg-cyan-100 font-['Space_Grotesk']"
+                className="rounded-2xl border border-cyan-200 bg-cyan-50 px-5 py-4 text-xs font-black uppercase tracking-[0.2em] text-paper transition-colors hover:bg-cyan-100 font-body"
               >
                 Open Full Analysis →
               </a>
@@ -3228,10 +3229,11 @@ function HomeContent() {
   const { data: quote } = useSWR(ticker ? `/api/v1/quote/${ticker}` : null, fetcher, {
     fallbackData: cachedQuote,
     refreshInterval: 45000,
-    revalidateIfStale: !cachedQuote,
-    revalidateOnMount: !cachedQuote,
-    revalidateOnFocus: false,
-    dedupingInterval: 1000 * 45,
+    // See the market-quotes note: the live price must always revalidate.
+    revalidateIfStale: true,
+    revalidateOnMount: true,
+    revalidateOnFocus: true,
+    dedupingInterval: 1000 * 20,
   });
   const { data: chartData, error: chartError } = useSWR(ticker ? `/api/v1/chart/${ticker}?range=${chartRange}` : null, fetcher, {
     fallbackData: cachedChart,
@@ -3316,18 +3318,24 @@ function HomeContent() {
       const chart = createChart(container, {
         width: initW,
         height: initH,
-        layout: { background: { color: 'transparent' }, textColor: '#c6c6cd' },
-        grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
-        crosshair: { mode: 1 },
+        // Axis labels need real contrast against the dark panel — #c6c6cd was
+        // washing out, which is why dates/prices read as invisible.
+        layout: { background: { color: 'transparent' }, textColor: '#e8e8ea', fontSize: 12 },
+        grid: { vertLines: { color: 'rgba(255,255,255,0.07)' }, horzLines: { color: 'rgba(255,255,255,0.07)' } },
+        crosshair: {
+          mode: 1,
+          vertLine: { color: 'rgba(245,196,81,0.55)', labelBackgroundColor: '#f5c451' },
+          horzLine: { color: 'rgba(245,196,81,0.55)', labelBackgroundColor: '#f5c451' },
+        },
         timeScale: {
           timeVisible: chartRange === '1d' || chartRange === '1w',
           secondsVisible: false,
-          borderColor: 'rgba(255,255,255,0.12)',
+          borderColor: 'rgba(255,255,255,0.18)',
           fixLeftEdge: chartRange !== 'max',
           fixRightEdge: true,
           rightOffset: 5,
         },
-        rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)' },
+        rightPriceScale: { borderColor: 'rgba(255,255,255,0.18)' },
       });
 
       const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -3549,10 +3557,13 @@ function HomeContent() {
   const { data: visibleQuotes } = useSWR<Record<string, QuoteSnapshot>>(visibleQuoteKey, fetcher, {
     fallbackData: cachedVisibleQuotes,
     refreshInterval: 60000,
-    revalidateOnMount: !cachedVisibleQuotes,
-    revalidateIfStale: !cachedVisibleQuotes,
-    revalidateOnFocus: false,
-    dedupingInterval: 1000 * 45,
+    // Prices ALWAYS refetch on mount/focus. The cached value still paints
+    // instantly via fallbackData, but it must never be the final answer —
+    // gating revalidation on the cache is what showed hours-old prices.
+    revalidateOnMount: true,
+    revalidateIfStale: true,
+    revalidateOnFocus: true,
+    dedupingInterval: 1000 * 20,
     onSuccess: quotes => {
       setCache(marketQuoteCacheKey, quotes);
       Object.entries(quotes).forEach(([nextTicker, nextQuote]) => setCache(`quote:${nextTicker}`, nextQuote));
@@ -4523,9 +4534,9 @@ function HomeContent() {
                     Loading Data Stream...
                   </div>
                 ) : !chartRowsAvailable ? (
-                  <div className="h-[260px] sm:h-[360px] flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center font-['JetBrains_Mono'] text-xs text-slate-500 sm:text-sm">
-                    <div className="mb-2 font-black uppercase tracking-widest text-slate-700">No chart data</div>
-                    <div>The backend did not return candle rows for this symbol yet. Refresh in a moment.</div>
+                  <div className="flex h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-hairline px-6 text-center sm:h-[360px]">
+                    <div className="mb-2 font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">No chart data</div>
+                    <div className="font-body text-[13px] leading-6 text-paper-muted">The backend did not return candle rows for this symbol yet. Refresh in a moment.</div>
                   </div>
                 ) : (
                   <div className="w-full overflow-hidden rounded-2xl border border-hairline bg-black/30">

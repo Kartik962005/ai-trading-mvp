@@ -205,3 +205,21 @@ body {
   background-color: #0b1220 !important;
   backdrop-filter: none;
 }
+
+/* ── bg-black rescue ────────────────────────────────────────────────────────
+   The light shell force-flips every `bg-black*` utility to white
+   (`.bullseye-light [class*="bg-black"] { background: rgba(255,255,255,.78) !important }`).
+   Inside the night scope that is exactly backwards: it turned the stock chart
+   panel into a grey slab (axis labels vanished against it) and hit every other
+   dark surface in the hub. Doubling the class raises specificity (0,3,0) above
+   the light rule (0,2,0) so the dark value wins regardless of source order. */
+.bullseye-night.bullseye-night [class*="bg-black"] {
+  background-color: rgba(4, 6, 5, 0.55) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* The chart shell specifically wants near-solid ink so candles pop. */
+.bullseye-night.bullseye-night [class~="bg-black/30"],
+.bullseye-night.bullseye-night [class~="bg-black/40"] {
+  background-color: rgba(3, 5, 4, 0.72) !important;
+}
