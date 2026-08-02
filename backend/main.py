@@ -12,6 +12,7 @@ from threading import Thread
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import os
+import pandas as pd
 
 load_dotenv()
 
@@ -209,7 +210,33 @@ async def start_daily_snapshot_refresh():
 
 def analyze_ticker_sync(ticker: str):
     df = get_historical_data(ticker, days=500)
-    return run_analysis(df, ticker)
+    result = run_analysis(df, ticker)
+
+    # `run_analysis` derives everything from the last DAILY bar, so its
+    # "current_price" is a close, not a live price. Report the live quote as
+    # current_price (that is what the UI labels LIVE PRICE) and keep the bar
+    # the levels were computed from as explicit provenance, so a stale feed can
+    # never masquerade as a live price again.
+    if isinstance(result, dict):
+        try:
+            bar_close = result.get("current_price")
+            if not df.empty and "date" in df.columns:
+                result["analysis_bar_date"] = str(pd.Timestamp(df["date"].max()).date())
+            result["analysis_bar_close"] = bar_close
+
+            live = get_latest_quote(ticker) or {}
+            live_price = live.get("price")
+            if isinstance(live_price, (int, float)) and live_price > 0:
+                result["current_price"] = round(float(live_price), 2)
+                result["live_price"] = round(float(live_price), 2)
+                if isinstance(bar_close, (int, float)) and bar_close > 0:
+                    result["live_vs_bar_pct"] = round(
+                        (float(live_price) - float(bar_close)) / float(bar_close) * 100, 2
+                    )
+        except Exception as exc:  # never let provenance break the analysis
+            print(f"[Analyze] live-price overlay failed for {ticker}: {exc}")
+
+    return result
 
 
 @app.get("/health")

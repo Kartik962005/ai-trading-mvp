@@ -6,6 +6,7 @@ import os
 import random
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 
 try:
     from app.services import price_store
@@ -41,10 +42,45 @@ QUOTE_TTL = 120    # 2 minutes
 CHART_TTL = 3600
 FUNDAMENTALS_TTL = 3600 * 6
 NSE_QUOTE_TTL = 3600
-# Refresh Supabase-cached history when its newest row is older than this many
-# calendar days. Covers normal weekends/holidays while forcing a refresh when a
-# ticker's cache has fallen months behind (which broke "today"/"last Friday" lookups).
-CACHE_MAX_STALE_DAYS = 5
+# How many completed trading SESSIONS the cached history may be missing before
+# we refetch from Yahoo.
+#
+# This was previously a flat 5 CALENDAR days, which silently served history that
+# was missing up to a week of sessions. Because analysis derives current_price,
+# entry, target and stop from the last bar of this frame, a cache missing the
+# most recent session produced prices (and therefore signals) that were days
+# out of date while the /quote endpoint reported the correct live price.
+#
+# 0 = the cache must contain the most recent completed session. On an exchange
+# holiday Yahoo simply returns the same frame again, so the only cost of being
+# strict is an occasional redundant fetch (bounded by the 1-hour RAM cache).
+CACHE_MAX_MISSING_SESSIONS = 0
+
+# NSE trades Mon-Fri and closes at 15:30 IST; treat a session as complete from
+# 16:00 IST to leave room for the feed to settle.
+_IST = timezone(timedelta(hours=5, minutes=30))
+_SESSION_COMPLETE_HOUR_IST = 16
+
+
+def _last_completed_session(now: datetime | None = None) -> pd.Timestamp:
+    """Most recent weekday whose session has finished (holidays not modelled)."""
+    current = (now or datetime.now(_IST)).astimezone(_IST)
+    day = current.date()
+    # Today only counts once the session has actually closed.
+    if current.weekday() >= 5 or current.hour < _SESSION_COMPLETE_HOUR_IST:
+        day = day - timedelta(days=1)
+    while day.weekday() >= 5:  # rewind over Sat/Sun
+        day = day - timedelta(days=1)
+    return pd.Timestamp(day)
+
+
+def _sessions_missing(latest_cached: pd.Timestamp, now: datetime | None = None) -> int:
+    """Count weekday sessions between the cache's newest bar and the last close."""
+    last_session = _last_completed_session(now)
+    start = latest_cached.normalize() + pd.Timedelta(days=1)
+    if start > last_session:
+        return 0
+    return len(pd.bdate_range(start, last_session))
 # Serialize writes to the shared Supabase client. It wraps a single httpx
 # connection that isn't safe for concurrent use, so simultaneous upserts from
 # the movers-scan thread pool trip "[WinError 10035] non-blocking socket
@@ -79,13 +115,16 @@ def _cache_status(df: pd.DataFrame, ticker: str, days: int, source: str) -> tupl
         return False, 0
 
     latest_cached = df['date'].max()
-    stale_days = (pd.Timestamp.now().normalize() - latest_cached.normalize()).days
-    if stale_days <= CACHE_MAX_STALE_DAYS:
+    missing = _sessions_missing(latest_cached)
+    if missing <= CACHE_MAX_MISSING_SESSIONS:
         print(f"[Cache] {source} hit for {ticker} ({len(df)} rows, latest {latest_cached.date()})")
-        return True, stale_days
+        return True, missing
 
-    print(f"[Cache] {source} data for {ticker} is stale (latest {latest_cached.date()}, {stale_days}d old) - refreshing from Yahoo.")
-    return False, stale_days
+    print(
+        f"[Cache] {source} data for {ticker} is missing {missing} session(s) "
+        f"(latest {latest_cached.date()}, last close {_last_completed_session().date()}) - refreshing from Yahoo."
+    )
+    return False, missing
 
 
 def _clean_scalar(value):

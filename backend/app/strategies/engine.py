@@ -488,10 +488,23 @@ def evaluate_strategies(latest: pd.Series, prev: pd.Series, df: pd.DataFrame):
     return evals, best_id
 
 def run_analysis(df: pd.DataFrame, ticker: str):
+    # Bar the analysis is about to be computed from. A cached result is only
+    # valid for the SAME bar: previously the caches were time-based only, so a
+    # result computed from an out-of-date price frame kept being served for an
+    # hour after fresher bars had arrived — the signal (entry/target/stop) then
+    # described a session that had already closed.
+    try:
+        _current_bar = str(pd.Timestamp(df['date'].max()).date()) if 'date' in df.columns and not df.empty else None
+    except Exception:
+        _current_bar = None
+
     # ── RAM cache check ────────────────────────────────────────────────────────
     now = time.time()
     if ticker in _analysis_cache and now - _analysis_cache[ticker]['ts'] < ANALYSIS_TTL:
-        return _analysis_cache[ticker]['result']
+        cached_entry = _analysis_cache[ticker]
+        if _current_bar is None or cached_entry.get('bar') == _current_bar:
+            return cached_entry['result']
+        print(f"[Cache] Analysis RAM entry for {ticker} was built on bar {cached_entry.get('bar')}, now {_current_bar} - recomputing.")
 
     # ── Supabase cache check ───────────────────────────────────────────────────
     # Sources that indicate stale/low-quality cached news — bust the cache if found
@@ -513,11 +526,21 @@ def run_analysis(df: pd.DataFrame, ticker: str):
                         any(src in h.lower() for src in _STALE_NEWS_SOURCES)
                         for h in headlines
                     )
-                    if not has_stale_news:
-                        _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+                    # Reject a cached result that was computed from an older
+                    # price bar than the one we now hold.
+                    # Entries written before this field existed cannot be
+                    # verified, so they are treated as invalid and recomputed
+                    # once (after which they carry the stamp).
+                    cached_bar = result.get('analysis_bar_date') if isinstance(result, dict) else None
+                    bar_matches = _current_bar is None or cached_bar == _current_bar
+                    if not bar_matches:
+                        print(f"[Cache] Analysis Supabase entry for {ticker} was built on bar {cached_bar}, now {_current_bar} - recomputing.")
+                    elif not has_stale_news:
+                        _analysis_cache[ticker] = {'result': result, 'ts': time.time(), 'bar': _current_bar}
                         print(f"[Cache] Analysis Supabase hit for {ticker}")
                         return result
-                    print(f"[Cache] Stale news detected for {ticker}, re-running analysis")
+                    else:
+                        print(f"[Cache] Stale news detected for {ticker}, re-running analysis")
         except Exception as e:
             print(f"[Cache] Analysis Supabase read failed: {e}")
     df = df.dropna(subset=['close', 'high', 'low', 'volume'])
@@ -729,9 +752,13 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "target_date": (datetime.now() + timedelta(days=(estimated_days * 1.4))).strftime('%b %d, %Y') if tradable else "No active trade"
     }
 
+    # Stamp the bar this result was computed from BEFORE caching, so both the
+    # RAM and Supabase caches can be invalidated when a newer bar arrives.
+    result["analysis_bar_date"] = _current_bar
+
     # ── Save to RAM cache ──────────────────────────────────────────────────────
     if sentiment_ready:
-        _analysis_cache[ticker] = {'result': result, 'ts': time.time()}
+        _analysis_cache[ticker] = {'result': result, 'ts': time.time(), 'bar': _current_bar}
 
     # ── Save to Supabase cache ─────────────────────────────────────────────────
     if sentiment_ready and _SUPABASE_OK and _sb and _SUPABASE_WRITES_OK:

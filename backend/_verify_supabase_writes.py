@@ -19,7 +19,7 @@ nse = [s["ticker"] for s in load_catalog() if s["exchange"] == "NSE"][:30]
 # empty the RAM cache and treat any DB rows as stale so each ticker refreshes
 # from Yahoo and re-saves. Runtime test override only -- source logic untouched.
 data_service._hist_cache.clear()
-data_service.CACHE_MAX_STALE_DAYS = -1
+data_service.CACHE_MAX_MISSING_SESSIONS = -1
 
 print(f"Scanning {len(nse)} NSE tickers at max_workers={_MOVERS_WORKERS} (cold cache)\n")
 
