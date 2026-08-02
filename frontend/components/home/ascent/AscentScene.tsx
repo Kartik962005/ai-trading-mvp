@@ -37,11 +37,14 @@ type CamKey = {
 // coin mostly holds the origin, spinning + scaling. Spin lands on a multiple of
 // 2π at p=1 so the face is dead-on for the CTA.
 const CAM: CamKey[] = [
-  { p: 0.0, pos: [0.7, 0.15, 3.15], look: [0.28, 0, 0], coinS: 1.55, spin: 0.0 },
-  { p: 0.2, pos: [0.0, 0.6, 13.5], look: [0, 0, 0], coinS: 0.95, spin: Math.PI * 1.2 },
-  { p: 0.44, pos: [3.6, 1.7, 4.6], look: [-0.6, 0.1, -7.5], coinS: 0.8, spin: Math.PI * 2.7 },
-  { p: 0.66, pos: [0.0, 0.1, 5.6], look: [0, 0, 0], coinS: 1.12, spin: Math.PI * 4.4 },
-  { p: 1.0, pos: [-1.95, 0.05, 4.3], look: [0.5, 0, 0], coinS: 1.15, spin: Math.PI * 6 },
+  // Landing: coin parked UPPER-RIGHT so it never sits on the headline (left)
+  // or the live stock cards (bottom). lookAt is offset down-left of the coin,
+  // which pushes the coin up-right on screen.
+  { p: 0.0, pos: [0.0, 0.2, 3.9], look: [-0.85, -0.6, 0], coinS: 1.0, spin: 0.0 },
+  { p: 0.22, pos: [0.0, 0.6, 13.5], look: [0, 0, 0], coinS: 0.95, spin: Math.PI * 1.0 },
+  { p: 0.46, pos: [3.6, 1.7, 4.6], look: [-0.6, 0.1, -7.5], coinS: 0.8, spin: Math.PI * 2.2 },
+  { p: 0.68, pos: [0.0, 0.1, 5.6], look: [0, 0, 0], coinS: 1.12, spin: Math.PI * 3.6 },
+  { p: 1.0, pos: [-1.95, 0.05, 4.3], look: [0.5, 0, 0], coinS: 1.15, spin: Math.PI * 5 },
 ];
 
 type Sample = { pos: THREE.Vector3; look: THREE.Vector3; coinS: number; spin: number };
@@ -83,11 +86,17 @@ function Rig({
   pointer: MutableRefObject<Pointer>;
   easedRef: MutableRefObject<number>;
 }) {
-  const { camera } = useThree();
+  const { camera, invalidate } = useThree();
   const sample = useMemo<Sample>(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), coinS: 1, spin: 0 }), []);
   useFrame(() => {
-    // Ease the raw scroll value so fast flicks feel weighty.
-    easedRef.current += (progress.current - easedRef.current) * 0.16;
+    // Ease the raw scroll value so fast flicks feel weighty. Lower factor =
+    // more lag = slower, heavier camera (tuned down from 0.16).
+    const delta = progress.current - easedRef.current;
+    easedRef.current += delta * 0.075;
+    // frameloop="demand" only renders on invalidate(); keep the loop alive
+    // while the eased value is still catching up, otherwise the glide freezes
+    // mid-travel the moment scrolling stops.
+    if (Math.abs(delta) > 0.0002) invalidate();
     const s = sampleCam(easedRef.current, sample);
     camera.position.set(
       s.pos.x + pointer.current.x * 0.5,
@@ -108,7 +117,9 @@ function Medallion({ easedRef }: { easedRef: MutableRefObject<number> }) {
 
   const [faceTex, backTex] = useMemo(() => [makeMedallionFace(), makeMedallionBack()], []);
   const geometry = useMemo(() => {
-    const g = new THREE.CylinderGeometry(1.3, 1.3, 0.16, 72, 1);
+    // Thinner + more segments: reads as a machined disc rather than a chunky
+    // token, and the rim highlight stays smooth in close-ups.
+    const g = new THREE.CylinderGeometry(1.3, 1.3, 0.09, 160, 1);
     g.rotateX(Math.PI / 2); // caps face ±Z so the front looks at the camera
     return g;
   }, []);
@@ -143,19 +154,21 @@ function Medallion({ easedRef }: { easedRef: MutableRefObject<number> }) {
   return (
     <group ref={group}>
       <mesh geometry={geometry}>
-        {/* [side, top(front), bottom(back)] */}
-        <meshStandardMaterial attach="material-0" color="#c9a24a" metalness={0.95} roughness={0.32} />
-        <meshStandardMaterial
+        {/* [side(rim), top(front), bottom(back)] */}
+        <meshStandardMaterial attach="material-0" color="#e8c579" metalness={1} roughness={0.18} />
+        <meshPhysicalMaterial
           ref={faceMat}
           attach="material-1"
           map={faceTex}
-          emissive="#0d5a3f"
+          emissive="#0e6a49"
           emissiveMap={faceTex}
-          emissiveIntensity={0.32}
-          metalness={0.55}
-          roughness={0.35}
+          emissiveIntensity={0.3}
+          metalness={0.7}
+          roughness={0.22}
+          clearcoat={1}
+          clearcoatRoughness={0.12}
         />
-        <meshStandardMaterial attach="material-2" map={backTex} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial attach="material-2" map={backTex} metalness={0.75} roughness={0.3} />
       </mesh>
       {/* Stamp ring (in front of the coin face). */}
       <mesh ref={ring} position={[0, 0, 0.2]}>
@@ -268,9 +281,13 @@ export default function AscentScene({
     >
       <AdaptiveDpr />
       <fog attach="fog" args={["#04070a", 9, 24]} />
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[4, 6, 8]} intensity={1.5} color="#fff4d6" />
-      <pointLight position={[-3, -2, 4]} intensity={40} distance={18} color="#34d399" />
+      <ambientLight intensity={0.4} />
+      {/* Key */}
+      <directionalLight position={[4, 6, 8]} intensity={2.1} color="#fff4d6" />
+      {/* Emerald fill */}
+      <pointLight position={[-3, -2, 4]} intensity={38} distance={18} color="#34d399" />
+      {/* Rim/back light — separates the gold edge from the black void. */}
+      <directionalLight position={[-5, 2, -6]} intensity={1.4} color="#f5c451" />
       <Rig progress={progress} pointer={pointer} easedRef={easedRef} />
       <Medallion easedRef={easedRef} />
       <MarketSwarm easedRef={easedRef} />

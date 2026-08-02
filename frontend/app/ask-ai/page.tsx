@@ -212,10 +212,10 @@ function pct(value: number | undefined | null) {
 }
 
 function toneClass(value: number | undefined | null) {
-  if (value === undefined || value === null || Number.isNaN(value)) return 'text-slate-500';
+  if (value === undefined || value === null || Number.isNaN(value)) return 'text-paper-muted';
   if (value > 0) return 'text-emerald-600';
   if (value < 0) return 'text-rose-600';
-  return 'text-slate-600';
+  return 'text-paper-muted';
 }
 
 function formatDuration(ms?: number | null) {
@@ -254,7 +254,7 @@ function renderInline(text: string, keyPrefix: string, onRun?: (prompt: string) 
     }
     const token = match[0];
     if (token.startsWith('**')) {
-      nodes.push(<strong key={`${keyPrefix}-b-${i}`} className="font-bold text-slate-900">{token.slice(2, -2)}</strong>);
+      nodes.push(<strong key={`${keyPrefix}-b-${i}`} className="font-bold text-paper">{token.slice(2, -2)}</strong>);
     } else {
       const code = token.slice(1, -1);
       if (onRun && looksRunnable(code)) {
@@ -264,15 +264,15 @@ function renderInline(text: string, keyPrefix: string, onRun?: (prompt: string) 
             type="button"
             onClick={() => onRun(code)}
             title="Tap to run this"
-            className="group/run mx-0.5 inline rounded bg-cyan-50 px-1.5 py-0.5 text-left font-mono text-[0.85em] text-cyan-700 underline decoration-cyan-300 decoration-dotted underline-offset-2 transition hover:bg-cyan-100 hover:text-cyan-900 hover:decoration-solid"
+            className="group/run mx-0.5 inline rounded bg-accent/10 px-1.5 py-0.5 text-left font-mono text-[0.85em] text-accent underline decoration-accent/50 decoration-dotted underline-offset-2 transition hover:bg-accent/15 hover:text-accent hover:decoration-solid"
           >
             {code}
-            <span className="ml-1 text-cyan-400 transition group-hover/run:text-cyan-600" aria-hidden="true">↵</span>
+            <span className="ml-1 text-accent transition group-hover/run:text-accent" aria-hidden="true">↵</span>
           </button>
         );
       } else {
         nodes.push(
-          <code key={`${keyPrefix}-c-${i}`} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-cyan-700">
+          <code key={`${keyPrefix}-c-${i}`} className="rounded bg-white/[0.03]/[0.05] px-1.5 py-0.5 font-mono text-[0.85em] text-accent">
             {code}
           </code>
         );
@@ -315,7 +315,7 @@ function renderMarkdown(text: string, onRun?: (prompt: string) => void): ReactNo
     flushBullets();
     if (headingMatch) {
       blocks.push(
-        <p key={`h-${key++}`} className="mt-3 mb-1 text-sm font-black uppercase tracking-wide text-slate-900">
+        <p key={`h-${key++}`} className="mt-3 mb-1 text-sm font-black uppercase tracking-wide text-paper">
           {renderInline(headingMatch[1], `h-${key}`, onRun)}
         </p>
       );
@@ -336,9 +336,9 @@ function renderMarkdown(text: string, onRun?: (prompt: string) => void): ReactNo
 // ── Result cards ──────────────────────────────────────────────────────────────
 function StatCell({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2 transition hover:border-cyan-200 hover:bg-white">
-      <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
-      <div className={`mt-0.5 font-display text-base font-bold tabular-nums ${tone ?? 'text-slate-900'}`}>{value}</div>
+    <div className="rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 py-2 transition hover:border-accent/30 hover:bg-white/[0.03]">
+      <div className="text-[9px] font-bold uppercase tracking-wider text-paper-muted">{label}</div>
+      <div className={`mt-0.5 font-display text-base font-bold tabular-nums ${tone ?? 'text-paper'}`}>{value}</div>
     </div>
   );
 }
@@ -347,12 +347,12 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
   const s = data.summary;
   const signal = (data.current_signal || 'HOLD').toUpperCase();
   const signalTone =
-    signal === 'BUY' ? 'bg-emerald-100 text-emerald-700' : signal === 'SELL' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600';
+    signal === 'BUY' ? 'bg-primary/15 text-primary' : signal === 'SELL' ? 'bg-rose-500/15 text-rose-300' : 'bg-white/[0.05] text-paper-muted';
 
   return (
-    <div className="mt-3 rounded-2xl border border-cyan-200/70 bg-cyan-50/40 p-3 sm:p-4">
+    <div className="mt-3 rounded-2xl border border-accent/30 bg-accent/[0.05] p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-black uppercase tracking-wider text-cyan-800">
+        <div className="text-xs font-black uppercase tracking-wider text-accent">
           Backtest{ticker ? ` · ${ticker}` : ''}
         </div>
         <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${signalTone}`}>
@@ -361,7 +361,7 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
       </div>
 
       {(data.buy_expr || data.sell_expr) && (
-        <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+        <div className="mt-2 space-y-1 text-[11px] text-paper-muted">
           {data.buy_expr && <div><span className="font-bold text-emerald-700">BUY</span> <code className="font-mono">{data.buy_expr}</code></div>}
           {data.sell_expr && <div><span className="font-bold text-rose-700">SELL</span> <code className="font-mono">{data.sell_expr}</code></div>}
         </div>
@@ -386,13 +386,13 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
 
       {data.trades && data.trades.length > 0 && (
         <details className="mt-3 group">
-          <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wider text-cyan-700 hover:text-cyan-900">
+          <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wider text-accent hover:text-accent">
             View last {Math.min(data.trades.length, 12)} trades
           </summary>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full text-left text-[11px]">
               <thead>
-                <tr className="text-slate-400">
+                <tr className="text-paper-muted">
                   <th className="py-1 pr-3 font-bold uppercase">Buy</th>
                   <th className="py-1 pr-3 font-bold uppercase">Sell</th>
                   <th className="py-1 pr-3 font-bold uppercase">Days</th>
@@ -401,10 +401,10 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
               </thead>
               <tbody>
                 {data.trades.slice(-12).reverse().map((t, idx) => (
-                  <tr key={idx} className="border-t border-slate-100">
-                    <td className="py-1 pr-3 text-slate-600">{t.buy_date} @ {t.buy_price}</td>
-                    <td className="py-1 pr-3 text-slate-600">{t.sell_date} @ {t.sell_price}</td>
-                    <td className="py-1 pr-3 text-slate-500">{t.holding_days}</td>
+                  <tr key={idx} className="border-t border-hairline">
+                    <td className="py-1 pr-3 text-paper-muted">{t.buy_date} @ {t.buy_price}</td>
+                    <td className="py-1 pr-3 text-paper-muted">{t.sell_date} @ {t.sell_price}</td>
+                    <td className="py-1 pr-3 text-paper-muted">{t.holding_days}</td>
                     <td className={`py-1 pr-3 font-bold ${toneClass(t.return_pct)}`}>{pct(t.return_pct)}</td>
                   </tr>
                 ))}
@@ -419,10 +419,10 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
 
 function ScanCard({ data }: { data: Scan }) {
   return (
-    <div className="mt-3 rounded-2xl border border-cyan-200/70 bg-cyan-50/40 p-3 sm:p-4">
-      <div className="text-xs font-black uppercase tracking-wider text-cyan-800">Cross-stock scan</div>
+    <div className="mt-3 rounded-2xl border border-accent/30 bg-accent/[0.05] p-3 sm:p-4">
+      <div className="text-xs font-black uppercase tracking-wider text-accent">Cross-stock scan</div>
       {(data.buy_expr || data.sell_expr) && (
-        <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+        <div className="mt-2 space-y-1 text-[11px] text-paper-muted">
           {data.buy_expr && <div><span className="font-bold text-emerald-700">BUY</span> <code className="font-mono">{data.buy_expr}</code></div>}
           {data.sell_expr && <div><span className="font-bold text-rose-700">SELL</span> <code className="font-mono">{data.sell_expr}</code></div>}
         </div>
@@ -435,7 +435,7 @@ function ScanCard({ data }: { data: Scan }) {
         <StatCell label="Avg return" value={pct(data.avg_total_return_pct)} tone={toneClass(data.avg_total_return_pct)} />
       </div>
       {data.partial && (
-        <p className="mt-2 text-[10px] text-slate-400">
+        <p className="mt-2 text-[10px] text-paper-muted">
           Scanned {data.scanned} of {data.universe} stocks within the time budget. Ask again to continue the scan.
         </p>
       )}
@@ -444,7 +444,7 @@ function ScanCard({ data }: { data: Scan }) {
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-[11px]">
             <thead>
-              <tr className="text-slate-400">
+              <tr className="text-paper-muted">
                 <th className="py-1 pr-3 font-bold uppercase">Stock</th>
                 <th className="py-1 pr-3 font-bold uppercase">Return</th>
                 <th className="py-1 pr-3 font-bold uppercase">Win %</th>
@@ -455,11 +455,11 @@ function ScanCard({ data }: { data: Scan }) {
             </thead>
             <tbody>
               {data.rows.slice(0, 15).map((r) => (
-                <tr key={r.ticker} className="border-t border-slate-100">
-                  <td className="py-1 pr-3 font-bold text-slate-700">{r.symbol || r.ticker}</td>
+                <tr key={r.ticker} className="border-t border-hairline">
+                  <td className="py-1 pr-3 font-bold text-paper-muted">{r.symbol || r.ticker}</td>
                   <td className={`py-1 pr-3 font-bold ${toneClass(r.total_return_pct)}`}>{pct(r.total_return_pct)}</td>
-                  <td className="py-1 pr-3 text-slate-600">{r.win_rate}%</td>
-                  <td className="py-1 pr-3 text-slate-500">{r.total_trades}</td>
+                  <td className="py-1 pr-3 text-paper-muted">{r.win_rate}%</td>
+                  <td className="py-1 pr-3 text-paper-muted">{r.total_trades}</td>
                   <td className={`py-1 pr-3 ${toneClass(r.buy_hold_pct)}`}>{pct(r.buy_hold_pct)}</td>
                   <td className={`py-1 pr-3 font-bold ${toneClass(r.alpha_pct)}`}>{pct(r.alpha_pct)}</td>
                 </tr>
@@ -476,12 +476,12 @@ function MoversCard({ data }: { data: MoversScan }) {
   const isLosers = /declin|loser|lower/i.test(data.direction || '');
   const title = isLosers ? 'Biggest decliners' : 'Biggest gainers';
   return (
-    <div className="mt-3 rounded-2xl border border-cyan-200/70 bg-cyan-50/40 p-3 sm:p-4">
+    <div className="mt-3 rounded-2xl border border-accent/30 bg-accent/[0.05] p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-black uppercase tracking-wider text-cyan-800">
+        <div className="text-xs font-black uppercase tracking-wider text-accent">
           {title}{data.session_date ? ` · ${data.session_date}` : ''}
         </div>
-        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <span className="rounded-full bg-white/[0.03]/[0.05] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper-muted">
           {data.ready ? `${data.universe} stocks scanned` : `scanning ${data.coverage}/${data.universe}`}
         </span>
       </div>
@@ -490,7 +490,7 @@ function MoversCard({ data }: { data: MoversScan }) {
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-[11px]">
             <thead>
-              <tr className="text-slate-400">
+              <tr className="text-paper-muted">
                 <th className="py-1 pr-3 font-bold uppercase">#</th>
                 <th className="py-1 pr-3 font-bold uppercase">Stock</th>
                 <th className="py-1 pr-3 font-bold uppercase">Change</th>
@@ -499,11 +499,11 @@ function MoversCard({ data }: { data: MoversScan }) {
             </thead>
             <tbody>
               {data.rows.slice(0, 15).map((r, idx) => (
-                <tr key={r.ticker} className="border-t border-slate-100">
-                  <td className="py-1 pr-3 text-slate-400 tabular-nums">{idx + 1}</td>
-                  <td className="py-1 pr-3 font-bold text-slate-700">{r.symbol || r.ticker}</td>
+                <tr key={r.ticker} className="border-t border-hairline">
+                  <td className="py-1 pr-3 text-paper-muted tabular-nums">{idx + 1}</td>
+                  <td className="py-1 pr-3 font-bold text-paper-muted">{r.symbol || r.ticker}</td>
                   <td className={`py-1 pr-3 font-bold tabular-nums ${toneClass(r.change_pct)}`}>{pct(r.change_pct)}</td>
-                  <td className="py-1 pr-3 text-slate-600 tabular-nums">{r.close}</td>
+                  <td className="py-1 pr-3 text-paper-muted tabular-nums">{r.close}</td>
                 </tr>
               ))}
             </tbody>
@@ -516,7 +516,7 @@ function MoversCard({ data }: { data: MoversScan }) {
       )}
 
       {!data.ready && data.rows.length > 0 && (
-        <p className="mt-2 text-[10px] text-slate-400">
+        <p className="mt-2 text-[10px] text-paper-muted">
           Still scanning the full market ({data.coverage}/{data.universe}). Ask again shortly for the complete ranking.
         </p>
       )}
@@ -532,11 +532,11 @@ function num(value: number | undefined | null, digits = 2) {
 function ScreenerCard({ data }: { data: ScreenerResult }) {
   const rows = data.rows || [];
   return (
-    <div className="mt-3 rounded-2xl border border-cyan-200/70 bg-cyan-50/40 p-3 sm:p-4">
+    <div className="mt-3 rounded-2xl border border-accent/30 bg-accent/[0.05] p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-black uppercase tracking-wider text-cyan-800">Screener matches</div>
+        <div className="text-xs font-black uppercase tracking-wider text-accent">Screener matches</div>
         {data.source && (
-          <span className="rounded-full bg-white/80 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <span className="rounded-full bg-white/[0.03]/[0.03] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper-muted">
             {data.source}
           </span>
         )}
@@ -544,7 +544,7 @@ function ScreenerCard({ data }: { data: ScreenerResult }) {
       {data.matchedRules && data.matchedRules.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {data.matchedRules.slice(0, 6).map((rule) => (
-            <span key={rule} className="rounded-full border border-cyan-100 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+            <span key={rule} className="rounded-full border border-accent/25 bg-white/[0.03]/[0.03] px-2 py-0.5 text-[10px] font-semibold text-accent">
               {rule}
             </span>
           ))}
@@ -555,7 +555,7 @@ function ScreenerCard({ data }: { data: ScreenerResult }) {
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-[11px]">
             <thead>
-              <tr className="text-slate-400">
+              <tr className="text-paper-muted">
                 <th className="py-1 pr-3 font-bold uppercase">#</th>
                 <th className="py-1 pr-3 font-bold uppercase">Stock</th>
                 <th className="py-1 pr-3 font-bold uppercase">MCap Cr</th>
@@ -570,18 +570,18 @@ function ScreenerCard({ data }: { data: ScreenerResult }) {
               {rows.slice(0, 20).map((row, idx) => {
                 const symbol = row.stock?.symbol || row.stock?.ticker || `match-${idx}`;
                 return (
-                  <tr key={`${symbol}-${idx}`} className="border-t border-slate-100">
-                    <td className="py-1 pr-3 text-slate-400 tabular-nums">{idx + 1}</td>
+                  <tr key={`${symbol}-${idx}`} className="border-t border-hairline">
+                    <td className="py-1 pr-3 text-paper-muted tabular-nums">{idx + 1}</td>
                     <td className="py-1 pr-3">
-                      <div className="font-bold text-slate-700">{symbol}</div>
-                      {row.stock?.name && <div className="max-w-[180px] truncate text-[10px] text-slate-400">{row.stock.name}</div>}
+                      <div className="font-bold text-paper-muted">{symbol}</div>
+                      {row.stock?.name && <div className="max-w-[180px] truncate text-[10px] text-paper-muted">{row.stock.name}</div>}
                     </td>
-                    <td className="py-1 pr-3 text-slate-600 tabular-nums">{num(row.marketCapCr, 0)}</td>
+                    <td className="py-1 pr-3 text-paper-muted tabular-nums">{num(row.marketCapCr, 0)}</td>
                     <td className={`py-1 pr-3 font-bold tabular-nums ${toneClass(row.revenueGrowth3Yr)}`}>{pct(row.revenueGrowth3Yr)}</td>
                     <td className={`py-1 pr-3 font-bold tabular-nums ${toneClass(row.profitGrowth3Yr)}`}>{pct(row.profitGrowth3Yr)}</td>
-                    <td className="py-1 pr-3 font-bold text-slate-700 tabular-nums">{pct(row.roce ?? row.avgRoce7Yr)}</td>
-                    <td className="py-1 pr-3 text-slate-600 tabular-nums">{num(row.debtToEquity)}</td>
-                    <td className="py-1 pr-3 text-slate-600 tabular-nums">{num(row.pe)}</td>
+                    <td className="py-1 pr-3 font-bold text-paper-muted tabular-nums">{pct(row.roce ?? row.avgRoce7Yr)}</td>
+                    <td className="py-1 pr-3 text-paper-muted tabular-nums">{num(row.debtToEquity)}</td>
+                    <td className="py-1 pr-3 text-paper-muted tabular-nums">{num(row.pe)}</td>
                   </tr>
                 );
               })}
@@ -878,21 +878,21 @@ export default function AskAiPage() {
   const isEmpty = messages.length === 0;
 
   return (
-    <main className="relative flex min-h-screen flex-col bg-[#f6fbfd] font-body text-slate-950">
+    <main className="relative flex min-h-screen flex-col bg-black font-body text-paper">
       {/* ambient background glow */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 left-1/2 h-[480px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-to-br from-cyan-200/45 via-sky-100/30 to-emerald-200/35 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 h-[360px] w-[360px] rounded-full bg-emerald-200/25 blur-[120px]" />
+        <div className="absolute -top-40 left-1/2 h-[480px] w-[820px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(52,211,153,0.16),transparent_70%)] blur-[120px]" />
+        <div className="absolute bottom-0 right-0 h-[360px] w-[360px] rounded-full bg-[radial-gradient(circle,rgba(245,196,81,0.12),transparent_70%)] blur-[120px]" />
       </div>
 
-      <header className="sticky top-0 z-40 border-b border-white/60 bg-white/70 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-hairline bg-black/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => router.back()}
               aria-label="Go back to the previous page"
-              className="group flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white/80 pl-2 pr-3 text-[12px] font-semibold text-slate-600 transition hover:-translate-x-0.5 hover:border-cyan-300 hover:text-cyan-700 hover:shadow-[0_8px_24px_rgba(8,145,178,0.14)]"
+              className="group flex h-9 items-center gap-1.5 rounded-xl border border-hairline bg-white/[0.03]/[0.03] pl-2 pr-3 text-[12px] font-semibold text-paper-muted transition hover:-translate-x-0.5 hover:border-accent/55 hover:text-accent hover:shadow-[0_8px_24px_rgba(8,145,178,0.14)]"
             >
               <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 transition group-hover:-translate-x-0.5" aria-hidden="true">
                 <path d="M12.5 5L7.5 10l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -900,14 +900,14 @@ export default function AskAiPage() {
               Back
             </button>
             <Link href="/" className="group flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-200/70 bg-gradient-to-br from-white via-cyan-100 to-emerald-100 shadow-[0_6px_18px_rgba(6,182,212,0.18)]">
-                <span className="font-display text-xs font-bold text-cyan-700">BE</span>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/40 bg-accent/10">
+                <span className="font-display text-xs text-accent">BE</span>
               </div>
               <div className="leading-tight">
-                <div className="font-['Space_Grotesk'] text-[15px] font-black uppercase tracking-[0.18em] sm:text-base">
-                  <span className="text-slate-900">BULLS</span><span className="text-cyan-600">EYE</span>
+                <div className="font-display text-[19px] leading-none sm:text-[21px]">
+                  <span className="text-paper">BULLS</span><span className="text-accent">EYE</span>
                 </div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">Ask AI · Backtest · Scan</div>
+                <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-paper-muted">Ask AI · Backtest · Scan</div>
               </div>
             </Link>
           </div>
@@ -916,20 +916,20 @@ export default function AskAiPage() {
               <button
                 type="button"
                 onClick={startNewChat}
-                className="h-9 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-[12px] font-semibold text-slate-600 transition hover:border-cyan-300 hover:text-cyan-700"
+                className="h-9 rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 text-[12px] font-semibold text-paper-muted transition hover:border-accent/55 hover:text-accent"
               >
                 New chat
               </button>
             )}
             <Link
               href="/screens"
-              className="h-9 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-[12px] font-semibold leading-9 text-slate-600 transition hover:border-cyan-300 hover:text-cyan-700"
+              className="h-9 rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 text-[12px] font-semibold leading-9 text-paper-muted transition hover:border-accent/55 hover:text-accent"
             >
               Screener
             </Link>
             <Link
               href="/"
-              className="hidden h-9 rounded-xl border border-slate-200/80 bg-white/80 px-3 text-[12px] font-semibold leading-9 text-slate-600 transition hover:border-cyan-300 hover:text-cyan-700 sm:inline-block"
+              className="hidden h-9 rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 text-[12px] font-semibold leading-9 text-paper-muted transition hover:border-accent/55 hover:text-accent sm:inline-block"
             >
               Home
             </Link>
@@ -938,17 +938,17 @@ export default function AskAiPage() {
       </header>
 
       <div className="w-full flex-1 px-4 py-6 sm:px-6 lg:ml-[292px] lg:w-[calc(100%-292px)]">
-        <aside className="mb-4 h-fit rounded-2xl border border-slate-200/80 bg-white/82 p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl lg:fixed lg:bottom-0 lg:left-0 lg:top-[85px] lg:z-30 lg:mb-0 lg:w-[292px] lg:overflow-y-auto lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/88 lg:px-4 lg:py-5">
+        <aside className="mb-4 h-fit rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl lg:fixed lg:bottom-0 lg:left-0 lg:top-[85px] lg:z-30 lg:mb-0 lg:w-[292px] lg:overflow-y-auto lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/[0.03]/[0.03] lg:px-4 lg:py-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Recent chats</div>
-              <div className="mt-0.5 text-[11px] text-slate-400">Last 48 hours</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-paper-muted">Recent chats</div>
+              <div className="mt-0.5 text-[11px] text-paper-muted">Last 48 hours</div>
             </div>
             <button
               type="button"
               onClick={() => loadConversations().catch(() => {})}
               disabled={historyLoading || conversationsLoading}
-              className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 transition hover:border-cyan-300 hover:text-cyan-700 disabled:opacity-40"
+              className="rounded-lg border border-hairline px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-paper-muted transition hover:border-accent/55 hover:text-accent disabled:opacity-40"
             >
               Refresh
             </button>
@@ -957,7 +957,7 @@ export default function AskAiPage() {
             {conversationsLoading && conversations.length === 0 ? (
               <>
                 {[0, 1, 2].map((item) => (
-                  <div key={item} className="h-[54px] animate-pulse rounded-xl border border-slate-100 bg-slate-100/70" />
+                  <div key={item} className="h-[54px] animate-pulse rounded-xl border border-hairline bg-white/[0.03]/[0.05]" />
                 ))}
               </>
             ) : conversations.length > 0 ? (
@@ -969,16 +969,16 @@ export default function AskAiPage() {
                   disabled={historyLoading}
                   className={`w-full rounded-xl border px-3 py-2 text-left transition disabled:opacity-50 ${
                     conversation.id === conversationId
-                      ? 'border-cyan-300 bg-cyan-50 text-cyan-900'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-cyan-800'
+                      ? 'border-accent/55 bg-accent/10 text-accent'
+                      : 'border-hairline bg-white/[0.03] text-paper-muted hover:border-accent/55 hover:text-accent'
                   }`}
                 >
                   <div className="truncate text-[12px] font-bold">{conversation.title || 'Ask AI chat'}</div>
-                  <div className="mt-1 truncate text-[10px] text-slate-400">{new Date(conversation.updated_at).toLocaleString()}</div>
+                  <div className="mt-1 truncate text-[10px] text-paper-muted">{new Date(conversation.updated_at).toLocaleString()}</div>
                 </button>
               ))
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-[12px] leading-5 text-slate-400">
+              <div className="rounded-xl border border-dashed border-hairline px-3 py-4 text-[12px] leading-5 text-paper-muted">
                 {signedInUser ? 'No saved chats yet.' : 'Sign in to save Ask AI history.'}
               </div>
             )}
@@ -988,11 +988,11 @@ export default function AskAiPage() {
         <div ref={scrollRef} className="mx-auto min-h-0 w-full max-w-[1040px] overflow-y-auto">
         {isEmpty ? (
           <div className="mx-auto max-w-2xl py-8 text-center sm:py-14">
-            <div className="animate-rise mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-400 text-3xl text-white shadow-[0_22px_55px_rgba(6,182,212,0.4)]">✦</div>
-            <h1 className="animate-rise font-display text-3xl font-semibold tracking-tight text-slate-900 sm:text-[2.5rem] sm:leading-[1.1]" style={{ animationDelay: '60ms' }}>
-              Ask anything about <span className="bg-gradient-to-r from-cyan-600 to-emerald-500 bg-clip-text text-transparent">the markets</span>
+            <div className="animate-rise mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/40 bg-accent/10 text-3xl text-accent">✦</div>
+            <h1 className="animate-rise font-display text-3xl font-semibold tracking-tight text-paper sm:text-[2.5rem] sm:leading-[1.1]" style={{ animationDelay: '60ms' }}>
+              Ask anything about <span className="italic text-accent">the markets</span>
             </h1>
-            <p className="animate-rise mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-slate-500" style={{ animationDelay: '120ms' }}>
+            <p className="animate-rise mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-paper-muted" style={{ animationDelay: '120ms' }}>
               Test a trading strategy on our historical data, scan the whole NSE universe, or just ask a question. You
               get an honest, numbers-backed answer — including how the idea stacks up against simply buying and holding.
             </p>
@@ -1003,9 +1003,9 @@ export default function AskAiPage() {
                   type="button"
                   onClick={() => send(example)}
                   style={{ animationDelay: `${160 + idx * 55}ms` }}
-                  className="animate-rise group flex items-start gap-2.5 rounded-2xl border border-slate-200/80 bg-white/70 p-3.5 text-left text-[13px] leading-snug text-slate-600 backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-white hover:text-cyan-900 hover:shadow-[0_16px_40px_rgba(8,145,178,0.14)]"
+                  className="animate-rise group flex items-start gap-2.5 rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-3.5 text-left text-[13px] leading-snug text-paper-muted backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-accent/55 hover:bg-white/[0.03] hover:text-accent hover:shadow-[0_16px_40px_rgba(8,145,178,0.14)]"
                 >
-                  <span className="mt-0.5 text-cyan-400 transition group-hover:text-cyan-600" aria-hidden="true">→</span>
+                  <span className="mt-0.5 text-accent transition group-hover:text-accent" aria-hidden="true">→</span>
                   <span>{example}</span>
                 </button>
               ))}
@@ -1016,20 +1016,20 @@ export default function AskAiPage() {
             {messages.map((message) => (
               <div key={message.id} className={`animate-rise ${message.role === 'user' ? 'flex justify-end' : 'flex justify-start gap-2.5'}`}>
                 {message.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-cyan-600 to-emerald-500 px-4 py-2.5 text-[14px] leading-relaxed text-white shadow-[0_12px_30px_rgba(6,182,212,0.28)]">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md border border-accent/30 bg-accent/[0.08] px-4 py-2.5 text-[14px] leading-relaxed text-paper">
                     {message.content}
                   </div>
                 ) : (
                   <>
-                    <div className="mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-400 text-sm text-white shadow-[0_8px_20px_rgba(6,182,212,0.3)] sm:flex" aria-hidden="true">✦</div>
+                    <div className="mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-sm text-accent sm:flex" aria-hidden="true">✦</div>
                     <div className="w-full max-w-[92%]">
                       <div
                         className={`rounded-2xl rounded-tl-md border px-4 py-3 text-[14px] shadow-[0_16px_44px_rgba(15,23,42,0.07)] ${
-                          message.error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-white/70 bg-white/90 text-slate-700 backdrop-blur-sm'
+                          message.error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-white/70 bg-white/[0.03]/90 text-paper-muted backdrop-blur-sm'
                         }`}
                       >
                       {message.thoughtMs !== undefined && (
-                        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-paper-muted">
                           Thought for {formatDuration(message.thoughtMs)}
                         </div>
                       )}
@@ -1038,36 +1038,36 @@ export default function AskAiPage() {
                         <BacktestCard data={message.data.backtest} ticker={message.data.target_stock ?? null} />
                       )}
                       {message.data?.mode === 'strategy' && message.data.strategy_alert?.stats && (
-                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Backtest (educational)</div>
+                        <div className="mt-3 rounded-xl border border-hairline bg-white/[0.03]/[0.03] p-3">
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-paper-muted">Backtest (educational)</div>
                           <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div>
-                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Trades</div>
-                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.trades ?? 0)}</div>
+                              <div className="text-[10px] uppercase tracking-wider text-paper-muted">Trades</div>
+                              <div className="text-sm font-bold text-paper">{Number(message.data.strategy_alert.stats.trades ?? 0)}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Win rate</div>
-                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.win_rate ?? 0).toFixed(2)}%</div>
+                              <div className="text-[10px] uppercase tracking-wider text-paper-muted">Win rate</div>
+                              <div className="text-sm font-bold text-paper">{Number(message.data.strategy_alert.stats.win_rate ?? 0).toFixed(2)}%</div>
                             </div>
                             <div>
-                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Avg trade</div>
-                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.avg_return_per_trade ?? 0).toFixed(2)}%</div>
+                              <div className="text-[10px] uppercase tracking-wider text-paper-muted">Avg trade</div>
+                              <div className="text-sm font-bold text-paper">{Number(message.data.strategy_alert.stats.avg_return_per_trade ?? 0).toFixed(2)}%</div>
                             </div>
                             <div>
-                              <div className="text-[10px] uppercase tracking-wider text-slate-400">Max drawdown</div>
-                              <div className="text-sm font-bold text-slate-800">{Number(message.data.strategy_alert.stats.max_drawdown ?? 0).toFixed(2)}%</div>
+                              <div className="text-[10px] uppercase tracking-wider text-paper-muted">Max drawdown</div>
+                              <div className="text-sm font-bold text-paper">{Number(message.data.strategy_alert.stats.max_drawdown ?? 0).toFixed(2)}%</div>
                             </div>
                           </div>
                           {!message.data.strategy_alert.alertable && message.data.strategy_alert.quality?.reason && (
-                            <p className="mt-2 text-[11px] leading-4 text-slate-500">{message.data.strategy_alert.quality.reason}</p>
+                            <p className="mt-2 text-[11px] leading-4 text-paper-muted">{message.data.strategy_alert.quality.reason}</p>
                           )}
                           {message.data.strategy_alert.disclaimer && (
-                            <p className="mt-2 text-[10px] leading-4 text-slate-400">{message.data.strategy_alert.disclaimer}</p>
+                            <p className="mt-2 text-[10px] leading-4 text-paper-muted">{message.data.strategy_alert.disclaimer}</p>
                           )}
                         </div>
                       )}
                       {message.data?.strategy_alert?.alertable && message.data?.strategy_json && (
-                        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="mt-3 rounded-xl border border-primary/30 bg-primary/[0.06] p-3">
                           <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">Daily alert available</div>
                           <p className="mt-1 text-[12px] leading-5 text-emerald-900">
                             {message.data.strategy_alert.quality?.reason || 'This strategy passed the quality gate.'}
@@ -1075,7 +1075,7 @@ export default function AskAiPage() {
                           <button
                             type="button"
                             onClick={() => saveStrategyAlert(message.data || {}).catch(() => {})}
-                            className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-bold text-white transition hover:bg-emerald-500"
+                            className="mt-3 rounded-lg bg-primary px-3 py-2 text-[12px] font-semibold text-black transition hover:opacity-90"
                           >
                             Save as daily alert
                           </button>
@@ -1092,14 +1092,14 @@ export default function AskAiPage() {
                         <ScreenerCard data={message.data.screener} />
                       )}
                       {message.data?.model_used && message.data.model_used !== 'local' && (
-                        <div className="mt-2 text-[9px] font-bold uppercase tracking-widest text-slate-300">
+                        <div className="mt-2 text-[9px] font-bold uppercase tracking-widest text-paper-muted">
                           via {message.data.model_used}
                         </div>
                       )}
                     </div>
                       {message.data?.suggestions && message.data.suggestions.length > 0 && (
                         <div className="mt-2.5">
-                          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-paper-muted">
                             Tap to ask next
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -1109,9 +1109,9 @@ export default function AskAiPage() {
                                 type="button"
                                 onClick={() => send(suggestion)}
                                 disabled={loading}
-                                className="group/sg inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[11px] font-medium text-slate-500 transition hover:border-cyan-300 hover:bg-white hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="group/sg inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white/[0.03]/[0.03] px-3 py-1 text-[11px] font-medium text-paper-muted transition hover:border-accent/55 hover:bg-white/[0.03] hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                <span className="text-cyan-400 transition group-hover/sg:text-cyan-600" aria-hidden="true">→</span>
+                                <span className="text-accent transition group-hover/sg:text-accent" aria-hidden="true">→</span>
                                 {suggestion}
                               </button>
                             ))}
@@ -1125,17 +1125,17 @@ export default function AskAiPage() {
             ))}
             {loading && (
               <div className="flex justify-start gap-2.5">
-                <div className="mt-0.5 hidden h-8 w-8 shrink-0 animate-pulse items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-400 text-sm text-white sm:flex" aria-hidden="true">✦</div>
-                <div className="flex flex-wrap items-center gap-3 rounded-2xl rounded-tl-md border border-white/70 bg-white/90 px-4 py-3 text-[14px] text-slate-500 shadow-[0_16px_44px_rgba(15,23,42,0.07)] backdrop-blur-sm">
+                <div className="mt-0.5 hidden h-8 w-8 shrink-0 animate-pulse items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-sm text-accent sm:flex" aria-hidden="true">✦</div>
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl rounded-tl-md border border-white/70 bg-white/[0.03]/90 px-4 py-3 text-[14px] text-paper-muted shadow-[0_16px_44px_rgba(15,23,42,0.07)] backdrop-blur-sm">
                   <div className="inline-flex items-center gap-2">
                     <span>Crunching the numbers</span>
-                    <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-700">
+                    <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
                       {formatDuration(elapsedMs)}
                     </span>
                     <span className="inline-flex gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 [animation:dot-bounce_1.2s_ease-in-out_infinite]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 [animation:dot-bounce_1.2s_ease-in-out_0.2s_infinite]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 [animation:dot-bounce_1.2s_ease-in-out_0.4s_infinite]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent [animation:dot-bounce_1.2s_ease-in-out_infinite]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent [animation:dot-bounce_1.2s_ease-in-out_0.2s_infinite]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent [animation:dot-bounce_1.2s_ease-in-out_0.4s_infinite]" />
                     </span>
                   </div>
                   <button
@@ -1155,23 +1155,23 @@ export default function AskAiPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 border-t border-white/60 bg-white/70 backdrop-blur-xl lg:ml-[292px]">
+      <div className="sticky bottom-0 border-t border-white/60 bg-white/[0.03]/[0.03] backdrop-blur-xl lg:ml-[292px]">
         <div className="mx-auto w-full max-w-[1040px] px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex items-end gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_48px_rgba(8,145,178,0.12)] transition focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100/70">
+          <div className="flex items-end gap-2 rounded-2xl border border-hairline bg-white/[0.03]/90 p-2 shadow-[0_18px_48px_rgba(8,145,178,0.12)] transition focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100/70">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               rows={1}
               placeholder="Ask a question or describe a strategy to backtest…"
-              className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] text-slate-900 outline-none placeholder:text-slate-400"
+              className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] text-paper outline-none placeholder:text-paper-muted"
             />
             {loading ? (
               <button
                 type="button"
                 onClick={stopThinking}
                 aria-label="Stop generating answer"
-                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-rose-500 px-4 text-[12px] font-bold uppercase tracking-wider text-white shadow-[0_10px_26px_rgba(244,63,94,0.24)] transition hover:bg-rose-400"
+                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-500/15 px-4 text-[12px] font-semibold uppercase tracking-wider text-rose-200 transition hover:bg-rose-500/25"
               >
                 <span className="text-base leading-none" aria-hidden="true">×</span>
                 Stop
@@ -1182,7 +1182,7 @@ export default function AskAiPage() {
                 onClick={() => send(input)}
                 disabled={!input.trim()}
                 aria-label="Send message"
-                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-br from-cyan-600 to-emerald-500 px-4 text-[12px] font-bold uppercase tracking-wider text-white shadow-[0_10px_26px_rgba(6,182,212,0.32)] transition hover:from-cyan-500 hover:to-emerald-400 hover:shadow-[0_12px_30px_rgba(6,182,212,0.42)] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-accent px-5 text-[12px] font-semibold uppercase tracking-wider text-black transition hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Send
                 <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
@@ -1191,7 +1191,7 @@ export default function AskAiPage() {
               </button>
             )}
           </div>
-          <p className="mt-2.5 text-center text-[10px] text-slate-400">
+          <p className="mt-2.5 text-center text-[10px] text-paper-muted">
             Educational analysis on historical data, not financial advice. Past performance does not predict future results.
           </p>
         </div>

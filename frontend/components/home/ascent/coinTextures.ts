@@ -1,71 +1,129 @@
 import * as THREE from "three";
 
 // Runtime-generated medallion artwork — 0 network bytes, no .glb/image downloads.
-// The coin is Bullseye's "verdict medallion": a machined bullseye with a ₹ core.
-// Two faces are drawn on <canvas> and uploaded as textures for the coin's caps.
+// Design language: a modern precision instrument, not an antique coin. Dark
+// glass face, one hairline gold rim, a machined tick ring, an emerald reticle,
+// and a single crisp ₹. Thin strokes + negative space do the work.
 
-const SIZE = 512;
+const SIZE = 1024; // high-res so the rim stays crisp in close-ups
+const C = SIZE / 2;
 
-function baseDisc(x: CanvasRenderingContext2D) {
-  const g = x.createRadialGradient(SIZE / 2, SIZE / 2, 24, SIZE / 2, SIZE / 2, SIZE / 2);
-  g.addColorStop(0, "#0e1613");
-  g.addColorStop(0.7, "#080b0a");
-  g.addColorStop(1, "#04070a");
+function darkFace(x: CanvasRenderingContext2D) {
+  const g = x.createRadialGradient(C, C * 0.82, SIZE * 0.04, C, C, C);
+  g.addColorStop(0, "#16201c");
+  g.addColorStop(0.55, "#0b110f");
+  g.addColorStop(1, "#050807");
   x.fillStyle = g;
   x.beginPath();
-  x.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
+  x.arc(C, C, C, 0, Math.PI * 2);
   x.fill();
 }
 
-function bullseyeRings(x: CanvasRenderingContext2D, rings: Array<[number, string, number]>) {
-  const cx = SIZE / 2;
-  const cy = SIZE / 2;
-  for (const [r, col, w] of rings) {
-    x.lineWidth = w;
-    x.strokeStyle = col;
+/** Machined tick marks around the rim — reads as a precision bezel. */
+function tickRing(x: CanvasRenderingContext2D, radius: number, count: number, len: number, color: string, width: number) {
+  x.save();
+  x.strokeStyle = color;
+  x.lineWidth = width;
+  x.lineCap = "butt";
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const major = i % 5 === 0;
+    const l = major ? len * 1.9 : len;
+    x.globalAlpha = major ? 1 : 0.45;
     x.beginPath();
-    x.arc(cx, cy, r, 0, Math.PI * 2);
+    x.moveTo(C + Math.cos(a) * radius, C + Math.sin(a) * radius);
+    x.lineTo(C + Math.cos(a) * (radius - l), C + Math.sin(a) * (radius - l));
     x.stroke();
   }
+  x.restore();
 }
 
-/** Front face: bullseye + ₹ core + wordmark — the face shown at rest. */
+function ring(x: CanvasRenderingContext2D, r: number, color: string, w: number, alpha = 1) {
+  x.save();
+  x.globalAlpha = alpha;
+  x.strokeStyle = color;
+  x.lineWidth = w;
+  x.beginPath();
+  x.arc(C, C, r, 0, Math.PI * 2);
+  x.stroke();
+  x.restore();
+}
+
+/** Text on a circular arc, centred at the given angle. */
+function arcText(
+  x: CanvasRenderingContext2D,
+  text: string,
+  radius: number,
+  centerAngle: number,
+  font: string,
+  color: string,
+  spread = 0.026,
+  flip = false,
+) {
+  x.save();
+  x.fillStyle = color;
+  x.font = font;
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+  const chars = [...text];
+  const start = centerAngle - ((chars.length - 1) * spread) / 2;
+  chars.forEach((ch, i) => {
+    const a = start + i * spread;
+    x.save();
+    x.translate(C + Math.cos(a) * radius, C + Math.sin(a) * radius);
+    x.rotate(flip ? a - Math.PI / 2 : a + Math.PI / 2);
+    x.fillText(ch, 0, 0);
+    x.restore();
+  });
+  x.restore();
+}
+
+/** Front face: bezel + reticle + ₹ core — the face shown at rest and stamped. */
 export function makeMedallionFace(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   const x = canvas.getContext("2d")!;
-  const cx = SIZE / 2;
-  const cy = SIZE / 2;
 
-  baseDisc(x);
-  bullseyeRings(x, [
-    [232, "rgba(245,196,81,0.92)", 7],
-    [186, "rgba(52,211,153,0.5)", 4],
-    [138, "rgba(245,196,81,0.85)", 6],
-    [92, "rgba(52,211,153,0.45)", 4],
-  ]);
+  darkFace(x);
 
-  // Gold core with ₹.
-  const core = x.createRadialGradient(cx - 14, cy - 16, 6, cx, cy, 54);
-  core.addColorStop(0, "#ffe9ad");
-  core.addColorStop(1, "#e0a83a");
+  // Outer bezel: one hairline gold rim + machined ticks.
+  ring(x, C - 10, "rgba(245,196,81,0.95)", 5);
+  ring(x, C - 26, "rgba(245,196,81,0.28)", 1.5);
+  tickRing(x, C - 34, 120, 12, "rgba(245,196,81,0.8)", 2);
+
+  // Emerald reticle — thin rings + crosshair ticks (the "bullseye", modernised).
+  ring(x, 300, "rgba(52,211,153,0.34)", 2);
+  ring(x, 214, "rgba(52,211,153,0.22)", 1.5);
+  x.save();
+  x.strokeStyle = "rgba(52,211,153,0.55)";
+  x.lineWidth = 2.5;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    x.beginPath();
+    x.moveTo(C + Math.cos(a) * 196, C + Math.sin(a) * 196);
+    x.lineTo(C + Math.cos(a) * 246, C + Math.sin(a) * 246);
+    x.stroke();
+  }
+  x.restore();
+
+  // ₹ core — flat gold disc, clean grotesque numeral, no fake bevel.
+  const core = x.createLinearGradient(C - 70, C - 80, C + 70, C + 80);
+  core.addColorStop(0, "#ffe6a4");
+  core.addColorStop(0.5, "#f5c451");
+  core.addColorStop(1, "#d09a2f");
   x.fillStyle = core;
   x.beginPath();
-  x.arc(cx, cy, 52, 0, Math.PI * 2);
+  x.arc(C, C, 104, 0, Math.PI * 2);
   x.fill();
-  x.fillStyle = "#05080b";
-  x.font = "700 66px Georgia, 'Times New Roman', serif";
+  x.fillStyle = "#050807";
+  x.font = "600 118px Inter, 'Helvetica Neue', system-ui, sans-serif";
   x.textAlign = "center";
   x.textBaseline = "middle";
-  x.fillText("₹", cx, cy + 3);
+  x.fillText("₹", C, C + 6);
 
-  // Wordmark + subtitle.
-  x.fillStyle = "rgba(245,196,81,0.92)";
-  x.font = "600 30px Georgia, serif";
-  x.fillText("B U L L S E Y E", cx, 66);
-  x.fillStyle = "rgba(198,198,205,0.72)";
-  x.font = "500 18px Inter, system-ui, sans-serif";
-  x.fillText("A I   V E R D I C T", cx, SIZE - 60);
+  // Wordmark arcs: top and bottom, small-caps tracking.
+  arcText(x, "BULLSEYE", C - 62, -Math.PI / 2, "500 40px Inter, system-ui, sans-serif", "rgba(245,196,81,0.92)", 0.062);
+  arcText(x, "AI VERDICT", C - 62, Math.PI / 2, "500 30px Inter, system-ui, sans-serif", "rgba(198,198,205,0.6)", 0.05, true);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -74,24 +132,24 @@ export function makeMedallionFace(): THREE.CanvasTexture {
   return tex;
 }
 
-/** Back face: concentric rings only, so the coin reads on both sides mid-flip. */
+/** Back face: the same bezel language, reticle only — reads mid-flip. */
 export function makeMedallionBack(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   const x = canvas.getContext("2d")!;
-  const cx = SIZE / 2;
-  const cy = SIZE / 2;
 
-  baseDisc(x);
-  bullseyeRings(x, [
-    [232, "rgba(245,196,81,0.6)", 6],
-    [176, "rgba(52,211,153,0.4)", 4],
-    [120, "rgba(245,196,81,0.55)", 5],
-    [64, "rgba(52,211,153,0.35)", 4],
-  ]);
+  darkFace(x);
+  ring(x, C - 10, "rgba(245,196,81,0.7)", 5);
+  ring(x, C - 26, "rgba(245,196,81,0.2)", 1.5);
+  tickRing(x, C - 34, 120, 12, "rgba(245,196,81,0.5)", 2);
+
+  ring(x, 320, "rgba(52,211,153,0.22)", 2);
+  ring(x, 232, "rgba(52,211,153,0.16)", 1.5);
+  ring(x, 144, "rgba(245,196,81,0.3)", 2);
+
   x.fillStyle = "rgba(245,196,81,0.85)";
   x.beginPath();
-  x.arc(cx, cy, 20, 0, Math.PI * 2);
+  x.arc(C, C, 26, 0, Math.PI * 2);
   x.fill();
 
   const tex = new THREE.CanvasTexture(canvas);

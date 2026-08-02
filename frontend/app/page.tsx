@@ -184,10 +184,15 @@ function NotificationSettingsModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] bg-slate-950/75 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md" onClick={onClose} />
       <div className="fixed inset-0 z-[71] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
         <div
-          className="my-4 w-full max-w-3xl max-h-[calc(100vh-2rem)] overflow-y-auto rounded-3xl border border-white/10 bg-slate-950 text-white shadow-[0_28px_90px_rgba(15,23,42,0.5)]"
+          className="my-4 max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-[24px] border border-hairline font-body text-paper"
+          style={{
+            background:
+              'linear-gradient(145deg, rgba(20,22,19,0.97) 0%, rgba(8,10,9,0.99) 55%, rgba(16,18,15,0.97) 100%)',
+            boxShadow: '0 40px 110px rgba(0,0,0,0.7), inset 0 1px 0 rgba(245,196,81,0.12)',
+          }}
           onKeyDown={event => {
             if (
               showConsent ||
@@ -205,43 +210,46 @@ function NotificationSettingsModal({
             onSendNow('next_day');
           }}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+          <div className="flex items-start justify-between gap-4 border-b border-hairline px-7 py-6">
             <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-300 font-['Space_Grotesk']">Logged-in Alerts</div>
-              <h2 className="mt-2 text-2xl font-black font-['Space_Grotesk']">Daily 10 Stock Signals Email</h2>
-              <p className="mt-2 text-sm text-slate-400 font-['JetBrains_Mono']">
+              <div className="flex items-center gap-3">
+                <span className="h-px w-8 bg-accent/60" />
+                <span className="font-body text-[10px] font-medium uppercase tracking-[0.26em] text-accent">Daily alerts</span>
+              </div>
+              <h2 className="mt-3 font-display text-[28px] leading-tight text-paper">Daily 10-stock signal email</h2>
+              <p className="mt-2.5 max-w-[60ch] font-body text-[13px] leading-6 text-paper-muted">
                 {userEmail || 'Your signed-in account'} can receive a model-ranked 10-stock email for the next trading day after the Indian market closes.
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="h-10 w-10 rounded-2xl border border-white/10 text-slate-400 transition hover:border-cyan-300/40 hover:text-white"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-hairline text-paper-muted transition hover:border-accent/50 hover:text-paper"
               aria-label="Close notification settings"
             >
-              X
+              ✕
             </button>
           </div>
 
-          <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid gap-6 px-7 py-7 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-5">
               <div className="grid gap-4 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => onSendNow('today')}
                   disabled={isSaving}
-                  className="flex min-h-[124px] flex-col justify-between rounded-2xl border border-amber-300/25 bg-amber-400/10 px-4 py-4 text-left transition hover:border-amber-300/45 hover:bg-amber-400/14 disabled:opacity-60"
+                  className="flex min-h-[124px] flex-col justify-between rounded-2xl border border-accent/30 bg-accent/[0.06] px-5 py-4 text-left transition hover:border-accent/55 hover:bg-accent/[0.1] disabled:opacity-60"
                 >
                   <div>
-                    <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
-                      Today&apos;s Stocks
+                    <div className="font-display text-[19px] leading-snug text-paper">
+                      Today&apos;s stocks
                     </div>
-                    <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
+                    <div className="mt-2 font-body text-[12px] leading-6 text-paper-muted">
                       Send a same-day intraday 10-stock email before market close using the latest available data.
                     </div>
                   </div>
-                  <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-amber-300 font-['Space_Grotesk']">
-                    {isSaving ? 'Sending...' : 'Send Today'}
+                  <div className="mt-4 font-body text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
+                    {isSaving ? 'Sending…' : 'Send today →'}
                   </div>
                 </button>
 
@@ -249,27 +257,27 @@ function NotificationSettingsModal({
                   type="button"
                   onClick={() => onSendNow('next_day')}
                   disabled={isSaving}
-                  className="flex min-h-[116px] flex-col justify-between rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-4 text-left transition hover:border-emerald-300/45 hover:bg-emerald-400/14 disabled:opacity-60"
+                  className="flex min-h-[116px] flex-col justify-between rounded-2xl border border-primary/30 bg-primary/[0.06] px-5 py-4 text-left transition hover:border-primary/55 hover:bg-primary/[0.1] disabled:opacity-60"
                 >
                   <div>
-                    <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
-                      Next-Day Stocks
+                    <div className="font-display text-[19px] leading-snug text-paper">
+                      Next-day stocks
                     </div>
-                    <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
+                    <div className="mt-2 font-body text-[12px] leading-6 text-paper-muted">
                       Send the next trading day&apos;s ranked 10-stock email to your signed-in account right now.
                     </div>
                   </div>
-                  <div className="mt-4 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300 font-['Space_Grotesk']">
-                    {isSaving ? 'Sending...' : 'Send Next Day'}
+                  <div className="mt-4 font-body text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+                    {isSaving ? 'Sending…' : 'Send next day →'}
                   </div>
                 </button>
 
-                <label className="flex min-h-[116px] items-center justify-between rounded-2xl border border-cyan-300/25 bg-cyan-400/5 px-4 py-4 sm:col-span-2">
+                <label className="flex min-h-[116px] items-center justify-between gap-5 rounded-2xl border border-hairline bg-white/[0.02] px-5 py-4 sm:col-span-2">
                   <div>
-                    <div className="text-sm font-black uppercase tracking-[0.16em] text-white font-['Space_Grotesk']">
-                      Daily Automatic Alert
+                    <div className="font-display text-[19px] leading-snug text-paper">
+                      Daily automatic alert
                     </div>
-                    <div className="mt-2 text-[11px] text-slate-400 font-['JetBrains_Mono']">
+                    <div className="mt-2 font-body text-[12px] leading-6 text-paper-muted">
                       Turn this on once and Bullseye will automatically email your next-trading-day top 10 signals on each trading day.
                     </div>
                   </div>
@@ -278,18 +286,18 @@ function NotificationSettingsModal({
                     checked={preference.daily_stock_email_enabled}
                     onChange={event => onToggle(event.target.checked)}
                     disabled={isSaving}
-                    className="h-5 w-5 accent-cyan-400"
+                    className="h-5 w-5 shrink-0 accent-[#f5c451]"
                   />
                 </label>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Market</span>
+                  <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">Market</span>
                   <select
                     value={preference.market}
                     onChange={event => onChange({ market: event.target.value as NotificationPreference['market'] })}
-                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                    className="h-12 rounded-full border border-hairline bg-black/40 px-5 font-body text-sm text-paper outline-none transition focus:border-accent/60"
                   >
                     <option value="NSE">NSE</option>
                     <option value="BSE">BSE</option>
@@ -298,11 +306,11 @@ function NotificationSettingsModal({
                 </label>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Risk Level</span>
+                  <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">Risk Level</span>
                   <select
                     value={preference.risk_level}
                     onChange={event => onChange({ risk_level: event.target.value as NotificationPreference['risk_level'] })}
-                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                    className="h-12 rounded-full border border-hairline bg-black/40 px-5 font-body text-sm text-paper outline-none transition focus:border-accent/60"
                   >
                     <option value="Conservative">Conservative</option>
                     <option value="Balanced">Balanced</option>
@@ -311,22 +319,22 @@ function NotificationSettingsModal({
                 </label>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Preferred Email Time</span>
+                  <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">Preferred Email Time</span>
                   <input
                     type="time"
                     value={preference.email_time}
                     onChange={event => onChange({ email_time: event.target.value })}
                     min={getMinimumNotificationTime(preference.market)}
-                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                    className="h-12 rounded-full border border-hairline bg-black/40 px-5 font-body text-sm text-paper outline-none transition focus:border-accent/60"
                   />
                 </label>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 font-['Space_Grotesk']">Signal Type</span>
+                  <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">Signal Type</span>
                   <select
                     value={preference.signal_type}
                     onChange={event => onChange({ signal_type: event.target.value as NotificationPreference['signal_type'] })}
-                    className="h-12 rounded-2xl border border-white/10 bg-black/50 px-4 text-sm text-white outline-none transition focus:border-cyan-400 font-['JetBrains_Mono']"
+                    className="h-12 rounded-full border border-hairline bg-black/40 px-5 font-body text-sm text-paper outline-none transition focus:border-accent/60"
                   >
                     <option value="Next-day swing">Next-day swing</option>
                     <option value="Intraday">Intraday</option>
@@ -335,20 +343,20 @@ function NotificationSettingsModal({
                 </label>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300 font-['Space_Grotesk']">Delivery Rules</div>
-                <div className="mt-2 text-[11px] leading-6 text-slate-300 font-['JetBrains_Mono']">
+              <div className="rounded-2xl border border-hairline bg-white/[0.02] p-5">
+                <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">Delivery rules</div>
+                <div className="mt-2.5 font-body text-[12px] leading-6 text-paper-muted">
                   Your preferred time must be after the Indian market closes. When this is enabled, Bullseye will generate and send next-trading-day ranked signals automatically on trading days.
                 </div>
               </div>
 
               {error && (
-                <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-xs text-red-200 font-['JetBrains_Mono']">
+                <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 font-body text-xs text-rose-200">
                   {error}
                 </div>
               )}
               {message && (
-                <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-100 font-['JetBrains_Mono']">
+                <div className="rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 font-body text-xs text-primary">
                   {message}
                 </div>
               )}
@@ -358,51 +366,51 @@ function NotificationSettingsModal({
                   type="button"
                   onClick={onSave}
                   disabled={isSaving}
-                  className="force-light-text rounded-2xl bg-cyan-400 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50 font-['Space_Grotesk']"
+                  className="rounded-full bg-accent px-7 py-3 font-body text-[11px] font-semibold uppercase tracking-[0.18em] text-black transition duration-300 hover:bg-accent-dim disabled:opacity-50"
                 >
-                  {isSaving ? 'Saving...' : 'Save Settings'}
+                  {isSaving ? 'Saving…' : 'Save settings'}
                 </button>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:border-cyan-300/40 hover:bg-cyan-400/10 font-['Space_Grotesk']"
+                  className="rounded-full border border-hairline px-7 py-3 font-body text-[11px] font-semibold uppercase tracking-[0.18em] text-paper-muted transition hover:border-accent/50 hover:text-paper"
                 >
                   Close
                 </button>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300 font-['Space_Grotesk']">Email Preview</div>
-              <div className="mt-2 text-[11px] text-slate-400 font-['JetBrains_Mono']">
+            <div className="rounded-[20px] border border-hairline bg-white/[0.02] p-5">
+              <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">Email preview</div>
+              <div className="mt-2.5 font-body text-[12px] leading-6 text-paper-muted">
                 The top model-ranked stocks for the next trading day are sent, each with a confidence score. Fewer are sent — or none — when the market is weak and few names clear the quality bar.
               </div>
               <div className="mt-4 space-y-3">
                 {previewSignals.length > 0 ? previewSignals.slice(0, 4).map(signal => (
-                  <div key={signal.symbol} className="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
+                  <div key={signal.symbol} className="rounded-2xl border border-hairline bg-black/40 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-black text-white font-['Space_Grotesk']">{signal.symbol}</div>
-                      <div className={`text-[10px] font-black uppercase tracking-[0.18em] font-['Space_Grotesk'] ${signal.direction === 'BUY' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      <div className="font-numeric text-[13px] text-paper">{signal.symbol}</div>
+                      <div className={`font-body text-[10px] font-semibold uppercase tracking-[0.18em] ${signal.direction === 'BUY' ? 'text-primary' : 'text-rose-300'}`}>
                         {signal.direction}
                       </div>
                     </div>
-                    <div className="mt-2 text-[11px] text-slate-300 font-['JetBrains_Mono']">
-                      Entry {signal.entry_low.toFixed(2)}-{signal.entry_high.toFixed(2)} | Target {signal.target_price.toFixed(2)} | Stop Loss {signal.stop_loss.toFixed(2)}
+                    <div className="mt-2.5 font-numeric text-[11px] leading-5 text-paper-muted">
+                      Entry {signal.entry_low.toFixed(2)}–{signal.entry_high.toFixed(2)} · Target {signal.target_price.toFixed(2)} · Stop {signal.stop_loss.toFixed(2)}
                     </div>
-                    <div className="mt-2 flex items-center gap-2 text-[10px] font-['JetBrains_Mono']">
-                      <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 font-black uppercase tracking-[0.14em] text-cyan-300">
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 font-numeric text-[10px] text-accent">
                         Confidence {Math.round((signal.confidence ?? 0) * 100)}%
                       </span>
                       {typeof signal.risk_reward === 'number' && (
-                        <span className="text-slate-400">R:R {signal.risk_reward.toFixed(2)}</span>
+                        <span className="font-numeric text-[10px] text-paper-muted">R:R {signal.risk_reward.toFixed(2)}</span>
                       )}
                     </div>
-                    <div className="mt-2 text-[10px] text-slate-400 font-['JetBrains_Mono']">
-                      {(signal.explanation_json?.reasons ?? []).slice(0, 2).join(' | ') || 'Model-ranked technical setup'}
+                    <div className="mt-2.5 font-body text-[11px] leading-5 text-paper-muted/80">
+                      {(signal.explanation_json?.reasons ?? []).slice(0, 2).join(' · ') || 'Model-ranked technical setup'}
                     </div>
                   </div>
                 )) : (
-                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-[11px] text-slate-400 font-['JetBrains_Mono']">
+                  <div className="rounded-2xl border border-dashed border-hairline px-4 py-6 font-body text-[12px] text-paper-muted">
                     The latest next-trading-day signal preview will appear here after the prediction engine runs.
                   </div>
                 )}
@@ -414,29 +422,46 @@ function NotificationSettingsModal({
 
       {showConsent && (
         <>
-          <div className="fixed inset-0 z-[72] bg-slate-950/80" />
+          <div className="fixed inset-0 z-[72] bg-black/85 backdrop-blur-md" />
           <div className="fixed inset-0 z-[73] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4">
-            <div className="my-4 w-full max-w-lg rounded-3xl border border-white/10 bg-slate-950 p-5 text-white shadow-[0_28px_90px_rgba(15,23,42,0.5)] sm:p-6">
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300 font-['Space_Grotesk']">Consent Required</div>
-              <h3 className="mt-3 text-2xl font-black font-['Space_Grotesk']">Before turning this on</h3>
-              <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300 font-['JetBrains_Mono']">
-                <p>Signals are model-generated analysis.</p>
-                <p>Returns are not guaranteed.</p>
-                <p>Past performance does not guarantee future results.</p>
-                <p>You can disable or unsubscribe at any time.</p>
+            <div
+              className="my-4 w-full max-w-lg rounded-[24px] border border-hairline p-7 font-body text-paper"
+              style={{
+                background:
+                  'linear-gradient(145deg, rgba(20,22,19,0.97) 0%, rgba(8,10,9,0.99) 55%, rgba(16,18,15,0.97) 100%)',
+                boxShadow: '0 40px 110px rgba(0,0,0,0.7), inset 0 1px 0 rgba(245,196,81,0.12)',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="h-px w-8 bg-accent/60" />
+                <span className="font-body text-[10px] font-medium uppercase tracking-[0.26em] text-accent">Consent required</span>
               </div>
-              <div className="mt-6 flex flex-wrap gap-3">
+              <h3 className="mt-3.5 font-display text-[28px] leading-tight text-paper">Before turning this on</h3>
+              <ul className="mt-5 space-y-3">
+                {[
+                  'Signals are model-generated analysis.',
+                  'Returns are not guaranteed.',
+                  'Past performance does not guarantee future results.',
+                  'You can disable or unsubscribe at any time.',
+                ].map(line => (
+                  <li key={line} className="flex gap-3 font-body text-[13px] leading-6 text-paper-muted">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-7 flex flex-wrap gap-3">
                 <button
                   type="button"
                   onClick={onConfirmConsent}
-                  className="force-light-text rounded-2xl bg-cyan-400 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-950 transition hover:bg-cyan-300 font-['Space_Grotesk']"
+                  className="rounded-full bg-accent px-7 py-3 font-body text-[11px] font-semibold uppercase tracking-[0.18em] text-black transition duration-300 hover:bg-accent-dim"
                 >
-                  I Understand, Enable
+                  I understand, enable
                 </button>
                 <button
                   type="button"
                   onClick={onCancelConsent}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:border-cyan-300/40 font-['Space_Grotesk']"
+                  className="rounded-full border border-hairline px-7 py-3 font-body text-[11px] font-semibold uppercase tracking-[0.18em] text-paper-muted transition hover:border-accent/50 hover:text-paper"
                 >
                   Cancel
                 </button>
@@ -640,15 +665,16 @@ const TickerItem = ({ title, currency, quote }: { title: string; currency: strin
   const price = Number(quote?.price);
   const changePercent = Number(quote?.change_percent ?? 0);
   return (
-    <div className="flex items-center gap-4 shrink-0 px-8 border-r border-white/10">
-      <span className="font-bold text-xs tracking-widest text-zinc-400 uppercase font-['Space_Grotesk']">{title}</span>
+    <div className="flex shrink-0 items-center gap-3.5 border-r border-hairline px-7">
+      <span className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">{title}</span>
       {Number.isFinite(price) && price > 0 ? (
         <div className="flex items-center gap-2">
-          <span className="text-sm font-['JetBrains_Mono'] text-white">{currency}{price.toLocaleString()}</span>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${changePercent >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>            {changePercent >= 0 ? '▲' : '▼'}{Math.abs(changePercent).toFixed(2)}%
+          <span className="font-numeric text-[13px] text-paper">{currency}{price.toLocaleString()}</span>
+          <span className={`font-numeric text-[10px] ${changePercent >= 0 ? 'text-primary' : 'text-rose-300'}`}>
+            {changePercent >= 0 ? '▲' : '▼'}{Math.abs(changePercent).toFixed(2)}%
           </span>
         </div>
-      ) : <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] tracking-widest">SYNCING...</span>}
+      ) : <span className="font-numeric text-[11px] uppercase tracking-widest text-paper-muted/60">Syncing…</span>}
     </div>
   );
 };
@@ -3909,14 +3935,14 @@ function HomeContent() {
         .welcome-blur {
           margin: 0;
           justify-content: center;
-          font-family: 'Space Grotesk', sans-serif;
-          font-weight: 900;
-          letter-spacing: -0.02em;
-          line-height: 1;
-          font-size: clamp(34px, 7vw, 70px);
+          font-family: var(--font-instrument), Georgia, serif;
+          font-weight: 400;
+          letter-spacing: -0.015em;
+          line-height: 1.02;
+          font-size: clamp(36px, 7vw, 72px);
         }
         .welcome-blur span {
-          background: linear-gradient(135deg, #67e8f9 0%, #22d3ee 45%, #34d399 100%);
+          background: linear-gradient(135deg, #ffe6a4 0%, #f5c451 48%, #34d399 100%);
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
@@ -3942,11 +3968,11 @@ function HomeContent() {
             alignItems: 'center',
             gap: '14px',
             userSelect: 'none',
-            padding: 'clamp(32px,5vw,56px) clamp(40px,8vw,80px)',
-            background: 'rgba(3,7,18,0.82)',
-            borderRadius: '32px',
-            border: '1px solid rgba(6,182,212,0.14)',
-            boxShadow: '0 0 0 1px rgba(255,255,255,0.04), 0 40px 100px rgba(0,0,0,0.55), 0 0 80px rgba(6,182,212,0.07)',
+            padding: 'clamp(36px,5vw,60px) clamp(44px,8vw,88px)',
+            background: 'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
+            borderRadius: '28px',
+            border: '1px solid rgba(245,196,81,0.28)',
+            boxShadow: '0 40px 110px rgba(0,0,0,0.65), inset 0 1px 0 rgba(245,196,81,0.14)',
             textAlign: 'center',
             maxWidth: '92vw',
           }}>
@@ -3954,12 +3980,12 @@ function HomeContent() {
               className="welcome-word"
               style={{
                 animationDelay: '0.12s',
-                fontSize: '12px',
-                letterSpacing: '0.38em',
+                fontSize: '11px',
+                letterSpacing: '0.3em',
                 textTransform: 'uppercase',
-                fontWeight: 400,
-                color: '#22d3ee',
-                fontFamily: "'Inter', sans-serif",
+                fontWeight: 500,
+                color: '#f5c451',
+                fontFamily: 'var(--font-inter), Inter, sans-serif',
               }}
             >
               Bullseye
@@ -3979,11 +4005,11 @@ function HomeContent() {
               style={{
                 animationDelay: '1.0s',
                 fontSize: '14px',
-                color: '#94a3b8',
+                color: '#c6c6cd',
                 fontWeight: 400,
-                letterSpacing: '0.04em',
+                letterSpacing: '0.02em',
                 marginTop: '2px',
-                fontFamily: "'Inter', sans-serif",
+                fontFamily: 'var(--font-inter), Inter, sans-serif',
               }}
             >
               Your market intelligence is ready.
@@ -3998,9 +4024,17 @@ function HomeContent() {
             background is owned by the Ascent cinematic (its own fixed scene). */}
         {ticker && <HomeAmbientBackground />}
 
+        {/* FIXED INDEX TAPE — pinned to the very top of the homepage so live
+            index levels are visible the moment the page loads and stay there. */}
+        {!ticker && (
+          <div className="fixed inset-x-0 top-0 z-[60] border-b border-hairline bg-black/85 py-2.5 backdrop-blur-xl">
+            <IndexTickerTape />
+          </div>
+        )}
+
 
         {/* NAV */}
-        <nav className="relative z-20 mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-3 px-5 py-6 sm:px-8 lg:flex-nowrap lg:gap-8">
+        <nav className={`relative z-20 mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-3 px-5 py-6 sm:px-8 lg:flex-nowrap lg:gap-8 ${!ticker ? 'mt-12' : ''}`}>
           <button
             type="button"
             onClick={goHome}
@@ -4179,23 +4213,23 @@ function HomeContent() {
               <AscentExperience
                 signedIn={Boolean(user)}
                 onOpenDailySignals={openDailySignalSettings}
-              />
-
-              {/* Live index band — the transition from cinematic to real product. */}
-              <div className="relative z-10 mt-2 overflow-hidden rounded-2xl border border-hairline bg-black/40 backdrop-blur-md">
-                <IndexTickerTape />
-              </div>
-
-              <LiveScanSection
-                visibleCount={visibleMarketStocks.length}
-                totalCount={marketStocks.length}
-                columnCount={assetColumnCount}
-              >
-                {assetColumns.map((columnStocks, columnIndex) => (
-                  <div key={`asset-column-${columnIndex}`} className="flex min-w-0 flex-col gap-5">
-                    {columnStocks.map(s => (
-                      <Scroll3D key={s.ticker} intensity={1.15} depth={340}>
+                stockStrip={
+                  <div>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-paper-muted">
+                        Live scan · today&apos;s short list
+                      </span>
+                      <Link
+                        href="/screens"
+                        className="font-body text-[11px] text-accent underline-offset-4 transition hover:underline"
+                      >
+                        All screens →
+                      </Link>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                      {visibleMarketStocks.slice(0, 6).map(s => (
                         <MarketAssetCard
+                          key={s.ticker}
                           stock={s}
                           prefetchedAnalysis={prefetchCache[s.ticker]}
                           quickQuote={visibleQuotes?.[s.ticker]}
@@ -4204,11 +4238,11 @@ function HomeContent() {
                             setPrefetchCache(prev => ({ ...prev, [nextTicker]: nextAnalysis }))
                           }
                         />
-                      </Scroll3D>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </LiveScanSection>
+                }
+              />
 
               <SectionShell
                 eyebrow="Daily signals"
