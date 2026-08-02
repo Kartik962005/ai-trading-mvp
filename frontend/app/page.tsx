@@ -4027,7 +4027,13 @@ function HomeContent() {
         {/* FIXED INDEX TAPE — pinned to the very top of the homepage so live
             index levels are visible the moment the page loads and stay there. */}
         {!ticker && (
-          <div className="fixed inset-x-0 top-0 z-[60] border-b border-hairline bg-black/85 py-2.5 backdrop-blur-xl">
+          // NOTE: no `bg-black` class here — `.bullseye-light [class*="bg-black"]`
+          // force-flips it to white. The background is inline so the light-theme
+          // override can't reach it, and `bullseye-night` keeps the tokens dark.
+          <div
+            className="bullseye-night fixed inset-x-0 top-0 z-[60] border-b border-hairline py-2.5 backdrop-blur-xl"
+            style={{ background: 'rgba(4,6,5,0.92)' }}
+          >
             <IndexTickerTape />
           </div>
         )}

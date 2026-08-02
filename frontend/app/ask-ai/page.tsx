@@ -179,12 +179,43 @@ type StoredConversationMessage = {
   created_at: string;
 };
 
-const EXAMPLES = [
-  'Backtest: buy RELIANCE when RSI crosses below 30, sell when it crosses 70',
-  'Which NSE stocks perform best with a gap-up momentum strategy?',
-  'If I buy TCS 2 days after it falls 5% in a week, then sell on a 3% bounce, does it work?',
-  'Explain the difference between a high win rate and an actually profitable strategy',
-  'Scan all NSE stocks: golden cross strategy — which ones beat buy-and-hold?',
+// Prompts are grouped by INTENT rather than listed flat: the launcher doubles
+// as documentation, so a first-time visitor can see what this thing actually
+// does (test a rule, sweep the universe, look something up, learn a concept)
+// instead of guessing from a row of undifferentiated chips.
+const PROMPT_GROUPS: Array<{ label: string; blurb: string; prompts: string[] }> = [
+  {
+    label: 'Backtest',
+    blurb: 'Test a rule on real history.',
+    prompts: [
+      'Backtest: buy RELIANCE when RSI crosses below 30, sell when it crosses 70',
+      'If I buy TCS 2 days after it falls 5% in a week, then sell on a 3% bounce, does it work?',
+    ],
+  },
+  {
+    label: 'Scan',
+    blurb: 'Sweep the whole NSE universe.',
+    prompts: [
+      'Scan all NSE stocks: golden cross strategy — which ones beat buy-and-hold?',
+      'Which NSE stocks perform best with a gap-up momentum strategy?',
+    ],
+  },
+  {
+    label: 'Look up',
+    blurb: 'Prices, levels, indicators.',
+    prompts: [
+      'What was the price of INFY on 15 Oct 2024?',
+      'Current RSI and 50-day SMA for HDFCBANK',
+    ],
+  },
+  {
+    label: 'Understand',
+    blurb: 'Concepts, answered honestly.',
+    prompts: [
+      'Explain the difference between a high win rate and an actually profitable strategy',
+      'Why would a strategy with 70% winning trades still lose money?',
+    ],
+  },
 ];
 
 let supabaseClientPromise: Promise<any> | null = null;
@@ -213,8 +244,8 @@ function pct(value: number | undefined | null) {
 
 function toneClass(value: number | undefined | null) {
   if (value === undefined || value === null || Number.isNaN(value)) return 'text-paper-muted';
-  if (value > 0) return 'text-emerald-600';
-  if (value < 0) return 'text-rose-600';
+  if (value > 0) return 'text-primary';
+  if (value < 0) return 'text-rose-200';
   return 'text-paper-muted';
 }
 
@@ -272,7 +303,7 @@ function renderInline(text: string, keyPrefix: string, onRun?: (prompt: string) 
         );
       } else {
         nodes.push(
-          <code key={`${keyPrefix}-c-${i}`} className="rounded bg-white/[0.03]/[0.05] px-1.5 py-0.5 font-mono text-[0.85em] text-accent">
+          <code key={`${keyPrefix}-c-${i}`} className="rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[0.85em] text-accent">
             {code}
           </code>
         );
@@ -336,7 +367,7 @@ function renderMarkdown(text: string, onRun?: (prompt: string) => void): ReactNo
 // ── Result cards ──────────────────────────────────────────────────────────────
 function StatCell({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 py-2 transition hover:border-accent/30 hover:bg-white/[0.03]">
+    <div className="rounded-xl border border-hairline bg-white/[0.03] px-3 py-2 transition hover:border-accent/30 hover:bg-white/[0.03]">
       <div className="text-[9px] font-bold uppercase tracking-wider text-paper-muted">{label}</div>
       <div className={`mt-0.5 font-display text-base font-bold tabular-nums ${tone ?? 'text-paper'}`}>{value}</div>
     </div>
@@ -347,7 +378,7 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
   const s = data.summary;
   const signal = (data.current_signal || 'HOLD').toUpperCase();
   const signalTone =
-    signal === 'BUY' ? 'bg-primary/15 text-primary' : signal === 'SELL' ? 'bg-rose-500/15 text-rose-300' : 'bg-white/[0.05] text-paper-muted';
+    signal === 'BUY' ? 'bg-primary/15 text-primary' : signal === 'SELL' ? 'bg-rose-500/150/15 text-rose-300' : 'bg-white/[0.05] text-paper-muted';
 
   return (
     <div className="mt-3 rounded-2xl border border-accent/30 bg-accent/[0.05] p-3 sm:p-4">
@@ -362,8 +393,8 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
 
       {(data.buy_expr || data.sell_expr) && (
         <div className="mt-2 space-y-1 text-[11px] text-paper-muted">
-          {data.buy_expr && <div><span className="font-bold text-emerald-700">BUY</span> <code className="font-mono">{data.buy_expr}</code></div>}
-          {data.sell_expr && <div><span className="font-bold text-rose-700">SELL</span> <code className="font-mono">{data.sell_expr}</code></div>}
+          {data.buy_expr && <div><span className="font-bold text-primary">BUY</span> <code className="font-mono">{data.buy_expr}</code></div>}
+          {data.sell_expr && <div><span className="font-bold text-rose-200">SELL</span> <code className="font-mono">{data.sell_expr}</code></div>}
         </div>
       )}
 
@@ -375,7 +406,7 @@ function BacktestCard({ data, ticker }: { data: Backtest; ticker: string | null 
           <StatCell label="Buy & hold" value={pct(data.buy_and_hold_return_pct)} tone={toneClass(data.buy_and_hold_return_pct)} />
           <StatCell label="Alpha vs B&H" value={pct(data.alpha_vs_buy_hold_pct)} tone={toneClass(data.alpha_vs_buy_hold_pct)} />
           <StatCell label="Avg / trade" value={pct(s.avg_return_per_trade_pct)} tone={toneClass(s.avg_return_per_trade_pct)} />
-          <StatCell label="Max drawdown" value={pct(s.max_drawdown_pct)} tone="text-rose-600" />
+          <StatCell label="Max drawdown" value={pct(s.max_drawdown_pct)} tone="text-rose-200" />
           <StatCell label="Profit factor" value={s.profit_factor !== undefined ? String(s.profit_factor) : '—'} />
         </div>
       ) : (
@@ -423,14 +454,14 @@ function ScanCard({ data }: { data: Scan }) {
       <div className="text-xs font-black uppercase tracking-wider text-accent">Cross-stock scan</div>
       {(data.buy_expr || data.sell_expr) && (
         <div className="mt-2 space-y-1 text-[11px] text-paper-muted">
-          {data.buy_expr && <div><span className="font-bold text-emerald-700">BUY</span> <code className="font-mono">{data.buy_expr}</code></div>}
-          {data.sell_expr && <div><span className="font-bold text-rose-700">SELL</span> <code className="font-mono">{data.sell_expr}</code></div>}
+          {data.buy_expr && <div><span className="font-bold text-primary">BUY</span> <code className="font-mono">{data.buy_expr}</code></div>}
+          {data.sell_expr && <div><span className="font-bold text-rose-200">SELL</span> <code className="font-mono">{data.sell_expr}</code></div>}
         </div>
       )}
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <StatCell label="Scanned" value={data.universe ? `${data.scanned} / ${data.universe}` : String(data.scanned)} />
         <StatCell label="Traded" value={String(data.traded)} />
-        <StatCell label="Profitable" value={`${data.profitable}/${data.traded}`} tone="text-emerald-600" />
+        <StatCell label="Profitable" value={`${data.profitable}/${data.traded}`} tone="text-primary" />
         <StatCell label="Beat B&H" value={`${data.beat_buy_hold}/${data.traded}`} />
         <StatCell label="Avg return" value={pct(data.avg_total_return_pct)} tone={toneClass(data.avg_total_return_pct)} />
       </div>
@@ -481,7 +512,7 @@ function MoversCard({ data }: { data: MoversScan }) {
         <div className="text-xs font-black uppercase tracking-wider text-accent">
           {title}{data.session_date ? ` · ${data.session_date}` : ''}
         </div>
-        <span className="rounded-full bg-white/[0.03]/[0.05] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper-muted">
+        <span className="rounded-full bg-white/[0.05] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper-muted">
           {data.ready ? `${data.universe} stocks scanned` : `scanning ${data.coverage}/${data.universe}`}
         </span>
       </div>
@@ -536,7 +567,7 @@ function ScreenerCard({ data }: { data: ScreenerResult }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs font-black uppercase tracking-wider text-accent">Screener matches</div>
         {data.source && (
-          <span className="rounded-full bg-white/[0.03]/[0.03] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper-muted">
+          <span className="rounded-full bg-white/[0.03] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-paper-muted">
             {data.source}
           </span>
         )}
@@ -544,7 +575,7 @@ function ScreenerCard({ data }: { data: ScreenerResult }) {
       {data.matchedRules && data.matchedRules.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {data.matchedRules.slice(0, 6).map((rule) => (
-            <span key={rule} className="rounded-full border border-accent/25 bg-white/[0.03]/[0.03] px-2 py-0.5 text-[10px] font-semibold text-accent">
+            <span key={rule} className="rounded-full border border-accent/25 bg-white/[0.03] px-2 py-0.5 text-[10px] font-semibold text-accent">
               {rule}
             </span>
           ))}
@@ -877,6 +908,48 @@ export default function AskAiPage() {
 
   const isEmpty = messages.length === 0;
 
+  // One console, two homes: the centrepiece of the empty-state launcher, and
+  // the sticky composer once a conversation exists.
+  const renderConsole = (large: boolean) => (
+    <div
+      className={`flex items-end gap-2 rounded-full border border-hairline p-2 transition focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20 ${large ? 'px-3 py-2.5' : ''}`}
+      style={{ background: 'rgba(6,8,7,0.85)' }}
+    >
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        rows={1}
+        placeholder={large ? 'Describe a strategy, or ask anything about the market…' : 'Ask a follow-up…'}
+        className={`max-h-40 flex-1 resize-none bg-transparent px-4 py-2 font-body text-paper outline-none placeholder:text-paper-muted/60 ${large ? 'min-h-[44px] text-[15px]' : 'min-h-[40px] text-[14px]'}`}
+      />
+      {loading ? (
+        <button
+          type="button"
+          onClick={stopThinking}
+          aria-label="Stop generating answer"
+          className="flex h-11 shrink-0 items-center gap-1.5 rounded-full border border-rose-400/40 bg-rose-500/150/15 px-5 font-body text-[12px] font-semibold uppercase tracking-wider text-rose-200 transition hover:bg-rose-500/150/25"
+        >
+          <span className="text-base leading-none" aria-hidden="true">×</span>
+          Stop
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => send(input)}
+          disabled={!input.trim()}
+          aria-label="Send message"
+          className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-accent px-6 font-body text-[12px] font-semibold uppercase tracking-wider text-black transition duration-300 hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Ask
+          <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+            <path d="M4 10h11M10.5 5.5L15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <main className="relative flex min-h-screen flex-col bg-black font-body text-paper">
       {/* ambient background glow */}
@@ -892,7 +965,7 @@ export default function AskAiPage() {
               type="button"
               onClick={() => router.back()}
               aria-label="Go back to the previous page"
-              className="group flex h-9 items-center gap-1.5 rounded-xl border border-hairline bg-white/[0.03]/[0.03] pl-2 pr-3 text-[12px] font-semibold text-paper-muted transition hover:-translate-x-0.5 hover:border-accent/55 hover:text-accent hover:shadow-[0_8px_24px_rgba(8,145,178,0.14)]"
+              className="group flex h-9 items-center gap-1.5 rounded-xl border border-hairline bg-white/[0.03] pl-2 pr-3 text-[12px] font-semibold text-paper-muted transition hover:-translate-x-0.5 hover:border-accent/55 hover:text-accent hover:shadow-[0_8px_24px_rgba(8,145,178,0.14)]"
             >
               <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 transition group-hover:-translate-x-0.5" aria-hidden="true">
                 <path d="M12.5 5L7.5 10l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -916,20 +989,20 @@ export default function AskAiPage() {
               <button
                 type="button"
                 onClick={startNewChat}
-                className="h-9 rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 text-[12px] font-semibold text-paper-muted transition hover:border-accent/55 hover:text-accent"
+                className="h-9 rounded-xl border border-hairline bg-white/[0.03] px-3 text-[12px] font-semibold text-paper-muted transition hover:border-accent/55 hover:text-accent"
               >
                 New chat
               </button>
             )}
             <Link
               href="/screens"
-              className="h-9 rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 text-[12px] font-semibold leading-9 text-paper-muted transition hover:border-accent/55 hover:text-accent"
+              className="h-9 rounded-xl border border-hairline bg-white/[0.03] px-3 text-[12px] font-semibold leading-9 text-paper-muted transition hover:border-accent/55 hover:text-accent"
             >
               Screener
             </Link>
             <Link
               href="/"
-              className="hidden h-9 rounded-xl border border-hairline bg-white/[0.03]/[0.03] px-3 text-[12px] font-semibold leading-9 text-paper-muted transition hover:border-accent/55 hover:text-accent sm:inline-block"
+              className="hidden h-9 rounded-xl border border-hairline bg-white/[0.03] px-3 text-[12px] font-semibold leading-9 text-paper-muted transition hover:border-accent/55 hover:text-accent sm:inline-block"
             >
               Home
             </Link>
@@ -938,7 +1011,7 @@ export default function AskAiPage() {
       </header>
 
       <div className="w-full flex-1 px-4 py-6 sm:px-6 lg:ml-[292px] lg:w-[calc(100%-292px)]">
-        <aside className="mb-4 h-fit rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl lg:fixed lg:bottom-0 lg:left-0 lg:top-[85px] lg:z-30 lg:mb-0 lg:w-[292px] lg:overflow-y-auto lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/[0.03]/[0.03] lg:px-4 lg:py-5">
+        <aside className="mb-4 h-fit rounded-2xl border border-hairline bg-white/[0.03] p-3 shadow-[0_12px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl lg:fixed lg:bottom-0 lg:left-0 lg:top-[85px] lg:z-30 lg:mb-0 lg:w-[292px] lg:overflow-y-auto lg:rounded-none lg:border-y-0 lg:border-l-0 lg:bg-white/[0.03] lg:px-4 lg:py-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <div className="text-[10px] font-black uppercase tracking-[0.18em] text-paper-muted">Recent chats</div>
@@ -957,7 +1030,7 @@ export default function AskAiPage() {
             {conversationsLoading && conversations.length === 0 ? (
               <>
                 {[0, 1, 2].map((item) => (
-                  <div key={item} className="h-[54px] animate-pulse rounded-xl border border-hairline bg-white/[0.03]/[0.05]" />
+                  <div key={item} className="h-[54px] animate-pulse rounded-xl border border-hairline bg-white/[0.05]" />
                 ))}
               </>
             ) : conversations.length > 0 ? (
@@ -987,58 +1060,113 @@ export default function AskAiPage() {
 
         <div ref={scrollRef} className="mx-auto min-h-0 w-full max-w-[1040px] overflow-y-auto">
         {isEmpty ? (
-          <div className="mx-auto max-w-2xl py-8 text-center sm:py-14">
-            <div className="animate-rise mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/40 bg-accent/10 text-3xl text-accent">✦</div>
-            <h1 className="animate-rise font-display text-3xl font-semibold tracking-tight text-paper sm:text-[2.5rem] sm:leading-[1.1]" style={{ animationDelay: '60ms' }}>
-              Ask anything about <span className="italic text-accent">the markets</span>
+          // ── LAUNCHER ── console-first: the input is the centrepiece, and the
+          // prompts below are grouped by intent so the page explains itself.
+          <div className="mx-auto max-w-[900px] py-10 sm:py-16">
+            <div className="animate-rise flex items-center gap-3">
+              <span className="h-px w-9 bg-accent/60" />
+              <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
+                Research desk
+              </span>
+            </div>
+            <h1
+              className="animate-rise mt-6 max-w-[20ch] font-display text-[clamp(2.4rem,5.4vw,4rem)] font-normal leading-[0.98] text-paper"
+              style={{ animationDelay: '60ms' }}
+            >
+              Ask it. Then make
+              <br />
+              it <em className="italic text-accent">prove it.</em>
             </h1>
-            <p className="animate-rise mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-paper-muted" style={{ animationDelay: '120ms' }}>
-              Test a trading strategy on our historical data, scan the whole NSE universe, or just ask a question. You
-              get an honest, numbers-backed answer — including how the idea stacks up against simply buying and holding.
+            <p
+              className="animate-rise mt-6 max-w-[60ch] font-body text-[15px] leading-8 text-paper-muted"
+              style={{ animationDelay: '120ms' }}
+            >
+              Describe a strategy in plain English and it gets tested on real history — with the
+              honest comparison most tools leave out: how it did against simply buying and holding.
             </p>
-            <div className="mt-8 grid gap-2.5 text-left sm:grid-cols-2">
-              {EXAMPLES.map((example, idx) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => send(example)}
-                  style={{ animationDelay: `${160 + idx * 55}ms` }}
-                  className="animate-rise group flex items-start gap-2.5 rounded-2xl border border-hairline bg-white/[0.03]/[0.03] p-3.5 text-left text-[13px] leading-snug text-paper-muted backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-accent/55 hover:bg-white/[0.03] hover:text-accent hover:shadow-[0_16px_40px_rgba(8,145,178,0.14)]"
+
+            <div className="animate-rise mt-9" style={{ animationDelay: '180ms' }}>
+              {renderConsole(true)}
+              <p className="mt-3 pl-5 font-body text-[11px] text-paper-muted/70">
+                Press Enter to ask · Shift + Enter for a new line
+              </p>
+            </div>
+
+            {/* Intent grid — four things this desk can do. */}
+            <div className="mt-14 grid gap-x-10 gap-y-9 sm:grid-cols-2">
+              {PROMPT_GROUPS.map((group, gi) => (
+                <div
+                  key={group.label}
+                  className="animate-rise border-t border-hairline pt-5"
+                  style={{ animationDelay: `${240 + gi * 70}ms` }}
                 >
-                  <span className="mt-0.5 text-accent transition group-hover:text-accent" aria-hidden="true">→</span>
-                  <span>{example}</span>
-                </button>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-display text-[19px] leading-none text-paper">{group.label}</span>
+                    <span className="font-body text-[10px] uppercase tracking-[0.2em] text-paper-muted/70">
+                      {String(gi + 1).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <p className="mt-2 font-body text-[12px] text-paper-muted/80">{group.blurb}</p>
+                  <div className="mt-4 flex flex-col gap-2.5">
+                    {group.prompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => send(prompt)}
+                        className="group flex items-start gap-2.5 text-left font-body text-[13px] leading-relaxed text-paper-muted transition hover:text-paper"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent/60 transition group-hover:bg-accent"
+                        />
+                        <span className="underline-offset-4 group-hover:underline">{prompt}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
         ) : (
           <div className="space-y-6">
             {messages.map((message) => (
-              <div key={message.id} className={`animate-rise ${message.role === 'user' ? 'flex justify-end' : 'flex justify-start gap-2.5'}`}>
+              // Editorial transcript, not a chat log: the question reads as a
+              // serif pull-quote and the answer as a research note set directly
+              // on the page — no bubbles, no avatar.
+              <div key={message.id} className="animate-rise">
                 {message.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md border border-accent/30 bg-accent/[0.08] px-4 py-2.5 text-[14px] leading-relaxed text-paper">
-                    {message.content}
+                  <div className="border-l-2 border-accent/70 py-1 pl-5">
+                    <div className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent/80">
+                      You asked
+                    </div>
+                    <p className="mt-2 font-display text-[clamp(1.3rem,2.4vw,1.75rem)] leading-snug text-paper">
+                      {message.content}
+                    </p>
                   </div>
                 ) : (
                   <>
-                    <div className="mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-sm text-accent sm:flex" aria-hidden="true">✦</div>
-                    <div className="w-full max-w-[92%]">
+                    <div className="w-full">
                       <div
-                        className={`rounded-2xl rounded-tl-md border px-4 py-3 text-[14px] shadow-[0_16px_44px_rgba(15,23,42,0.07)] ${
-                          message.error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-white/70 bg-white/[0.03]/90 text-paper-muted backdrop-blur-sm'
+                        className={`border-t pt-5 text-[14px] ${
+                          message.error ? 'border-rose-400/40 text-rose-200' : 'border-hairline text-paper-muted'
                         }`}
                       >
-                      {message.thoughtMs !== undefined && (
-                        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-paper-muted">
-                          Thought for {formatDuration(message.thoughtMs)}
-                        </div>
-                      )}
+                      <div className="mb-4 flex items-baseline justify-between gap-4">
+                        <span className={`font-body text-[10px] font-medium uppercase tracking-[0.24em] ${message.error ? 'text-rose-300' : 'text-primary'}`}>
+                          {message.error ? 'Could not answer' : 'Bullseye · answer'}
+                        </span>
+                        {message.thoughtMs !== undefined && (
+                          <span className="shrink-0 font-numeric text-[10px] uppercase tracking-widest text-paper-muted/70">
+                            {formatDuration(message.thoughtMs)}
+                          </span>
+                        )}
+                      </div>
                       <div className="prose-sm">{renderMarkdown(message.content, message.error ? undefined : send)}</div>
                       {message.data?.backtest && (
                         <BacktestCard data={message.data.backtest} ticker={message.data.target_stock ?? null} />
                       )}
                       {message.data?.mode === 'strategy' && message.data.strategy_alert?.stats && (
-                        <div className="mt-3 rounded-xl border border-hairline bg-white/[0.03]/[0.03] p-3">
+                        <div className="mt-3 rounded-xl border border-hairline bg-white/[0.03] p-3">
                           <div className="text-[11px] font-bold uppercase tracking-widest text-paper-muted">Backtest (educational)</div>
                           <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div>
@@ -1068,8 +1196,8 @@ export default function AskAiPage() {
                       )}
                       {message.data?.strategy_alert?.alertable && message.data?.strategy_json && (
                         <div className="mt-3 rounded-xl border border-primary/30 bg-primary/[0.06] p-3">
-                          <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">Daily alert available</div>
-                          <p className="mt-1 text-[12px] leading-5 text-emerald-900">
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-primary">Daily alert available</div>
+                          <p className="mt-1 text-[12px] leading-5 text-paper-muted">
                             {message.data.strategy_alert.quality?.reason || 'This strategy passed the quality gate.'}
                           </p>
                           <button
@@ -1079,7 +1207,7 @@ export default function AskAiPage() {
                           >
                             Save as daily alert
                           </button>
-                          <p className="mt-2 text-[10px] leading-4 text-emerald-900/70">{message.data.disclaimer}</p>
+                          <p className="mt-2 text-[10px] leading-4 text-paper-muted/70">{message.data.disclaimer}</p>
                         </div>
                       )}
                       {message.data?.mode === 'movers' && message.data.scan && (
@@ -1109,7 +1237,7 @@ export default function AskAiPage() {
                                 type="button"
                                 onClick={() => send(suggestion)}
                                 disabled={loading}
-                                className="group/sg inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white/[0.03]/[0.03] px-3 py-1 text-[11px] font-medium text-paper-muted transition hover:border-accent/55 hover:bg-white/[0.03] hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+                                className="group/sg inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white/[0.03] px-3 py-1 text-[11px] font-medium text-paper-muted transition hover:border-accent/55 hover:bg-white/[0.03] hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <span className="text-accent transition group-hover/sg:text-accent" aria-hidden="true">→</span>
                                 {suggestion}
@@ -1126,7 +1254,7 @@ export default function AskAiPage() {
             {loading && (
               <div className="flex justify-start gap-2.5">
                 <div className="mt-0.5 hidden h-8 w-8 shrink-0 animate-pulse items-center justify-center rounded-xl border border-accent/40 bg-accent/10 text-sm text-accent sm:flex" aria-hidden="true">✦</div>
-                <div className="flex flex-wrap items-center gap-3 rounded-2xl rounded-tl-md border border-white/70 bg-white/[0.03]/90 px-4 py-3 text-[14px] text-paper-muted shadow-[0_16px_44px_rgba(15,23,42,0.07)] backdrop-blur-sm">
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl rounded-tl-md border border-hairline bg-white/[0.03] px-4 py-3 text-[14px] text-paper-muted shadow-[0_16px_44px_rgba(15,23,42,0.07)] backdrop-blur-sm">
                   <div className="inline-flex items-center gap-2">
                     <span>Crunching the numbers</span>
                     <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
@@ -1141,7 +1269,7 @@ export default function AskAiPage() {
                   <button
                     type="button"
                     onClick={stopThinking}
-                    className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-600 transition hover:border-rose-300 hover:bg-rose-100"
+                    className="rounded-lg border border-rose-400/40 bg-rose-500/150/15 px-3 py-1 font-body text-[11px] font-semibold text-rose-200 transition hover:bg-rose-500/150/25"
                   >
                     <span className="mr-1 text-sm leading-none" aria-hidden="true">×</span>
                     Stop
@@ -1155,47 +1283,21 @@ export default function AskAiPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 border-t border-white/60 bg-white/[0.03]/[0.03] backdrop-blur-xl lg:ml-[292px]">
-        <div className="mx-auto w-full max-w-[1040px] px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex items-end gap-2 rounded-2xl border border-hairline bg-white/[0.03]/90 p-2 shadow-[0_18px_48px_rgba(8,145,178,0.12)] transition focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100/70">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              rows={1}
-              placeholder="Ask a question or describe a strategy to backtest…"
-              className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] text-paper outline-none placeholder:text-paper-muted"
-            />
-            {loading ? (
-              <button
-                type="button"
-                onClick={stopThinking}
-                aria-label="Stop generating answer"
-                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-500/15 px-4 text-[12px] font-semibold uppercase tracking-wider text-rose-200 transition hover:bg-rose-500/25"
-              >
-                <span className="text-base leading-none" aria-hidden="true">×</span>
-                Stop
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => send(input)}
-                disabled={!input.trim()}
-                aria-label="Send message"
-                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-accent px-5 text-[12px] font-semibold uppercase tracking-wider text-black transition hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Send
-                <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
-                  <path d="M4 10h11M10.5 5.5L15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
+      {/* Sticky composer only once a conversation exists — in the empty state
+          the console lives in the launcher hero instead. */}
+      {!isEmpty && (
+        <div
+          className="sticky bottom-0 border-t border-hairline backdrop-blur-xl lg:ml-[292px]"
+          style={{ background: 'rgba(4,6,5,0.9)' }}
+        >
+          <div className="mx-auto w-full max-w-[1040px] px-4 py-3 sm:px-6 sm:py-4">
+            {renderConsole(false)}
+            <p className="mt-2.5 text-center font-body text-[10px] text-paper-muted/70">
+              Educational analysis on historical data, not financial advice. Past performance does not predict future results.
+            </p>
           </div>
-          <p className="mt-2.5 text-center text-[10px] text-paper-muted">
-            Educational analysis on historical data, not financial advice. Past performance does not predict future results.
-          </p>
         </div>
-      </div>
+      )}
     </main>
   );
 }
