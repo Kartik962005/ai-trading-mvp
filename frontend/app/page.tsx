@@ -7,8 +7,7 @@ import { STOCKS } from './stocks';
 import {
   DailySignalPreviewCard,
 } from '@/components/home';
-import { SignalCardStory } from '@/components/home/SignalCardStory';
-import { HeroSection } from '@/components/home/HeroSection';
+import { AscentExperience } from '@/components/home/ascent/AscentExperience';
 import { SectionShell } from '@/components/home/SectionShell';
 import { LiveScanSection } from '@/components/home/LiveScanSection';
 import { AboutSection } from '@/components/home/AboutSection';
@@ -3995,8 +3994,9 @@ function HomeContent() {
 
       <div className="bullseye-light min-h-screen overflow-x-hidden bg-[#04070f] text-slate-100 selection:bg-cyan-500/20 selection:text-cyan-100 flex flex-col font-['Inter']">
 
-        {/* IMMERSIVE BACKGROUND — dark base + Lightfall WebGL light-rain */}
-        <HomeAmbientBackground />
+        {/* IMMERSIVE BACKGROUND — View 2 keeps the Market Globe; View 1's
+            background is owned by the Ascent cinematic (its own fixed scene). */}
+        {ticker && <HomeAmbientBackground />}
 
 
         {/* NAV */}
@@ -4176,11 +4176,15 @@ function HomeContent() {
           {/* ── VIEW 1: DISCOVERY HUB ── */}
           {!ticker && (
             <div className="bullseye-night animate-in fade-in duration-700 w-full flex flex-col">
-              <HeroSection
+              <AscentExperience
                 signedIn={Boolean(user)}
                 onOpenDailySignals={openDailySignalSettings}
-                ticker={<IndexTickerTape />}
               />
+
+              {/* Live index band — the transition from cinematic to real product. */}
+              <div className="relative z-10 mt-2 overflow-hidden rounded-2xl border border-hairline bg-black/40 backdrop-blur-md">
+                <IndexTickerTape />
+              </div>
 
               <LiveScanSection
                 visibleCount={visibleMarketStocks.length}
@@ -4205,8 +4209,6 @@ function HomeContent() {
                   </div>
                 ))}
               </LiveScanSection>
-
-              <SignalCardStory />
 
               <SectionShell
                 eyebrow="Daily signals"
