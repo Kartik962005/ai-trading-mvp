@@ -8,6 +8,20 @@ import ScreenMetricTable from '../ScreenMetricTable';
 import StockSearch from '../StockSearch';
 import { enrichScreenRows } from '../enrichRows';
 
+/** Median ignores nulls — and beats the mean on skewed financials like P/E. */
+function median(values: Array<number | null | undefined>): number | null {
+  const clean = values
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!clean.length) return null;
+  const mid = Math.floor(clean.length / 2);
+  return clean.length % 2 ? clean[mid] : (clean[mid - 1] + clean[mid]) / 2;
+}
+
+function formatStat(value: number | null, suffix = '') {
+  return value === null ? '—' : `${value.toFixed(1)}${suffix}`;
+}
+
 export default function ScreenDetailPage() {
   const params = useParams<{ slug: string }>();
   const screen = getScreenBySlug(params.slug);
@@ -15,6 +29,14 @@ export default function ScreenDetailPage() {
   const [query, setQuery] = useState(screen?.query ?? '');
   const [rows, setRows] = useState(initialRows);
   const [activeTitle, setActiveTitle] = useState(screen?.title ?? 'Stock screen');
+
+  // Newest snapshot date across the rows — states plainly how old the data is.
+  const snapshotDate = useMemo(() => {
+    const dates = rows
+      .map(row => row.technical?.latestDate)
+      .filter((value): value is string => typeof value === 'string' && value.length >= 8);
+    return dates.length ? dates.sort().at(-1) ?? null : null;
+  }, [rows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,9 +51,21 @@ export default function ScreenDetailPage() {
 
   if (!screen) {
     return (
-      <main className="min-h-screen bg-slate-950 p-6 text-white">
-        <h1 className="font-['Space_Grotesk'] text-3xl font-black">Screen not found</h1>
-        <Link href="/screens" className="mt-4 inline-flex rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold">Back to screens</Link>
+      <main className="flex min-h-screen flex-col items-start justify-center bg-black px-8 font-body text-paper">
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="h-px w-8 bg-accent/60" />
+          <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">404</span>
+        </div>
+        <h1 className="mt-5 font-display text-[clamp(2rem,4vw,3rem)] leading-tight text-paper">Screen not found</h1>
+        <p className="mt-3 max-w-[48ch] font-body text-[14px] leading-7 text-paper-muted">
+          That screen slug doesn&apos;t match anything in the library.
+        </p>
+        <Link
+          href="/screens"
+          className="mt-7 inline-flex h-12 items-center justify-center rounded-full bg-accent px-7 font-body text-[13px] font-semibold text-black transition duration-300 hover:bg-accent-dim"
+        >
+          Back to screens
+        </Link>
       </main>
     );
   }
@@ -111,20 +145,15 @@ export default function ScreenDetailPage() {
               {screen.description}
             </p>
 
+            {/* Honest stat rail. "Avg score" was dropped: the score is a
+                derived 50-99 number, so averaging it says nothing about the
+                stocks. Medians beat means on skewed financials like P/E. */}
             <div className="mt-8 flex flex-wrap gap-x-12 gap-y-5 border-y border-hairline py-5">
               {[
                 ['Results', String(rows.length)],
-                [
-                  'Avg score',
-                  String(Math.round(rows.reduce((sum, row) => sum + row.score, 0) / Math.max(rows.length, 1))),
-                ],
-                [
-                  'Top ROCE',
-                  (() => {
-                    const values = rows.map(row => row.roce).filter((value): value is number => typeof value === 'number');
-                    return values.length ? `${Math.max(...values).toFixed(1)}%` : '—';
-                  })(),
-                ],
+                ['Median P/E', formatStat(median(rows.map(row => row.pe)))],
+                ['Median ROE', formatStat(median(rows.map(row => row.roe)), '%')],
+                ['Data as of', snapshotDate ?? '—'],
               ].map(([label, value]) => (
                 <div key={label}>
                   <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-paper-muted">
@@ -136,60 +165,75 @@ export default function ScreenDetailPage() {
             </div>
           </div>
 
+          {/* ── DEFINITION ── moved ABOVE the results. This is what the screen
+              IS; you should be able to read and edit the rules without first
+              scrolling past a long table, and re-running is the main loop. */}
+          <section className="rounded-[22px] border border-hairline p-6 sm:p-7">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span aria-hidden className="h-px w-8 bg-accent/60" />
+                <span className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
+                  Screen definition
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={runCustomQuery}
+                className="inline-flex h-10 items-center justify-center rounded-full bg-accent px-6 font-body text-[12px] font-semibold text-black transition duration-300 hover:bg-accent-dim"
+              >
+                Re-run screen
+              </button>
+            </div>
+            <p className="mt-3 max-w-[62ch] font-body text-[13px] leading-7 text-paper-muted">
+              These are the rules this screen applies. Edit them and re-run against the Bullseye
+              universe — the results below update in place.
+            </p>
+            <textarea
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              spellCheck={false}
+              className="mt-5 h-32 w-full resize-y rounded-2xl border border-hairline bg-black/40 p-4 font-numeric text-[13px] leading-6 text-paper outline-none transition placeholder:text-paper-muted/60 focus:border-accent/55"
+            />
+            <div className="mt-3 font-body text-[11px] leading-6 text-paper-muted/70">
+              Columns you can use:{' '}
+              <span className="font-numeric text-paper-muted">
+                price · trailing_pe · roe · roce · market_cap_cr · debt_to_equity · operating_margin
+                · dividend_yield · revenue_growth · profit_growth · rsi14 · ret_1m · vol_ratio
+              </span>
+            </div>
+          </section>
+
           <ScreenMetricTable rows={rows} query={query} title={activeTitle} />
 
-          {/* Query editor */}
-          <section
-            className="rounded-[22px] border border-accent/30 p-6 sm:p-8"
-            style={{
-              background:
-                'linear-gradient(145deg, rgba(20,22,19,0.94) 0%, rgba(8,10,9,0.97) 55%, rgba(16,18,15,0.94) 100%)',
-              boxShadow: '0 26px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(245,196,81,0.14)',
-            }}
-          >
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div>
-                <h2 className="font-display text-[24px] leading-tight text-paper">Edit the query</h2>
-                <p className="mt-2 max-w-[54ch] font-body text-[13px] leading-7 text-paper-muted">
-                  Tweak the rules below and re-run them against the Bullseye stock universe.
-                </p>
-                <textarea
-                  value={query}
-                  onChange={event => setQuery(event.target.value)}
-                  className="mt-5 h-40 w-full resize-none rounded-2xl border border-hairline bg-white/[0.03] p-4 font-numeric text-[13px] leading-6 text-paper outline-none transition placeholder:text-paper-muted/60 focus:border-accent/55 focus:bg-white/[0.05]"
-                />
-                <button
-                  type="button"
-                  onClick={runCustomQuery}
-                  className="mt-5 inline-flex h-12 items-center justify-center rounded-full bg-accent px-7 font-body text-[13px] font-semibold text-black transition duration-300 hover:bg-accent-dim"
-                >
-                  Run this query
-                </button>
-              </div>
-
-              <aside className="border-t border-hairline pt-7 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-                <div className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
-                  Example
-                </div>
-                <pre className="mt-4 whitespace-pre-wrap font-numeric text-[12px] leading-6 text-paper-muted">{`Market capitalization > 500 AND
-Price to earning < 15 AND
-Return on capital employed > 22%`}</pre>
-
-                <div className="mt-8 font-body text-[10px] font-medium uppercase tracking-[0.24em] text-paper-muted">
-                  Other screens
-                </div>
-                <div className="mt-4 flex flex-col gap-2">
-                  {ALL_SCREENS.slice(0, 5).map(item => (
-                    <Link
-                      key={item.slug}
-                      href={`/screens/${item.slug}`}
-                      className="font-body text-[13px] text-paper-muted transition hover:text-accent"
-                    >
+          {/* Related screens belong AFTER the results — that's when you'd
+              reach for a different angle. Was a stub list wedged in a sidebar. */}
+          <section>
+            <div className="flex items-center gap-3">
+              <span aria-hidden className="h-px w-8 bg-accent/60" />
+              <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
+                Try another angle
+              </span>
+            </div>
+            <div className="mt-6 grid grid-cols-1 gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
+              {ALL_SCREENS.filter(item => item.slug !== screen.slug)
+                .slice(0, 9)
+                .map(item => (
+                  <Link
+                    key={item.slug}
+                    href={`/screens/${item.slug}`}
+                    className="group flex items-baseline justify-between gap-4 border-b border-hairline py-3.5 transition duration-200 hover:border-accent/40"
+                  >
+                    <span className="font-body text-[13.5px] leading-6 text-paper-muted transition group-hover:text-accent">
                       {item.title}
-                    </Link>
-                  ))}
-                </div>
-              </aside>
+                    </span>
+                    <span
+                      aria-hidden
+                      className="shrink-0 font-body text-[14px] text-paper-muted/40 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:text-accent"
+                    >
+                      →
+                    </span>
+                  </Link>
+                ))}
             </div>
           </section>
         </section>

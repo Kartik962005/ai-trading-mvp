@@ -69,6 +69,101 @@ const examples = [
   'Stocks with price breakout, volume breakout, and RSI above 60',
 ];
 
+// Examples grouped by what you're actually trying to do, so the console
+// teaches the query surface instead of hiding six strings behind a <details>.
+const EXAMPLE_GROUPS: Array<{ label: string; items: string[] }> = [
+  {
+    label: 'Momentum',
+    items: [
+      'Small cap stocks with maximum gain in the last 1 week',
+      'Stocks near 52 week high with strong weekly gain',
+    ],
+  },
+  {
+    label: 'Mean reversion',
+    items: [
+      'Oversold stocks with RSI below 30 and volume higher than last week average',
+      'Stocks trading above 20 DMA, 50 DMA, and 200 DMA',
+    ],
+  },
+  {
+    label: 'Quality',
+    items: [
+      'Profitable stocks under PE 20 with ROE above 15 and low debt',
+      'Companies with operating margin above 25% and debt to equity below 0.5',
+    ],
+  },
+  {
+    label: 'Volume',
+    items: [
+      'Stocks with today volume more than 2 times 10 day average volume',
+      'Stocks with price breakout, volume breakout, and RSI above 60',
+    ],
+  },
+];
+
+// The real columns of `stock_snapshot`. SQL mode previously shipped with a
+// placeholder and no way to discover what you could query — this is the
+// reference, grouped the way you'd reach for them.
+const SCHEMA_GROUPS: Array<{ label: string; fields: Array<[string, string]> }> = [
+  {
+    label: 'Identity',
+    fields: [
+      ['symbol', 'NSE symbol'],
+      ['name', 'Company name'],
+      ['ticker', 'Yahoo ticker'],
+      ['latest_date', 'Snapshot date'],
+    ],
+  },
+  {
+    label: 'Price & size',
+    fields: [
+      ['price', 'Last close'],
+      ['change_pct', 'Session change %'],
+      ['market_cap_cr', 'Market cap (₹ cr)'],
+      ['high_52w', '52-week high'],
+      ['low_52w', '52-week low'],
+      ['gap_pct', 'Gap %'],
+    ],
+  },
+  {
+    label: 'Fundamentals',
+    fields: [
+      ['trailing_pe', 'P/E'],
+      ['roe', 'Return on equity %'],
+      ['roce', 'Return on capital %'],
+      ['debt_to_equity', 'Debt / equity'],
+      ['operating_margin', 'Operating margin %'],
+      ['dividend_yield', 'Dividend yield %'],
+      ['revenue_growth', 'Revenue growth %'],
+      ['profit_growth', 'Profit growth %'],
+    ],
+  },
+  {
+    label: 'Technicals',
+    fields: [
+      ['rsi14', 'RSI (14)'],
+      ['mfi14', 'MFI (14)'],
+      ['atr14', 'ATR (14)'],
+      ['sma20', 'SMA 20'],
+      ['sma50', 'SMA 50'],
+      ['sma200', 'SMA 200'],
+      ['ema20', 'EMA 20'],
+      ['vol_ratio', 'Volume vs average'],
+    ],
+  },
+  {
+    label: 'Returns',
+    fields: [
+      ['ret_1w', '1-week return %'],
+      ['ret_1m', '1-month return %'],
+      ['ret_3m', '3-month return %'],
+      ['ret_6m', '6-month return %'],
+      ['ret_1y', '1-year return %'],
+    ],
+  },
+];
+
 function candidateStocksForPrompt(prompt: string) {
   const lower = prompt.toLowerCase();
   if (/\b(us|usa|nasdaq|nyse|america|american)\b/.test(lower)) {
@@ -670,20 +765,64 @@ export default function ScreensPage() {
                     {isSearching ? 'Thinking…' : mode === 'sql' ? 'Run SQL' : 'Ask AI'}
                   </button>
                 </div>
-                <details className="mt-4">
+                {/* Starters, grouped by intent — visible, not buried in a
+                    <details>. This is the fastest way to learn the surface. */}
+                <div className="mt-6 grid gap-x-8 gap-y-6 border-t border-hairline pt-5 sm:grid-cols-2 lg:grid-cols-4">
+                  {EXAMPLE_GROUPS.map(group => (
+                    <div key={group.label}>
+                      <div className="font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">
+                        {group.label}
+                      </div>
+                      <div className="mt-2.5 flex flex-col gap-2">
+                        {group.items.map(example => (
+                          <button
+                            key={example}
+                            type="button"
+                            onClick={() => runQuery(example)}
+                            className="group flex items-start gap-2 text-left font-body text-[12px] leading-relaxed text-paper-muted transition hover:text-paper"
+                          >
+                            <span
+                              aria-hidden
+                              className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-accent/60 transition group-hover:bg-accent"
+                            />
+                            <span className="underline-offset-4 group-hover:underline">{example}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Field reference — what you can actually query. Essential for
+                    SQL mode, which previously offered no discoverability. */}
+                <details className="mt-5 border-t border-hairline pt-4">
                   <summary className="cursor-pointer font-body text-[10px] font-medium uppercase tracking-[0.22em] text-accent">
-                    Examples
+                    Queryable fields · stock_snapshot
                   </summary>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {examples.map(example => (
-                      <button
-                        key={example}
-                        type="button"
-                        onClick={() => runQuery(example)}
-                        className="rounded-full border border-hairline px-3.5 py-1.5 font-body text-[12px] text-paper-muted transition duration-300 hover:border-accent/50 hover:text-paper"
-                      >
-                        {example}
-                      </button>
+                  <div className="mt-4 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+                    {SCHEMA_GROUPS.map(group => (
+                      <div key={group.label}>
+                        <div className="font-body text-[10px] font-medium uppercase tracking-[0.2em] text-paper-muted">
+                          {group.label}
+                        </div>
+                        <dl className="mt-2.5 flex flex-col gap-1.5">
+                          {group.fields.map(([field, meaning]) => (
+                            <div key={field} className="flex items-baseline justify-between gap-3">
+                              <dt>
+                                <button
+                                  type="button"
+                                  onClick={() => setQuery(current => (current ? `${current} ${field}` : field))}
+                                  className="font-numeric text-[11.5px] text-paper transition hover:text-accent"
+                                  title={`Insert ${field}`}
+                                >
+                                  {field}
+                                </button>
+                              </dt>
+                              <dd className="shrink-0 font-body text-[10.5px] text-paper-muted/70">{meaning}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
                     ))}
                   </div>
                 </details>
@@ -757,37 +896,44 @@ export default function ScreensPage() {
               </span>
             </div>
 
+            {/* An index, not another wall of cards. Every screen is one row:
+                name on the left, what it looks for on the right, hairline
+                between. Far denser and quicker to scan than a 3-col grid, and
+                it makes the categories the organising rhythm. */}
             {SCREEN_SECTIONS.map(section => (
               <section key={section.title}>
-                <h2 className="font-display text-[clamp(1.5rem,2.6vw,2.1rem)] leading-tight text-paper">
-                  {section.title}
-                </h2>
-                <p className="mt-2 max-w-[62ch] font-body text-[14px] leading-7 text-paper-muted">
+                <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-hairline pb-4">
+                  <h2 className="font-display text-[clamp(1.5rem,2.6vw,2.1rem)] leading-tight text-paper">
+                    {section.title}
+                  </h2>
+                  <span className="font-numeric text-[11px] text-paper-muted/70">
+                    {section.items.length} screens
+                  </span>
+                </div>
+                <p className="mt-3 max-w-[62ch] font-body text-[14px] leading-7 text-paper-muted">
                   {section.subtitle}
                 </p>
-                <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {section.items.map(item => (
+                <div className="mt-5">
+                  {section.items.map((item, index) => (
                     <Link
                       key={item.slug}
                       href={`/screens/${item.slug}`}
-                      className="group relative flex min-h-[128px] flex-col justify-between overflow-hidden rounded-[18px] border border-hairline p-5 transition duration-300 hover:-translate-y-1 hover:border-accent/55"
-                      style={{
-                        background:
-                          'linear-gradient(145deg, rgba(20,22,19,0.92) 0%, rgba(8,10,9,0.96) 55%, rgba(16,18,15,0.92) 100%)',
-                        boxShadow: '0 18px 46px rgba(0,0,0,0.5)',
-                      }}
+                      className="group grid grid-cols-1 items-baseline gap-x-8 gap-y-1 border-b border-hairline py-4 transition duration-200 hover:border-accent/40 sm:grid-cols-[auto_minmax(0,17rem)_minmax(0,1fr)_auto]"
                     >
-                      <div>
-                        <h3 className="font-display text-[19px] leading-snug text-paper transition group-hover:text-accent">
-                          {item.title}
-                        </h3>
-                        <p className="mt-2 line-clamp-2 font-body text-[12.5px] leading-6 text-paper-muted">
-                          {item.description}
-                        </p>
-                      </div>
-                      <span className="mt-4 inline-flex items-center gap-1.5 font-body text-[11px] uppercase tracking-[0.18em] text-paper-muted transition group-hover:text-accent">
-                        Run screen
-                        <span aria-hidden className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+                      <span className="hidden font-numeric text-[11px] text-paper-muted/50 sm:block">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <h3 className="font-display text-[19px] leading-snug text-paper transition group-hover:text-accent">
+                        {item.title}
+                      </h3>
+                      <p className="font-body text-[12.5px] leading-6 text-paper-muted">
+                        {item.description}
+                      </p>
+                      <span
+                        aria-hidden
+                        className="hidden font-body text-[16px] text-paper-muted/40 transition-transform duration-300 group-hover:translate-x-1 group-hover:text-accent sm:block"
+                      >
+                        →
                       </span>
                     </Link>
                   ))}
@@ -813,45 +959,30 @@ export default function ScreensPage() {
             <p className="mt-2 max-w-[62ch] font-body text-[14px] leading-7 text-paper-muted">
               Only sectors that actually have stocks in the Bullseye database are listed.
             </p>
-            <div className="mt-7 flex flex-wrap gap-2.5">
+            {/* Sectors are a different axis from screens, so they get a
+                different form: a multi-column directory with counts, rather
+                than chips that look identical to everything else. */}
+            <div className="mt-7 grid grid-cols-1 gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
               {sectors.map(sector => (
                 <Link
                   key={sector.name}
                   href={`/screens/sector/${encodeURIComponent(sector.name)}`}
-                  className="group inline-flex items-center gap-3 rounded-full border border-hairline px-4 py-2.5 transition duration-300 hover:-translate-y-0.5 hover:border-accent/55"
+                  className="group flex items-baseline justify-between gap-4 border-b border-hairline py-3 transition duration-200 hover:border-accent/40"
                 >
-                  <span className="font-body text-[13px] text-paper transition group-hover:text-accent">
+                  <span className="font-body text-[13.5px] text-paper-muted transition group-hover:text-accent">
                     {sector.name}
                   </span>
-                  <span className="font-numeric text-[11px] text-paper-muted">{sector.count}</span>
+                  <span className="shrink-0 font-numeric text-[11px] text-paper-muted/60">
+                    {sector.count}
+                  </span>
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* ── POPULAR SCREENS ─────────────────────────────────────────── */}
-          <div>
-            <div className="flex items-center gap-3">
-              <span aria-hidden className="h-px w-8 bg-accent/60" />
-              <span className="font-body text-[11px] font-medium uppercase tracking-[0.28em] text-accent">
-                Popular
-              </span>
-            </div>
-            <h2 className="mt-5 font-display text-[clamp(1.5rem,2.6vw,2.1rem)] leading-tight text-paper">
-              Most-run screens.
-            </h2>
-            <div className="mt-7 flex flex-wrap gap-2.5">
-              {ALL_SCREENS.slice(0, 10).map(item => (
-                <Link
-                  key={`quick-${item.slug}`}
-                  href={`/screens/${item.slug}`}
-                  className="inline-flex items-center rounded-full border border-hairline px-4 py-2.5 font-body text-[13px] text-paper-muted transition duration-300 hover:-translate-y-0.5 hover:border-accent/55 hover:text-paper"
-                >
-                  {item.title}
-                </Link>
-              ))}
-            </div>
-          </div>
+          {/* "Popular screens" was removed: it was the same links as the
+              library above, rendered as chips, so it added a third
+              undifferentiated block without adding information. */}
         </section>
       </div>
     </main>
