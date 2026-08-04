@@ -3761,92 +3761,6 @@ function HomeContent() {
         .animate-marquee { animation: marquee 35s linear infinite; }
         @keyframes dataDrift { 0% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(14px, -10px, 0); } 100% { transform: translate3d(0, 0, 0); } }
         @keyframes scanLine { 0% { transform: translateX(-30%); opacity: 0; } 18%, 72% { opacity: 0.55; } 100% { transform: translateX(130%); opacity: 0; } }
-        .bullseye-light {
-          background:
-            radial-gradient(circle at 16% 8%, rgba(6,182,212,0.22), transparent 30%),
-            radial-gradient(circle at 82% 6%, rgba(16,185,129,0.18), transparent 28%),
-            linear-gradient(180deg, #f8fcff 0%, #edf7f8 45%, #ffffff 100%);
-          color: #0f172a !important;
-        }
-        .bullseye-light video { display: none; }
-        .bullseye-light [class*="bg-black"],
-        .bullseye-light [class*="bg-zinc-950"],
-        .bullseye-light [class*="bg-zinc-900"] {
-          background-color: rgba(255,255,255,0.78) !important;
-          backdrop-filter: blur(18px);
-        }
-        .bullseye-light [class*="border-white"] { border-color: rgba(15,23,42,0.10) !important; }
-        .bullseye-light [class*="text-white"],
-        .bullseye-light [class*="text-zinc-100"],
-        .bullseye-light [class*="text-zinc-200"],
-        .bullseye-light [class*="text-zinc-300"] { color: #0f172a !important; }
-        .bullseye-light [class*="text-zinc-400"],
-        .bullseye-light [class*="text-zinc-500"],
-        .bullseye-light [class*="text-zinc-600"] { color: #64748b !important; }
-        .bullseye-light .ai-market-panel {
-          background-color: rgba(15,23,42,0.96) !important;
-          color: #e2e8f0 !important;
-        }
-        .bullseye-light .ai-market-panel [class*="bg-black"],
-        .bullseye-light .ai-market-panel [class*="bg-slate-900"],
-        .bullseye-light .ai-market-panel [class*="bg-slate-950"] {
-          background-color: rgba(15,23,42,0.84) !important;
-        }
-        .bullseye-light .ai-market-panel [class*="text-white"],
-        .bullseye-light .ai-market-panel [class*="text-zinc-200"],
-        .bullseye-light .ai-market-panel [class*="text-zinc-300"],
-        .bullseye-light .ai-market-panel [class*="text-slate-100"],
-        .bullseye-light .ai-market-panel [class*="text-slate-300"] {
-          color: #e2e8f0 !important;
-        }
-        .bullseye-light .ai-market-panel table [class*="text-slate-"],
-        .bullseye-light .ai-market-panel table [class*="text-zinc-"] {
-          color: #0f172a !important;
-        }
-        .bullseye-light .ai-market-panel table [class*="text-green"] { color: #059669 !important; }
-        .bullseye-light .ai-market-panel table [class*="text-red"] { color: #dc2626 !important; }
-        .bullseye-light .ai-market-panel table [class*="text-cyan"] { color: #0891b2 !important; }
-        .bullseye-light .global-news-panel {
-          background: rgba(255,255,255,0.82) !important;
-          border-color: rgba(8,145,178,0.18) !important;
-        }
-        .bullseye-light .global-news-heading,
-        .bullseye-light .global-news-pill {
-          color: #0891b2 !important;
-        }
-        .bullseye-light .global-news-card {
-          background: rgba(15,23,42,0.84) !important;
-          border-color: rgba(148,163,184,0.20) !important;
-          box-shadow: 0 18px 45px rgba(15,23,42,0.12);
-        }
-        .bullseye-light .global-news-source { color: #67e8f9 !important; }
-        .bullseye-light .global-news-title { color: #f8fafc !important; }
-        .bullseye-light .global-news-copy { color: #dbeafe !important; }
-        .bullseye-light .stock-news-panel {
-          background: rgba(255,255,255,0.94) !important;
-          border-color: rgba(100,116,139,0.22) !important;
-          box-shadow: 0 20px 60px rgba(15,23,42,0.10) !important;
-        }
-        .bullseye-light .stock-news-heading {
-          color: #475569 !important;
-        }
-        .bullseye-light .stock-news-card {
-          background: rgba(255,255,255,0.92) !important;
-          border-color: rgba(100,116,139,0.22) !important;
-        }
-        .bullseye-light .stock-news-title {
-          color: #0f172a !important;
-        }
-        .bullseye-light input {
-          background: rgba(255,255,255,0.92) !important;
-          color: #0f172a !important;
-          border-color: rgba(8,145,178,0.35) !important;
-          box-shadow: 0 12px 40px rgba(15,23,42,0.08);
-        }
-        .bullseye-light input::placeholder { color: #94a3b8 !important; }
-        .bullseye-light .fixed.inset-0.z-0 {
-          background: transparent !important;
-        }
         .brand-mark {
           box-shadow: 0 16px 40px rgba(8,145,178,0.22), inset 0 1px 0 rgba(255,255,255,0.9);
         }
@@ -3998,7 +3912,7 @@ function HomeContent() {
         }
       `}} />
 
-      {/* APPLE-STYLE WELCOME OVERLAY — outside bullseye-light so its CSS doesn't override text colors */}
+      {/* APPLE-STYLE WELCOME OVERLAY — rendered outside the page shell so it owns its own colours */}
       {showWelcome && (
         <div
           className="welcome-overlay fixed inset-0 z-[9999] pointer-events-none flex items-center justify-center"
@@ -4066,7 +3980,7 @@ function HomeContent() {
         </div>
       )}
 
-      <div className="bullseye-light min-h-screen overflow-x-hidden bg-[#04070f] text-slate-100 selection:bg-cyan-500/20 selection:text-cyan-100 flex flex-col font-['Inter']">
+      <div className="min-h-screen overflow-x-hidden bg-[#04070f] text-slate-100 selection:bg-cyan-500/20 selection:text-cyan-100 flex flex-col font-['Inter']">
 
         {/* IMMERSIVE BACKGROUND — View 2 keeps the Market Globe; View 1's
             background is owned by the Ascent cinematic (its own fixed scene). */}
@@ -4075,9 +3989,10 @@ function HomeContent() {
         {/* FIXED INDEX TAPE — pinned to the very top of the homepage so live
             index levels are visible the moment the page loads and stay there. */}
         {!ticker && (
-          // NOTE: no `bg-black` class here — `.bullseye-light [class*="bg-black"]`
-          // force-flips it to white. The background is inline so the light-theme
-          // override can't reach it, and `bullseye-night` keeps the tokens dark.
+          // The background stays inline rather than a `bg-black` utility: the
+          // `.bullseye-night` scope retints `bg-black*` to translucent glass,
+          // which is wrong for the tape — it needs a near-solid bar so the live
+          // index levels stay legible over whatever scrolls beneath it.
           <div
             className="bullseye-night fixed inset-x-0 top-0 z-[60] border-b border-hairline py-2.5 backdrop-blur-xl"
             style={{ background: 'rgba(4,6,5,0.92)' }}

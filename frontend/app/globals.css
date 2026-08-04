@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Bullseye is a dark-only product — the whole design system below is built
+     on black (--bg #020617, translucent-white surfaces, emerald/gold accents),
+     and every route renders on it. These used to default to white and only go
+     dark under `prefers-color-scheme: dark`, so on a light-mode OS the page
+     behind the app rendered white. Dark is the default now; there is no light
+     theme to fall back to. */
+  --background: #0a0a0a;
+  --foreground: #ededed;
 
   /* Bullseye locked palette extracted from the current app. */
   --bg: #020617;
@@ -63,12 +69,6 @@
   --color-muted: var(--color-slate-400);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
 
 body {
   background: var(--background);
@@ -206,13 +206,15 @@ body {
   backdrop-filter: none;
 }
 
-/* ── bg-black rescue ────────────────────────────────────────────────────────
-   The light shell force-flips every `bg-black*` utility to white
-   (`.bullseye-light [class*="bg-black"] { background: rgba(255,255,255,.78) !important }`).
-   Inside the night scope that is exactly backwards: it turned the stock chart
-   panel into a grey slab (axis labels vanished against it) and hit every other
-   dark surface in the hub. Doubling the class raises specificity (0,3,0) above
-   the light rule (0,2,0) so the dark value wins regardless of source order. */
+/* ── bg-black glass ─────────────────────────────────────────────────────────
+   `bg-black*` utilities inside the hub become translucent dark glass so the
+   fixed 3D scene shows through them. The class is doubled purely for
+   specificity (0,3,0), which keeps this winning over the single-class retints
+   above regardless of source order.
+
+   Historical note: this started life as a "rescue" from a `.bullseye-light`
+   shell that force-flipped every `bg-black*` to white. That shell has been
+   removed (the app is dark-only), but the glass effect is still wanted here. */
 .bullseye-night.bullseye-night [class*="bg-black"] {
   background-color: rgba(4, 6, 5, 0.55) !important;
   -webkit-backdrop-filter: none;
