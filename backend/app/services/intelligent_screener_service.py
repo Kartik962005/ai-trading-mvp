@@ -41,7 +41,7 @@ DEFAULT_LIMIT = 60
 MAX_LIMIT = 300
 
 # Every column the model / a pro user is allowed to reference, with a one-line
-# meaning + unit. Kept in sync with backend/supabase_stock_snapshot.sql.
+# meaning + unit. Kept in sync with database/supabase_stock_snapshot.sql.
 COLUMN_DOC = {
     "ticker": "Yahoo ticker, e.g. RELIANCE.NS (text)",
     "symbol": "NSE symbol, e.g. RELIANCE (text)",

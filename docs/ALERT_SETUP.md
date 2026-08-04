@@ -5,7 +5,7 @@
 Open Supabase SQL Editor and run:
 
 ```sql
--- Copy the full contents of backend/supabase_alerts.sql
+-- Copy the full contents of database/supabase_alerts.sql
 ```
 
 The backend needs `SUPABASE_SERVICE_ROLE_KEY` so the scheduled checker can read active alerts and write alert events.
@@ -46,7 +46,7 @@ Signed-in users can turn daily emails on or off in the app. For a fixed admin/te
 DAILY_REPORT_EMAILS=you@example.com,team@example.com
 ```
 
-Run `backend/daily_trade_updates.sql` in Supabase before enabling user subscriptions.
+Run `database/daily_trade_updates.sql` in Supabase before enabling user subscriptions.
 
 ## 4. Alert checker and scheduled reports
 

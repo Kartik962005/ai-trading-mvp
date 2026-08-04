@@ -25,7 +25,7 @@ def _supabase_required():
 def _friendly_table_error(exc: Exception) -> ValueError:
     text = str(exc)
     if "user_strategies" in text or "strategy_signals" in text or "schema cache" in text or "does not exist" in text:
-        return ValueError("AI Strategy Alerts are not set up yet. Ask the owner to run backend/supabase_strategy_alerts.sql in Supabase.")
+        return ValueError("AI Strategy Alerts are not set up yet. Ask the owner to run database/supabase_strategy_alerts.sql in Supabase.")
     return ValueError(text)
 
 
