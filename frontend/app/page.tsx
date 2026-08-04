@@ -661,6 +661,10 @@ const INDEX_TICKERS = [
 
 const INDEX_QUOTES_KEY = `/api/v1/quotes/batch?tickers=${INDEX_TICKERS.map(item => encodeURIComponent(item.symbol)).join(',')}`;
 
+// Remembers that a visitor chose "continue without signing in", so the prompt
+// is not re-shown on every reload. Cleared implicitly when they do sign in.
+const AUTH_PROMPT_DISMISSED_KEY = 'bullseye:auth-prompt-dismissed';
+
 const TickerItem = ({ title, currency, quote }: { title: string; currency: string; quote?: QuoteSnapshot }) => {
   const price = Number(quote?.price);
   const changePercent = Number(quote?.change_percent ?? 0);
@@ -2741,19 +2745,52 @@ function HomeContent() {
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [showProfileMenu]);
 
-  // Sign-in is mandatory: once the session check finishes, force the auth modal
-  // open for anyone who is not signed in, and close it as soon as they are.
+  // Sign-in is optional. Offer the prompt once the session check finishes, but
+  // let visitors dismiss it and browse anonymously. Actions that genuinely need
+  // an account (alerts, saved strategies, daily emails) still open this modal
+  // on demand via setShowAuthModal(true).
+  //
+  // A previous "continue without signing in" choice is restored here rather than
+  // in a separate effect: localStorage is unavailable during SSR, and reading it
+  // in its own effect lets the modal flash open before the choice is seen.
   useEffect(() => {
     if (!authReady) return;
-    setShowAuthModal(!user);
-  }, [authReady, user]);
+    if (user) {
+      setShowAuthModal(false);
+      return;
+    }
+    let dismissed = authPromptDismissed;
+    if (!dismissed) {
+      try {
+        dismissed = localStorage.getItem(AUTH_PROMPT_DISMISSED_KEY) === '1';
+      } catch {
+        // Private mode / storage disabled: fall back to prompting each visit.
+      }
+    }
+    setShowAuthModal(!dismissed);
+  }, [authReady, user, authPromptDismissed]);
 
   const dismissAuthModal = () => {
     setAuthPromptDismissed(true);
     setShowAuthModal(false);
     setAuthError('');
     setAuthSuccess('');
+    try {
+      localStorage.setItem(AUTH_PROMPT_DISMISSED_KEY, '1');
+    } catch {
+      // Non-fatal: the choice just won't survive a reload.
+    }
   };
+
+  // Esc closes the prompt, same as "continue without signing in".
+  useEffect(() => {
+    if (!showAuthModal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismissAuthModal();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showAuthModal]);
 
   const getSupabaseClient = async () => {
     if (supabaseRef.current) return supabaseRef.current;
@@ -4672,8 +4709,18 @@ function HomeContent() {
       )}
 
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_60px_rgba(6,182,212,0.15)]">
+        <div
+          onClick={dismissAuthModal}
+          role="presentation"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div
+            onClick={event => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sign in to Bullseye"
+            className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_60px_rgba(6,182,212,0.15)]"
+          >
 
             {/* Header */}
             <div className="mb-6">
@@ -4684,9 +4731,19 @@ function HomeContent() {
                 <h2 className="text-lg font-black text-white tracking-widest uppercase font-['Space_Grotesk']">
                   <span className="text-white">BULLS</span><span className="text-cyan-500">EYE</span>
                 </h2>
+                <button
+                  onClick={dismissAuthModal}
+                  aria-label="Close sign-in and continue without an account"
+                  className="ml-auto -mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-200"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
               <p className="mt-3 text-xs font-['JetBrains_Mono'] text-zinc-400">
-                Sign in to access Bullseye — markets, screener, Ask AI, and alerts.
+                Sign in to save alerts, strategies, and daily signal emails. Markets,
+                the screener, and Ask AI work without an account.
               </p>
             </div>
 
@@ -4754,6 +4811,14 @@ function HomeContent() {
               className="force-light-text w-full bg-slate-950 border border-slate-800 font-bold uppercase tracking-widest text-sm py-3 rounded-xl hover:bg-slate-800 transition-all disabled:opacity-40 font-['Space_Grotesk']"
             >
               {authLoading ? 'Please wait...' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
+            </button>
+
+            {/* Anonymous escape hatch — sign-in is not required to browse. */}
+            <button
+              onClick={dismissAuthModal}
+              className="mt-3 w-full rounded-xl border border-white/10 py-3 text-xs font-bold uppercase tracking-widest text-zinc-400 transition-all hover:border-white/20 hover:text-zinc-200 font-['Space_Grotesk']"
+            >
+              Continue without signing in
             </button>
 
             <p className="text-[9px] text-zinc-600 text-center mt-4 font-['JetBrains_Mono']">

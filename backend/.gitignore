@@ -5,6 +5,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .yfinance-cache/
+.venv/
+venv/
 
 # Local run logs
 *.log

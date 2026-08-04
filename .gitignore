@@ -4,6 +4,12 @@ frontend/.env*.local
 __pycache__/
 *.pyc
 
+# Virtualenv. Must live OUTSIDE backend/ — nltk >=3.10 refuses to import any
+# package resolving under the current working directory, and uvicorn is run
+# from backend/, so a venv at backend/.venv breaks textblob/nltk at import.
+.venv/
+venv/
+
 # Generated ML data caches and run logs (regenerable, too large for git)
 *.pkl
 backend/scripts/*.log
