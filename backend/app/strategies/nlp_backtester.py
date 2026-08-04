@@ -7,6 +7,8 @@ import numpy as np
 from groq import Groq
 from dotenv import load_dotenv
 
+from app.strategies.expression_guard import ExpressionValidationError, validate_expression
+
 load_dotenv()
 
 _client = None
@@ -656,8 +658,20 @@ def _rule_engine_fallback(user_prompt: str) -> dict | None:
 
 # ── Step 4: Simulation engines ────────────────────────────────────────────────
 def _eval_safe(expr: str, df: pd.DataFrame) -> pd.Series:
-    local_vars = {"df": df, "pd": pd, "np": np}
-    result = eval(expr, {"__builtins__": {}}, local_vars)
+    """Evaluate an LLM-authored pandas boolean expression, allowlist-checked.
+
+    `expr` originates from a model prompted with untrusted user text, so it is
+    validated against app.strategies.expression_guard before evaluation. Note
+    that emptying __builtins__ alone would NOT be safe: `pd`/`np` in scope
+    expose `read_pickle`/`load`, which execute arbitrary code on deserialisation.
+    The guard removes any path to those names, and `pd`/`np` are no longer
+    exposed to the expression at all.
+    """
+    tree = validate_expression(expr)
+    code = compile(tree, filename="<strategy-expression>", mode="eval")
+    result = eval(code, {"__builtins__": {}}, {"df": df})  # noqa: S307 - guarded above
+    if not isinstance(result, pd.Series):
+        raise ExpressionValidationError("expression must produce a column of true/false values")
     return result.fillna(False).astype(bool)
 
 
