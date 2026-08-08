@@ -103,9 +103,7 @@ from app.services.daily_trade_service import (
     update_daily_update_preference,
     _is_market_holiday,
 )
-from app.strategies.engine import run_analysis, evaluate_strategies, fetch_global_market_news
-from app.strategies.nlp_backtester import run_custom_backtest
-from app.strategies.strategy_selector import TOP_20_STRATEGIES, get_strategy_prediction, get_best_strategy
+from app.strategies.engine import run_analysis, fetch_global_market_news
 
 
 INDEX_TICKERS = ["^NSEI", "^BSESN", "^IXIC", "^GSPC"]
@@ -240,7 +238,14 @@ def analyze_ticker_sync(ticker: str):
 
 
 @app.get("/health")
+@app.get("/api/v1/health")
 async def health():
+    """Cheap liveness check — no market data work.
+
+    Also exposed under /api/v1 so the frontend can reach it through the
+    same-origin proxy (app/api/backend/[...path]), which only forwards /api/v1
+    paths. That is what BackendWarmup pings to wake a sleeping free-tier host.
+    """
     return {"status": "Backend is running"}
 
 
@@ -325,25 +330,6 @@ async def fundamentals(request: Request, ticker: str):
 @limiter.limit("60/minute")
 async def global_news(request: Request):
     return fetch_global_market_news()
-
-
-@app.get("/api/v1/strategies/list")
-async def get_strategies():
-    return {"strategies": TOP_20_STRATEGIES}
-
-
-@app.get("/api/v1/strategy/{ticker}/{strategy_name}")
-@limiter.limit("5/minute")
-async def strategy_analysis(request: Request, ticker: str, strategy_name: str):
-    df = get_historical_data(ticker)
-    selected = get_strategy_prediction(df, strategy_name, ticker)
-    best = get_best_strategy(df, ticker)
-    return {"selected_strategy": selected, "best_strategy": best}
-
-
-class BacktestRequest(BaseModel):
-    ticker: str
-    prompt: str
 
 
 class ScreenerStock(BaseModel):
@@ -989,46 +975,6 @@ async def get_daily_stock_prediction_status(request: Request):
         raise HTTPException(status_code=403, detail="Invalid alert admin key")
     try:
         return get_admin_status()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/v1/backtest/custom")
-@limiter.limit("10/minute")
-async def custom_backtest(request: Request, body: BacktestRequest):
-    try:
-        df = get_historical_data(body.ticker)
-        custom_result = run_custom_backtest(df, body.prompt)
-        import ta
-        df['SMA_50']      = ta.trend.sma_indicator(df['close'], window=50)
-        df['SMA_200']     = ta.trend.sma_indicator(df['close'], window=200)
-        df['EMA_20']      = ta.trend.ema_indicator(df['close'], window=20)
-        df['EMA_50']      = ta.trend.ema_indicator(df['close'], window=50)
-        df['RSI_14']      = ta.momentum.rsi(df['close'], window=14)
-        df['MACD']        = ta.trend.macd(df['close'])
-        df['MACD_signal'] = ta.trend.macd_signal(df['close'])
-        df['VWAP']        = ta.volume.volume_weighted_average_price(df['high'], df['low'], df['close'], df['volume'], window=14)
-        df['VOL_SMA_20']  = df['volume'].rolling(window=20).mean()
-        df['ATR_14']      = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=14)
-        df['BBU_14_2.0']  = ta.volatility.bollinger_hband(df['close'], window=14, window_dev=2)
-        df['BBL_14_2.0']  = ta.volatility.bollinger_lband(df['close'], window=14, window_dev=2)
-        df = df.dropna()
-        latest = df.iloc[-1]
-        prev = df.iloc[-2]
-        all_strategies, best_id = evaluate_strategies(latest, prev, df)
-        ranked_strategies = sorted(
-            [
-                {"id": strategy_id, **strategy}
-                for strategy_id, strategy in all_strategies.items()
-            ],
-            key=lambda item: item.get("score", 0),
-            reverse=True,
-        )
-        return {
-            "custom_metrics": custom_result,
-            "top_20": ranked_strategies[:20],
-            "best_strategy_id": best_id,
-        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

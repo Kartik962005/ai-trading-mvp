@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 
-// Cheap, static backend endpoint (no yfinance work) proxied same-origin through
+// Cheap liveness endpoint (no market-data work) proxied same-origin through
 // /api/backend, so this both wakes a sleeping Render instance and avoids CORS.
-const WARMUP_URL = '/api/backend/api/v1/strategies/list';
+// The proxy only forwards /api/v1 paths, which is why the backend exposes
+// /api/v1/health alongside the bare /health.
+const WARMUP_URL = '/api/backend/api/v1/health';
 
 // The Next proxy (app/api/backend/[...path]/route.ts) answers with 502/503/504
 // only when it cannot reach the backend (i.e. Render is cold/asleep). Any other

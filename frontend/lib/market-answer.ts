@@ -1,7 +1,7 @@
 // Rule-based market Q&A responder, extracted verbatim from app/page.tsx during
 // the Phase A foundation refactor. Pure — returns a plain answer object or null.
 
-import { getChartCandles, getAnalysisPresentation, STRATEGY_NAMES } from './analysis';
+import { getChartCandles, getAnalysisPresentation } from './analysis';
 
 export function buildMarketAnswer(prompt: string, analysis: any, ticker: string, currency: string, chartData: any) {
   const clean = prompt.toLowerCase();
@@ -39,7 +39,6 @@ export function buildMarketAnswer(prompt: string, analysis: any, ticker: string,
         ['FISO confidence level', analysisView.confidenceLevel],
         ['Estimated days', analysisView.estimated_days],
         ['Target date', analysisView.target_date],
-        ['Best strategy', STRATEGY_NAMES[analysisView.best_strategy_id] ?? `Strategy ${analysisView.best_strategy_id}`],
       ],
     };
   }

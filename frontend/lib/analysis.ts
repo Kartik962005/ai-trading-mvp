@@ -2,48 +2,6 @@
 // Phase A foundation refactor (see REDESIGN_3D_MASTERPLAN.md). No React, no side
 // effects — safe to import anywhere.
 
-export const STRATEGY_NAMES: Record<number, string> = {
-  1: 'Moving Average Crossover',
-  2: 'EMA Pullback',
-  3: 'Supertrend',
-  4: 'Breakout Trading',
-  5: 'Trendline Breakout + Retest',
-  6: 'Volume Anomaly',
-  7: 'Relative Strength',
-  8: 'Momentum Ignition',
-  9: 'VWAP Trend',
-  10: 'Gap-Up Momentum',
-  11: 'RSI Divergence',
-  12: 'MACD Divergence',
-  13: 'Mean Reversion',
-  14: 'Bollinger Band Reversal',
-  15: 'Volatility Expansion',
-  16: 'ATR Breakout',
-  17: 'Liquidity Sweep',
-  18: 'Order Block',
-  19: 'Support/Resistance Flip',
-  20: 'Multi-Factor AI Strategy',
-};
-
-export function normalizeStrategyEvals(strategyEvals: any) {
-  const entries: Array<[string, any]> = Array.isArray(strategyEvals)
-    ? strategyEvals.map((value, index) => [String(value?.id ?? index + 1), value])
-    : Object.entries(strategyEvals ?? {});
-
-  return entries
-    .map(([id, value]) => {
-      const numericId = Number(id);
-      return {
-        id: numericId || id,
-        name: value?.name ?? STRATEGY_NAMES[numericId] ?? `Strategy ${id}`,
-        score: Number(value?.score ?? 0),
-        desc: value?.desc ?? 'Signal details unavailable.',
-      };
-    })
-    .filter(strategy => Number.isFinite(strategy.score))
-    .sort((a, b) => b.score - a.score);
-}
-
 export function toFiniteNumber(value: any, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
