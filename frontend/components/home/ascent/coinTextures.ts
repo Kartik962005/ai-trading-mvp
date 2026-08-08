@@ -160,17 +160,55 @@ export function makeMedallionBack(): THREE.CanvasTexture {
 }
 
 /** Soft radial dot sprite used for the market-swarm points. */
-export function makeDotSprite(): THREE.CanvasTexture {
+/**
+ * Star sprite for the market swarm.
+ *
+ * The previous sprite was a plain radial gradient still at 85% alpha a quarter
+ * of the way out. Under `sizeAttenuation` any node near the camera blew up into
+ * a large soft blob, which read as blurred dots rather than a starfield.
+ *
+ * A star is legible because of two things: a very tight bright core, and
+ * diffraction spikes. Both are generated per-pixel here rather than by stroking
+ * lines onto the canvas — stroked spikes alias badly once the texture is scaled,
+ * whereas an exponential falloff tapers smoothly at any size.
+ *
+ *   core   sharp centre, decays fast so the star has a definite point
+ *   glow   faint wide halo so it still feels luminous, not a hard pixel
+ *   spikes bright along the two axes, fading with distance from centre
+ */
+export function makeStarSprite(): THREE.CanvasTexture {
   const s = 128;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = s;
-  const x = canvas.getContext("2d")!;
-  const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, "rgba(255,255,255,1)");
-  g.addColorStop(0.25, "rgba(255,255,255,0.85)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  x.fillStyle = g;
-  x.fillRect(0, 0, s, s);
+  const ctx = canvas.getContext("2d")!;
+  const image = ctx.createImageData(s, s);
+  const data = image.data;
+  const c = (s - 1) / 2;
+
+  for (let py = 0; py < s; py++) {
+    for (let px = 0; px < s; px++) {
+      const nx = (px - c) / c; // -1 .. 1
+      const ny = (py - c) / c;
+      const r2 = nx * nx + ny * ny;
+      const r = Math.sqrt(r2);
+
+      const core = Math.exp(-r2 * 46);
+      const glow = Math.exp(-r2 * 7) * 0.2;
+      // Tight in the cross-axis, slow decay along the axis => a long thin spike.
+      const falloff = Math.exp(-r * 4.2);
+      const hSpike = Math.exp(-ny * ny * 850) * falloff * 0.5;
+      const vSpike = Math.exp(-nx * nx * 850) * falloff * 0.5;
+
+      const alpha = Math.min(1, core + glow + hSpike + vSpike);
+      const index = (py * s + px) * 4;
+      data[index] = 255;
+      data[index + 1] = 255;
+      data[index + 2] = 255;
+      data[index + 3] = Math.round(alpha * 255);
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;

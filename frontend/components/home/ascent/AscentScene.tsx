@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { AdaptiveDpr } from "@react-three/drei";
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
-import { makeMedallionFace, makeMedallionBack, makeDotSprite } from "./coinTextures";
+import { makeMedallionFace, makeMedallionBack, makeStarSprite } from "./coinTextures";
 
 export type ScrollApi = { invalidate: () => void };
 type Pointer = { x: number; y: number };
@@ -189,7 +189,7 @@ function Medallion({ easedRef }: { easedRef: MutableRefObject<number> }) {
 
 function MarketSwarm({ easedRef }: { easedRef: MutableRefObject<number> }) {
   const points = useRef<THREE.Points>(null);
-  const sprite = useMemo(() => makeDotSprite(), []);
+  const sprite = useMemo(() => makeStarSprite(), []);
 
   const geometry = useMemo(() => {
     const COUNT = 620;
@@ -213,9 +213,13 @@ function MarketSwarm({ easedRef }: { easedRef: MutableRefObject<number> }) {
       positions[i * 3 + 1] = (r * Math.cos(phi)) * 0.6;
       positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta) - 2;
       const c = palette[(Math.random() * palette.length) | 0];
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
+      // Vary brightness so the field has depth. A real sky is mostly faint with
+      // a few bright stars, so bias the distribution low (cubed) rather than
+      // uniform — 620 equally-bright points read as a texture, not a starfield.
+      const brightness = 0.28 + Math.pow(Math.random(), 3) * 0.72;
+      colors[i * 3] = c.r * brightness;
+      colors[i * 3 + 1] = c.g * brightness;
+      colors[i * 3 + 2] = c.b * brightness;
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -237,11 +241,15 @@ function MarketSwarm({ easedRef }: { easedRef: MutableRefObject<number> }) {
   return (
     <points ref={points} geometry={geometry}>
       <pointsMaterial
-        size={0.5}
+        // Smaller than the old 0.5. The star sprite carries its detail in a
+        // tight core plus spikes, so it stays legible small — whereas the old
+        // soft blob needed size to be visible, which is what made near nodes
+        // bloom into blurred discs under sizeAttenuation.
+        size={0.34}
         map={sprite}
         vertexColors
         transparent
-        opacity={0.92}
+        opacity={0.95}
         depthWrite={false}
         sizeAttenuation
         blending={THREE.AdditiveBlending}
