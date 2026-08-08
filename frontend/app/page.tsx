@@ -17,7 +17,6 @@ import BlurText from '@/components/ui/BlurText';
 
 import { BACKEND, fetcher, getCache, setCache } from '@/lib/client-cache';
 import {
-  normalizeStrategyEvals,
   toFiniteNumber,
   getAnalysisPresentation,
   getChartCandles,
@@ -65,18 +64,6 @@ type ChartRange = '1d' | '1w' | '1mo' | '1y' | 'max';
 
 
 
-type AlertRecord = {
-  id: string;
-  ticker: string;
-  prompt: string;
-  rule?: { description?: string };
-  channels?: string[];
-  status: 'active' | 'paused';
-  email?: string | null;
-  last_checked_at?: string | null;
-  last_triggered_at?: string | null;
-  created_at?: string | null;
-};
 
 type NotificationPreference = {
   email?: string | null;
@@ -1133,17 +1120,11 @@ const FisoDetailPanel = ({
   currency,
   ticker,
   chartData,
-  user,
-  getAccessToken,
-  onRequireAuth,
 }: {
   analysis: any;
   currency: string;
   ticker: string;
   chartData: any;
-  user: any;
-  getAccessToken: () => Promise<string | null>;
-  onRequireAuth: () => void;
 }) => {
   const analysisView = getAnalysisPresentation(analysis);
   if (!analysisView) return null;
@@ -1177,157 +1158,6 @@ const FisoDetailPanel = ({
   const [aiResult, setAiResult] = useState<any>(null);
   const [isAiRunning, setIsAiRunning] = useState(false);
   const [aiLoaderSummary, setAiLoaderSummary] = useState('');
-  const [alertPrompt, setAlertPrompt] = useState('');
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertError, setAlertError] = useState('');
-  const [isSavingAlert, setIsSavingAlert] = useState(false);
-  const [stockAlerts, setStockAlerts] = useState<AlertRecord[]>([]);
-  const [isLoadingAlerts, setIsLoadingAlerts] = useState(false);
-
-  const fetchAlertAuthHeaders = async () => {
-    const token = await getAccessToken();
-    if (!token) {
-      throw new Error('Please sign in before creating alerts.');
-    }
-    return {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
-  };
-
-  const loadStockAlerts = async () => {
-    if (!user || !ticker) {
-      setStockAlerts([]);
-      return;
-    }
-    setIsLoadingAlerts(true);
-    try {
-      const headers = await fetchAlertAuthHeaders();
-      const response = await fetch(`${BACKEND}/api/v1/alerts`, { headers, cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.detail || 'Could not load alerts.');
-      setStockAlerts((data.alerts ?? []).filter((alert: AlertRecord) => alert.ticker === ticker.toUpperCase()));
-    } catch (err: any) {
-      setAlertError(err.message || 'Could not load alerts.');
-    } finally {
-      setIsLoadingAlerts(false);
-    }
-  };
-
-  useEffect(() => {
-    loadStockAlerts();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, ticker]);
-
-  const saveAlert = async () => {
-    setAlertError('');
-    setAlertMessage('');
-    if (!user) {
-      onRequireAuth();
-      setAlertError('Sign in first so the alert can be saved to your account.');
-      return;
-    }
-    const prompt = alertPrompt.trim() || aiPrompt.trim();
-    if (!prompt) {
-      setAlertError('Type an alert condition first.');
-      return;
-    }
-    setIsSavingAlert(true);
-    try {
-      const headers = await fetchAlertAuthHeaders();
-      const response = await fetch(`${BACKEND}/api/v1/alerts`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          ticker,
-          prompt,
-          channels: ['email'],
-          email: user.email,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.detail || 'Could not create alert.');
-      setAlertPrompt('');
-      const notifications = Array.isArray(data.initial_check?.notifications) ? data.initial_check.notifications : [];
-      const sent = notifications.filter((item: any) => item?.status === 'sent').map((item: any) => item.provider).join(', ');
-      const failed = notifications.filter((item: any) => item?.status !== 'sent');
-      if (failed.length > 0) {
-        setAlertError(failed.map((item: any) => `${item.provider}: ${item.reason || item.error || item.response || 'failed'}`).join(' | '));
-      }
-      setAlertMessage(
-        sent
-          ? `Alert saved and sent by ${sent}: ${data.alert?.rule?.description || prompt}`
-          : `Alert saved: ${data.alert?.rule?.description || prompt}`
-      );
-      await loadStockAlerts();
-    } catch (err: any) {
-      setAlertError(err.message || 'Could not create alert.');
-    } finally {
-      setIsSavingAlert(false);
-    }
-  };
-
-  const updateSavedAlert = async (alertId: string, status: 'active' | 'paused') => {
-    setAlertError('');
-    try {
-      const headers = await fetchAlertAuthHeaders();
-      const response = await fetch(`${BACKEND}/api/v1/alerts/${alertId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.detail || 'Could not update alert.');
-      await loadStockAlerts();
-    } catch (err: any) {
-      setAlertError(err.message || 'Could not update alert.');
-    }
-  };
-
-  const deleteSavedAlert = async (alertId: string) => {
-    setAlertError('');
-    try {
-      const headers = await fetchAlertAuthHeaders();
-      const response = await fetch(`${BACKEND}/api/v1/alerts/${alertId}`, {
-        method: 'DELETE',
-        headers,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.detail || 'Could not delete alert.');
-      await loadStockAlerts();
-    } catch (err: any) {
-      setAlertError(err.message || 'Could not delete alert.');
-    }
-  };
-
-  const testSavedAlert = async (alertId: string) => {
-    setAlertError('');
-    setAlertMessage('');
-    try {
-      const headers = await fetchAlertAuthHeaders();
-      const response = await fetch(`${BACKEND}/api/v1/alerts/${alertId}/test`, {
-        method: 'POST',
-        headers,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.detail || 'Could not test alert.');
-      const evaluation = data.evaluation;
-      const notifications = Array.isArray(data.notifications) ? data.notifications : [];
-      const sent = notifications.filter((item: any) => item?.status === 'sent').map((item: any) => item.provider).join(', ');
-      const failed = notifications.filter((item: any) => item?.status !== 'sent');
-      if (failed.length > 0) {
-        setAlertError(failed.map((item: any) => `${item.provider}: ${item.reason || item.error || item.response || 'failed'}`).join(' | '));
-      }
-      setAlertMessage(
-        sent
-          ? `Test sent by ${sent}. Condition ${evaluation?.triggered ? 'is true' : 'was checked'}: ${evaluation?.current_value ?? 'n/a'} vs ${evaluation?.target_value ?? 'n/a'}`
-          : `Condition ${evaluation?.triggered ? 'is true' : 'was checked'}: ${evaluation?.current_value ?? 'n/a'} vs ${evaluation?.target_value ?? 'n/a'}`
-      );
-      await loadStockAlerts();
-    } catch (err: any) {
-      setAlertError(err.message || 'Could not test alert.');
-    }
-  };
 
   const handleAiSearch = async () => {
     if (!aiPrompt || !ticker) return;
@@ -1400,10 +1230,6 @@ const FisoDetailPanel = ({
     'SMA 50, EMA 20, support and resistance',
   ];
 
-  const topStrategies = normalizeStrategyEvals(analysis?.strategy_evals).slice(0, 10);
-  const [showAllStrategies, setShowAllStrategies] = useState(false);
-  const showInlineStrategyToggle = false;
-  const visibleStrategies = showAllStrategies ? topStrategies : topStrategies.slice(0, 3);
   const visibleStockStories: NewsStory[] = [];
 
   return (
@@ -1617,110 +1443,6 @@ const FisoDetailPanel = ({
               {example}
             </button>
           ))}
-        </div>
-
-        <div className="relative mt-5 rounded-2xl border border-emerald-300/25 bg-emerald-950/25 p-4">
-          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300 font-['Space_Grotesk']">
-                AI Alerts
-              </h4>
-              <p className="mt-1 text-[11px] text-emerald-50/70 font-['JetBrains_Mono']">
-                {user ? user.email : 'Sign in to save alerts'}
-              </p>
-            </div>
-            {isLoadingAlerts && (
-              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-200 font-['JetBrains_Mono']">
-                Loading
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <input
-              value={alertPrompt}
-              onChange={event => setAlertPrompt(event.target.value)}
-              placeholder="Alert me when RSI crosses above 70"
-              className="h-12 rounded-full border border-hairline bg-black/40 px-5 font-body text-sm text-paper outline-none transition placeholder:text-paper-muted/60 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-            />
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div className="grid grid-cols-1 gap-3">
-                <label className="flex h-11 items-center gap-2 rounded-xl border border-emerald-300/25 bg-slate-950/50 px-3 text-xs font-bold uppercase tracking-widest text-emerald-50 font-['Space_Grotesk']">
-                  <input
-                    type="checkbox"
-                    checked
-                    readOnly
-                    className="h-4 w-4 accent-emerald-400"
-                  />
-                  Email alert
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={saveAlert}
-                disabled={isSavingAlert || (!alertPrompt.trim() && !aiPrompt.trim())}
-                className="h-11 rounded-full bg-primary px-6 font-body text-[10px] font-semibold uppercase tracking-widest text-black transition hover:opacity-90 disabled:opacity-40"
-              >
-                {isSavingAlert ? 'Saving' : 'Create Alert'}
-              </button>
-            </div>
-          </div>
-
-          {alertError && (
-            <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 font-['JetBrains_Mono']">
-              {alertError}
-            </div>
-          )}
-          {alertMessage && (
-            <div className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-100 font-['JetBrains_Mono']">
-              {alertMessage}
-            </div>
-          )}
-
-          {stockAlerts.length > 0 && (
-            <div className="mt-4 grid grid-cols-1 gap-2">
-              {stockAlerts.map(alert => (
-                <div key={alert.id} className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-emerald-300 font-['Space_Grotesk']">
-                        {alert.status} · {(alert.channels ?? []).join(' + ') || 'email'}
-                      </div>
-                      <div className="mt-1 text-sm font-bold text-white font-['Space_Grotesk']">
-                        {alert.rule?.description || alert.prompt}
-                      </div>
-                      <div className="mt-1 text-[10px] text-slate-400 font-['JetBrains_Mono']">
-                        Last checked: {alert.last_checked_at ? new Date(alert.last_checked_at).toLocaleString() : 'Pending'}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => testSavedAlert(alert.id)}
-                        className="rounded-lg border border-cyan-300/25 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-cyan-100 transition hover:bg-cyan-300/10 font-['Space_Grotesk']"
-                      >
-                        Test
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateSavedAlert(alert.id, alert.status === 'active' ? 'paused' : 'active')}
-                        className="rounded-lg border border-amber-300/25 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-amber-100 transition hover:bg-amber-300/10 font-['Space_Grotesk']"
-                      >
-                        {alert.status === 'active' ? 'Pause' : 'Resume'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteSavedAlert(alert.id)}
-                        className="rounded-lg border border-red-300/25 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-red-100 transition hover:bg-red-300/10 font-['Space_Grotesk']"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* AI loading */}
@@ -2081,149 +1803,6 @@ const FisoDetailPanel = ({
                   </div>
                 )}
               </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── Section 4: Bullseye Top 10 Recommended Strategies ── */}
-      <div
-        className="rounded-[22px] border border-hairline p-6 sm:p-7"
-        style={{
-          background:
-            'linear-gradient(145deg, rgba(18,20,17,0.9) 0%, rgba(7,9,8,0.95) 55%, rgba(14,16,13,0.9) 100%)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
-        }}
-      >
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-3 border-b border-hairline pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-accent/40 bg-accent/10">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
-            </div>
-            <div>
-              <h3 className="font-display text-xl leading-none text-paper">
-                Bulls<span className="text-accent">eye</span> will recommend
-              </h3>
-              <span className="mt-1.5 block font-body text-[10px] uppercase tracking-[0.22em] text-paper-muted">
-                Top 10 strategies ranked by signal score · Best fit first
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 self-start sm:self-auto">
-            <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 font-body text-[9px] font-semibold uppercase tracking-widest text-accent">
-              {topStrategies.length} Active signals
-            </span>
-            {topStrategies.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowAllStrategies(prev => !prev)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-paper-muted transition hover:border-accent/50 hover:text-paper"
-                aria-label={showAllStrategies ? 'Collapse strategies list' : 'Expand strategies list'}
-                aria-expanded={showAllStrategies}
-              >
-                <span className={`text-sm transition-transform ${showAllStrategies ? 'rotate-180' : ''}`}>⌄</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {topStrategies.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <span className="text-xs text-zinc-600 font-['JetBrains_Mono'] uppercase tracking-widest animate-pulse">Computing signal matrix...</span>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {visibleStrategies.map((s: any, rank: number) => {
-              const isBestFit = rank === 0;
-              const scoreColor = s.score >= 80 ? '#34d399' : s.score >= 60 ? '#6ee7b7' : s.score >= 40 ? '#f5c451' : '#fb7185';
-              // Rank 0,1 always visible. Rank 2 = blurred sneak peek. Rank 3+ hidden until expanded.
-              const isSneak = !showAllStrategies && rank === 2;
-              return (
-                <div key={s.id}>
-                  {/* Sneak-peek wrapper: blur + bottom fade + no interaction */}
-                  <div className={isSneak ? 'relative' : ''}>
-                    <div
-                      className={`strategy-row relative rounded-2xl p-4 transition-all duration-200 ${
-                        isBestFit
-                          ? 'border border-accent/40 bg-accent/[0.06] shadow-[0_0_30px_rgba(245,196,81,0.10)]'
-                          : 'border border-hairline bg-white/[0.02]'
-                      } ${isSneak ? 'blur-[3px] opacity-60 pointer-events-none select-none' : ''}`}
-                    >
-                      <div className="flex items-start gap-4">
-                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-numeric text-sm ${
-                          isBestFit ? 'bg-accent text-black' : 'bg-white/[0.04] text-paper-muted'
-                        }`}>
-                          {String(rank + 1).padStart(2, '0')}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                            <span className="font-display text-[17px] leading-snug text-paper">
-                              {s.name}
-                            </span>
-                            {isBestFit && (
-                              <span className="rounded-full bg-accent px-2 py-0.5 font-body text-[8px] font-semibold uppercase tracking-widest text-black">
-                                ★ Best fit
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-body text-[12px] leading-relaxed text-paper-muted">{s.desc}</p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1.5">
-                          <span className="font-numeric text-lg" style={{ color: scoreColor }}>{s.score}</span>
-                          <div className="strategy-bar w-16 bg-white/10">
-                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.score}%`, backgroundColor: scoreColor }} />
-                          </div>
-                          <span className="font-numeric text-[8px] uppercase tracking-widest text-paper-muted/70">/100</span>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Bottom fade over the sneak-peek card */}
-                    {isSneak && (
-                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl pointer-events-none" />
-                    )}
-                  </div>
-                  {/* Expand / collapse button — shown after sneak-peek card */}
-                  {showInlineStrategyToggle && rank === 2 && topStrategies.length > 2 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAllStrategies(prev => !prev)}
-                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-hairline bg-white/[0.03] py-2.5 font-body text-[10px] font-semibold uppercase tracking-widest text-paper-muted transition hover:border-accent/50 hover:text-paper"
-                    >
-                      {showAllStrategies ? (
-                        <>
-                          <span className="rotate-180 inline-block">⌄</span>
-                          Show less
-                        </>
-                      ) : (
-                        <>
-                          <span>⌄</span>
-                          Show {topStrategies.length - 2} more strategies
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {topStrategies.length > 2 && (
-              <button
-                type="button"
-                onClick={() => setShowAllStrategies(prev => !prev)}
-                className="flex w-full items-center justify-center gap-2 rounded-full border border-hairline bg-white/[0.03] py-2.5 font-body text-[10px] font-semibold uppercase tracking-widest text-paper-muted transition hover:border-accent/50 hover:text-paper"
-              >
-                {showAllStrategies ? (
-                  <>
-                    <span className="rotate-180 inline-block">v</span>
-                    Show less
-                  </>
-                ) : (
-                  <>
-                    <span>v</span>
-                    Show {topStrategies.length - 2} more strategies
-                  </>
-                )}
-              </button>
             )}
           </div>
         )}
@@ -4295,7 +3874,7 @@ function HomeContent() {
                             : 'stock-view-toggle-idle'
                         }`}
                       >
-                        Detailed Analysis
+                        Financials
                       </button>
                     </div>
                   )}
@@ -4312,8 +3891,8 @@ function HomeContent() {
               </div>
 
               {/* Chart + fundamentals snapshot — shown in Overview only. The
-                  Detailed Analysis panel renders its own fundamentals/analytics,
-                  so these boxes would otherwise duplicate there. */}
+                  Financials tab renders its own ratios and statement tables, so
+                  these boxes would otherwise duplicate there. */}
               {dashboardView === 'overview' && (
               <div className="flex flex-col gap-5">
 
@@ -4540,9 +4119,6 @@ function HomeContent() {
                   currency={currency}
                   ticker={ticker}
                   chartData={chartData}
-                  user={user}
-                  getAccessToken={getAccessToken}
-                  onRequireAuth={() => setShowAuthModal(true)}
                 />
               ) : !analysis && (
                 <div className="flex items-center justify-center py-16">
