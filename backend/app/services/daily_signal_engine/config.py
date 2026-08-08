@@ -58,7 +58,7 @@ NSE_UNIVERSE = [
     "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS",
     "RELIANCE.NS", "TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS",
     "LT.NS", "BHARTIARTL.NS", "ITC.NS", "HINDUNILVR.NS", "NESTLEIND.NS",
-    "TATAMOTORS.NS", "MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS",
+    "TMPV.NS", "MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS",
     "SUNPHARMA.NS", "CIPLA.NS", "DRREDDY.NS", "DIVISLAB.NS", "APOLLOHOSP.NS",
     "TATASTEEL.NS", "JSWSTEEL.NS", "HINDALCO.NS", "VEDL.NS", "COALINDIA.NS",
     "NTPC.NS", "POWERGRID.NS", "ONGC.NS", "BPCL.NS", "TATAPOWER.NS",
@@ -66,10 +66,10 @@ NSE_UNIVERSE = [
     "ADANIPORTS.NS", "ASIANPAINT.NS", "TITAN.NS", "DMART.NS", "TRENT.NS",
     "BAJFINANCE.NS", "BAJAJFINSV.NS", "SHRIRAMFIN.NS", "CHOLAFIN.NS", "PFC.NS",
     "RECLTD.NS", "FEDERALBNK.NS", "BANKBARODA.NS", "CANBK.NS", "PNB.NS",
-    "TECHM.NS", "LTIM.NS", "COFORGE.NS", "PERSISTENT.NS", "MPHASIS.NS",
+    "TECHM.NS", "LTM.NS", "COFORGE.NS", "PERSISTENT.NS", "MPHASIS.NS",
     "BRITANNIA.NS", "TATACONSUM.NS", "DABUR.NS", "MARICO.NS", "VBL.NS",
     "LUPIN.NS", "TORNTPHARM.NS", "ZYDUSLIFE.NS", "AUROPHARMA.NS", "BIOCON.NS",
-    "INDIGO.NS", "IRCTC.NS", "ZOMATO.NS", "PAYTM.NS", "NYKAA.NS",
+    "INDIGO.NS", "IRCTC.NS", "ETERNAL.NS", "PAYTM.NS", "NYKAA.NS",
     "BEL.NS", "HAL.NS", "BHEL.NS", "SIEMENS.NS", "ABB.NS",
 ]
 
@@ -107,7 +107,9 @@ SECTOR_BY_SYMBOL = {
     "ITC": "Consumer Defensive",
     "HINDUNILVR": "Consumer Defensive",
     "NESTLEIND": "Consumer Defensive",
-    "TATAMOTORS": "Automotive",
+    # TATAMOTORS was renamed TMPV (Oct 2025); TMCV listed separately (Nov 2025).
+    "TMPV": "Automotive",
+    "TMCV": "Automotive",
     "MARUTI": "Automotive",
     "M&M": "Automotive",
     "BAJAJ-AUTO": "Automotive",
@@ -120,7 +122,13 @@ SECTOR_BY_SYMBOL = {
     "TATASTEEL": "Materials",
     "JSWSTEEL": "Materials",
     "HINDALCO": "Materials",
+    # Vedanta demerged 15 Jun 2026. VEDL remains the residual flagship; the four
+    # carve-outs are mapped so they are not bucketed as "General" when scanned.
     "VEDL": "Materials",
+    "VAML": "Materials",
+    "VISL": "Materials",
+    "VOGL": "Energy",
+    "VEDPOWER": "Utilities",
     "COALINDIA": "Energy",
     "NTPC": "Utilities",
     "POWERGRID": "Utilities",
@@ -148,7 +156,8 @@ SECTOR_BY_SYMBOL = {
     "CANBK": "Financials",
     "PNB": "Financials",
     "TECHM": "Technology",
-    "LTIM": "Technology",
+    # LTIMindtree: symbol LTIM -> LTM (27 Feb 2026).
+    "LTM": "Technology",
     "COFORGE": "Technology",
     "PERSISTENT": "Technology",
     "MPHASIS": "Technology",
@@ -164,7 +173,8 @@ SECTOR_BY_SYMBOL = {
     "BIOCON": "Healthcare",
     "INDIGO": "Industrials",
     "IRCTC": "Consumer Cyclical",
-    "ZOMATO": "Consumer Cyclical",
+    # Zomato renamed to Eternal Ltd: symbol ZOMATO -> ETERNAL (9 Apr 2025).
+    "ETERNAL": "Consumer Cyclical",
     "PAYTM": "Technology",
     "NYKAA": "Consumer Cyclical",
     "BEL": "Industrials",

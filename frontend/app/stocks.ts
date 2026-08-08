@@ -30,14 +30,19 @@ const RAW_STOCKS = [
   { name: 'HCL Technologies', symbol: 'HCLTECH', exchange: 'NSE', ticker: 'HCLTECH.NS', currency: '₹' },
   { name: 'Wipro', symbol: 'WIPRO', exchange: 'NSE', ticker: 'WIPRO.NS', currency: '₹' },
   { name: 'Tech Mahindra', symbol: 'TECHM', exchange: 'NSE', ticker: 'TECHM.NS', currency: '₹' },
-  { name: 'LTIMindtree', symbol: 'LTIM', exchange: 'NSE', ticker: 'LTIM.NS', currency: '₹' },
+  // LTIMindtree changed its trading symbol LTIM -> LTM on 27 Feb 2026.
+  { name: 'LTIMindtree', symbol: 'LTM', exchange: 'NSE', ticker: 'LTM.NS', currency: '₹' },
   { name: 'Coforge', symbol: 'COFORGE', exchange: 'NSE', ticker: 'COFORGE.NS', currency: '₹' },
   { name: 'Persistent Systems', symbol: 'PERSISTENT', exchange: 'NSE', ticker: 'PERSISTENT.NS', currency: '₹' },
   { name: 'Mphasis', symbol: 'MPHASIS', exchange: 'NSE', ticker: 'MPHASIS.NS', currency: '₹' },
   { name: 'L&T Technology Services', symbol: 'LTTS', exchange: 'NSE', ticker: 'LTTS.NS', currency: '₹' },
 
   // Auto & Auto Components
-  { name: 'Tata Motors', symbol: 'TATAMOTORS', exchange: 'NSE', ticker: 'TATAMOTORS.NS', currency: '₹' },
+  // TATAMOTORS was RENAMED to TMPV in Oct 2025 (PV + JLR); the commercial-vehicle
+  // business listed separately as TMCV in Nov 2025. TATAMOTORS.NS no longer
+  // resolves — Yahoo returns a null price for it. Both successors are below.
+  { name: 'Tata Motors Passenger Vehicles', symbol: 'TMPV', exchange: 'NSE', ticker: 'TMPV.NS', currency: '₹' },
+  { name: 'Tata Motors Commercial Vehicles', symbol: 'TMCV', exchange: 'NSE', ticker: 'TMCV.NS', currency: '₹' },
   { name: 'Maruti Suzuki', symbol: 'MARUTI', exchange: 'NSE', ticker: 'MARUTI.NS', currency: '₹' },
   { name: 'Mahindra & Mahindra', symbol: 'M&M', exchange: 'NSE', ticker: 'M&M.NS', currency: '₹' },
   { name: 'Bajaj Auto', symbol: 'BAJAJ-AUTO', exchange: 'NSE', ticker: 'BAJAJ-AUTO.NS', currency: '₹' },
@@ -105,7 +110,14 @@ const RAW_STOCKS = [
   { name: 'Tata Steel', symbol: 'TATASTEEL', exchange: 'NSE', ticker: 'TATASTEEL.NS', currency: '₹' },
   { name: 'JSW Steel', symbol: 'JSWSTEEL', exchange: 'NSE', ticker: 'JSWSTEEL.NS', currency: '₹' },
   { name: 'Hindalco', symbol: 'HINDALCO', exchange: 'NSE', ticker: 'HINDALCO.NS', currency: '₹' },
+  // Vedanta demerged into four listed entities on 15 Jun 2026 (1 share of each
+  // per VEDL share held). VEDL itself CONTINUES to trade as the residual
+  // flagship — critical minerals, anchored by Hindustan Zinc — so it stays.
   { name: 'Vedanta', symbol: 'VEDL', exchange: 'NSE', ticker: 'VEDL.NS', currency: '₹' },
+  { name: 'Vedanta Aluminium Metal', symbol: 'VAML', exchange: 'NSE', ticker: 'VAML.NS', currency: '₹' },
+  { name: 'Vedanta Oil & Gas', symbol: 'VOGL', exchange: 'NSE', ticker: 'VOGL.NS', currency: '₹' },
+  { name: 'Vedanta Power', symbol: 'VEDPOWER', exchange: 'NSE', ticker: 'VEDPOWER.NS', currency: '₹' },
+  { name: 'Vedanta Iron & Steel', symbol: 'VISL', exchange: 'NSE', ticker: 'VISL.NS', currency: '₹' },
   { name: 'NMDC', symbol: 'NMDC', exchange: 'NSE', ticker: 'NMDC.NS', currency: '₹' },
   { name: 'SAIL', symbol: 'SAIL', exchange: 'NSE', ticker: 'SAIL.NS', currency: '₹' },
   { name: 'Jindal Steel', symbol: 'JINDALSTEL', exchange: 'NSE', ticker: 'JINDALSTEL.NS', currency: '₹' },
@@ -2236,8 +2248,7 @@ const RAW_STOCKS = [
   { name: 'TITAGARH RAIL SYSTEMS LIMITED', symbol: 'TITAGARH', exchange: 'NSE', ticker: 'TITAGARH.NS', currency: '₹' },
   { name: 'Titan Company', symbol: 'TITAN', exchange: 'NSE', ticker: 'TITAN.NS', currency: '₹' },
   { name: 'Tamilnad Mercantile Bank', symbol: 'TMB', exchange: 'NSE', ticker: 'TMB.NS', currency: '₹' },
-  { name: 'Tata Motors', symbol: 'TMCV', exchange: 'NSE', ticker: 'TMCV.NS', currency: '₹' },
-  { name: 'Tata Motors Passenger Vehicles', symbol: 'TMPV', exchange: 'NSE', ticker: 'TMPV.NS', currency: '₹' },
+  // (TMPV / TMCV are declared in the curated block near the top of this file.)
   { name: 'Tamilnadu PetroProducts', symbol: 'TNPETRO', exchange: 'NSE', ticker: 'TNPETRO.NS', currency: '₹' },
   { name: 'Tamil Nadu Newsprint & Papers', symbol: 'TNPL', exchange: 'NSE', ticker: 'TNPL.NS', currency: '₹' },
   { name: 'Tamilnadu Telecommunication', symbol: 'TNTELE', exchange: 'NSE', ticker: 'TNTELE.NS', currency: '₹' },
@@ -2460,14 +2471,15 @@ const RAW_STOCKS = [
   { name: 'HCL Technologies', symbol: 'HCLTECH', exchange: 'BSE', ticker: 'HCLTECH.BO', currency: '₹' },
   { name: 'Wipro', symbol: 'WIPRO', exchange: 'BSE', ticker: 'WIPRO.BO', currency: '₹' },
   { name: 'Tech Mahindra', symbol: 'TECHM', exchange: 'BSE', ticker: 'TECHM.BO', currency: '₹' },
-  { name: 'LTIMindtree', symbol: 'LTIM', exchange: 'BSE', ticker: 'LTIM.BO', currency: '₹' },
+  { name: 'LTIMindtree', symbol: 'LTM', exchange: 'BSE', ticker: 'LTM.BO', currency: '₹' },
   { name: 'Coforge', symbol: 'COFORGE', exchange: 'BSE', ticker: 'COFORGE.BO', currency: '₹' },
   { name: 'Persistent Systems', symbol: 'PERSISTENT', exchange: 'BSE', ticker: 'PERSISTENT.BO', currency: '₹' },
   { name: 'Mphasis', symbol: 'MPHASIS', exchange: 'BSE', ticker: 'MPHASIS.BO', currency: '₹' },
   { name: 'L&T Technology Services', symbol: 'LTTS', exchange: 'BSE', ticker: 'LTTS.BO', currency: '₹' },
 
   // Auto & Auto Components (BSE)
-  { name: 'Tata Motors', symbol: 'TATAMOTORS', exchange: 'BSE', ticker: 'TATAMOTORS.BO', currency: '₹' },
+  { name: 'Tata Motors Passenger Vehicles', symbol: 'TMPV', exchange: 'BSE', ticker: 'TMPV.BO', currency: '₹' },
+  { name: 'Tata Motors Commercial Vehicles', symbol: 'TMCV', exchange: 'BSE', ticker: 'TMCV.BO', currency: '₹' },
   { name: 'Maruti Suzuki', symbol: 'MARUTI', exchange: 'BSE', ticker: 'MARUTI.BO', currency: '₹' },
   { name: 'Mahindra & Mahindra', symbol: 'M&M', exchange: 'BSE', ticker: 'M&M.BO', currency: '₹' },
   { name: 'Bajaj Auto', symbol: 'BAJAJ-AUTO', exchange: 'BSE', ticker: 'BAJAJ-AUTO.BO', currency: '₹' },
@@ -3028,7 +3040,9 @@ const FACE_VALUE_OVERRIDES: Record<string, number> = {
   'INFY.NS': 5,
   'RELIANCE.NS': 10,
   'ITC.NS': 1,
-  'TATAMOTORS.NS': 2,
+  // Both Tata Motors successors carry a ₹2 face value.
+  'TMPV.NS': 2,
+  'TMCV.NS': 2,
 };
 
 function inferFaceValue(stock: typeof RAW_STOCKS[number]) {
