@@ -47,22 +47,34 @@ from app.strategies.nlp_backtester import (
     translate_strategy,
 )
 
-# How many stocks a cross-universe scan covers. Default to the whole NSE universe
-# (~2,150 names) — the daily GitHub snapshot keeps OHLCV warm in storage, so the
-# scan reads cache, not live Yahoo. A wall-clock budget (below) still guards the
-# request: we scan as many as we can within the budget and report honest coverage,
-# rather than silently looking at a tiny head of the list.
-SCAN_LIMIT = max(5, min(int(os.getenv("ASK_AI_SCAN_LIMIT", "2400")), 5000))
+# How many stocks a cross-universe scan covers, ranked LARGEST FIRST by market
+# cap (see rank_by_market_cap). Scanning fetches years of history per stock, so
+# this is the dominant cost of any market-wide question and the main lever on
+# Ask AI latency.
+#
+# Default 500. It used to be 2400 (effectively the whole catalog) on the
+# reasoning that storage keeps OHLCV warm, but in practice the long tail is
+# where cache misses and slow live fetches concentrate, and a question like
+# "biggest gainers today" is about real companies, not 2,000th-ranked microcaps.
+# Because the list is ranked before truncation, 500 means the 500 largest — not
+# whichever 500 happened to appear first in the catalog file.
+#
+# Raise it with ASK_AI_SCAN_LIMIT if you want deeper coverage; the wall-clock
+# budget below still guards the request and coverage is reported honestly.
+#
+# NOTE: this caps SCANNING only. Ticker resolution still searches the full
+# ~2,600-name catalog, so "what is the PE of <small cap>" keeps working.
+SCAN_LIMIT = max(5, min(int(os.getenv("ASK_AI_SCAN_LIMIT", "500")), 5000))
 _SCAN_WORKERS = max(4, min(int(os.getenv("ASK_AI_SCAN_WORKERS", "16")), 48))
 _SCAN_BUDGET_SEC = max(5.0, float(os.getenv("ASK_AI_SCAN_BUDGET_SEC", "22")))
 
-# ── Full-universe daily-moves snapshot config ────────────────────────────────
-# Market-wide movers/circuit questions must see EVERY stock, not a small head.
-# We scan the whole universe in a background thread (Yahoo tolerated 16 workers
-# with zero failures in benchmarking) and keep each stock's recent close series
-# in memory so any recent session (today / last Friday / etc.) is answerable
-# instantly once warm. Everything fetched is also persisted to Supabase, so a
-# warm cache makes later rebuilds cheap.
+# ── Daily-moves snapshot config ──────────────────────────────────────────────
+# Movers/circuit questions are answered from a background snapshot of recent
+# closes, built once and kept warm in memory so any recent session is instant.
+# Capped to the same top-N-by-market-cap pool as the scan: building it over the
+# full catalog was the other big latency source, and "today's biggest movers"
+# among the 500 largest is the useful answer.
+_MOVERS_LIMIT = max(50, min(int(os.getenv("ASK_AI_MOVERS_LIMIT", str(SCAN_LIMIT))), 5000))
 _MOVERS_WORKERS = max(4, min(int(os.getenv("ASK_AI_MOVERS_WORKERS", "16")), 32))
 _SNAPSHOT_SERIES_LEN = 30        # recent (date, close) pairs kept per stock
 _SNAPSHOT_TTL = 6 * 3600         # rebuild a ready snapshot once it is this old
@@ -635,7 +647,10 @@ def _pick_universe(prompt: str, known_stocks: list[dict[str, Any]] | None) -> li
         pool = [s for s in stocks if str(s.get("exchange")) == "NSE"]
     if not pool:
         pool = stocks
-    return pool[:SCAN_LIMIT]
+    # Rank before truncating. Slicing the raw catalog took whatever order the
+    # frontend happened to ship; ranking by market cap makes "top N" mean the
+    # N largest companies, which is what a market-wide question is really about.
+    return rank_by_market_cap(pool)[:SCAN_LIMIT]
 
 
 def _scan_one(stock: dict[str, Any], strategy: dict[str, Any]) -> dict[str, Any] | None:
@@ -719,9 +734,12 @@ def _cross_scan(
             for r in rows_subset
         )
 
+    # Say what was actually covered. The scan pool is the top SCAN_LIMIT stocks
+    # by market cap, so "full universe" would overstate it — the honest phrasing
+    # is "the largest N", and a reader can then judge the result themselves.
     coverage_line = (
-        f"Universe scanned: {scanned} of {total_universe} NSE stocks"
-        + (" (stopped at the time budget — ask again to continue)" if partial else " (full universe)")
+        f"Universe scanned: {scanned} of the {total_universe} largest NSE stocks by market cap"
+        + (" (stopped at the time budget — ask again to continue)" if partial else "")
         + f"; {len(traded)} produced at least one trade."
     )
     data_lines = [
@@ -736,7 +754,7 @@ def _cross_scan(
         data_lines += ["Worst performers:", _fmt(bottom)]
 
     fallback = (
-        f"Scanned {scanned} of {total_universe} NSE stocks. {len(traded)} traded, {profitable} were profitable, "
+        f"Scanned {scanned} of the {total_universe} largest NSE stocks. {len(traded)} traded, {profitable} were profitable, "
         f"and {beat_bh} beat buy-and-hold. Average win rate {avg_win}%, average return {avg_return}%."
     )
     answer, model_used = _narrate("\n".join(data_lines), prompt, fallback, history=history)
@@ -796,6 +814,50 @@ def _all_known_stocks(fallback: list[dict[str, Any]] | None = None) -> list[dict
         if _universe_cache:
             return list(_universe_cache)
     return list(fallback or [])
+
+
+# ── Market-cap ranking (so a capped scan means "the biggest N", not "the first N") ──
+# Scanning fetches years of history per stock, so it is the dominant cost of a
+# market-wide question. We cap it — but the cap has to be applied to a RANKED
+# list, otherwise "top gainers" silently means "gainers among whichever stocks
+# appeared first in the catalog file".
+#
+# Ticker RESOLUTION is deliberately not capped: answering "what is the PE of
+# <small cap>" is string matching over the full catalog and costs nothing.
+_MCAP_CACHE: dict[str, Any] = {"ts": 0.0, "order": {}}
+_MCAP_TTL = 1800
+
+
+def _market_cap_order() -> dict[str, float]:
+    """{ticker: market_cap_cr} from the daily snapshot, cached."""
+    now = time.time()
+    if now - float(_MCAP_CACHE.get("ts") or 0) < _MCAP_TTL and _MCAP_CACHE.get("order"):
+        return dict(_MCAP_CACHE["order"])
+    order: dict[str, float] = {}
+    try:
+        from app.services.stock_snapshot_service import get_snapshot_rows
+
+        for row in get_snapshot_rows(max_age_hours=None) or []:
+            ticker = str(row.get("ticker") or "")
+            cap = row.get("market_cap_cr")
+            if ticker and isinstance(cap, (int, float)) and cap > 0:
+                order[ticker] = float(cap)
+    except Exception as exc:  # noqa: BLE001 - ranking is an optimisation, never fatal
+        print(f"[AskAI] market-cap ranking unavailable, using catalog order: {exc}")
+    _MCAP_CACHE["ts"] = now
+    _MCAP_CACHE["order"] = order
+    return dict(order)
+
+
+def rank_by_market_cap(stocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Largest first. Stocks missing a cap keep their relative order, at the back."""
+    order = _market_cap_order()
+    if not order:
+        return list(stocks)
+    return sorted(
+        stocks,
+        key=lambda s: -order.get(str(s.get("ticker") or ""), 0.0),
+    )
 
 
 def _detect_group(prompt: str) -> str:
@@ -933,6 +995,9 @@ def _series_from_df(df: pd.DataFrame) -> list[tuple[str, float]]:
 def _start_snapshot_build(group: str, universe: list[dict[str, Any]]) -> dict[str, Any]:
     """Kick off (or skip) a background build for a market group. Returns the
     snapshot state immediately so callers can read whatever is available."""
+    # Largest-first, then capped: building over the whole catalog was a major
+    # source of Ask AI latency, and the long tail is where cache misses live.
+    universe = rank_by_market_cap(universe)[:_MOVERS_LIMIT]
     state = _snapshot_for(group)
     with _snap_lock:
         if state["status"] == "building":
