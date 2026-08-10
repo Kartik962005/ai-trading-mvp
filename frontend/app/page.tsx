@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useState, useEffect, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
 import {
@@ -2195,14 +2195,32 @@ const IndiaDetailedAnalysisPanel = ({
   );
 };
 
-function HomeContent() {
+/**
+ * The whole Bullseye client app. Rendered by two routes:
+ *   /                  the discovery hub
+ *   /stock/[ticker]    a single stock, via `initialTicker`
+ *
+ * The stock view used to live only at `/?ticker=X`, which meant a shared link
+ * carried no stock in its path and the page had no per-stock identity. It is a
+ * real route now; the query form still resolves so old links keep working.
+ */
+export function HomeContent({ initialTicker }: { initialTicker?: string } = {}) {
   const searchParams = useSearchParams();
-  const [ticker, setTicker] = useState<string | null>(null);
-  const [currency, setCurrency] = useState('₹');
+  const pathname = usePathname();
+  // Seeded from the route param so /stock/<ticker> renders the stock view on the
+  // first paint. Left at null it would server-render the discovery hub and only
+  // swap after hydration, so every shared link flashed the homepage first.
+  const [ticker, setTicker] = useState<string | null>(initialTicker ?? null);
+  // Seed currency/market from the same stock, so a US ticker does not paint with
+  // a rupee sign for a frame before the effect corrects it.
+  const initialStock = initialTicker ? STOCKS.find(item => item.ticker === initialTicker) : undefined;
+  const [currency, setCurrency] = useState(initialStock?.currency ?? '₹');
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<typeof STOCKS>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [activeMarket, setActiveMarket] = useState<MarketScope>('INDIA');
+  const [activeMarket, setActiveMarket] = useState<MarketScope>(
+    initialStock ? resolveMarket(initialStock.exchange) : 'INDIA',
+  );
   const [dashboardView, setDashboardView] = useState<DashboardView>('overview');
   const [chartRange, setChartRange] = useState<ChartRange>('1y');
   const [activeIndicators, setActiveIndicators] = useState<string[]>([]);
@@ -2764,9 +2782,17 @@ function HomeContent() {
     setShowAuthModal(true);
   };
 
-  const applyUrlState = (search: string) => {
+  // Resolve the stock from `/stock/<ticker>` first, falling back to the legacy
+  // `?ticker=` form so links shared before the route existed still work.
+  const tickerFromPath = (path: string | null | undefined): string | null => {
+    const match = /^\/stock\/([^/?#]+)/.exec(path || '');
+    return match ? decodeURIComponent(match[1]) : null;
+  };
+
+  const applyUrlState = (search: string, path?: string | null) => {
     const params = new URLSearchParams(search);
-    const urlTicker = params.get('ticker');
+    const activePath = path ?? (typeof window !== 'undefined' ? window.location.pathname : null);
+    const urlTicker = tickerFromPath(activePath) ?? params.get('ticker');
     const requestedView: DashboardView = params.get('view') === 'details' ? 'details' : 'overview';
 
     if (!urlTicker) {
@@ -2795,9 +2821,13 @@ function HomeContent() {
 
   useEffect(() => {
     const search = searchParams.toString();
-    applyUrlState(search ? `?${search}` : '');
+    // `initialTicker` comes from the /stock/[ticker] route's params; prefer it
+    // so the correct stock is resolved on the very first render rather than
+    // after a pathname round-trip.
+    const path = initialTicker ? `/stock/${encodeURIComponent(initialTicker)}` : pathname;
+    applyUrlState(search ? `?${search}` : '', path);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, pathname, initialTicker]);
 
   useEffect(() => {
     const syncCurrentUrl = () => applyUrlState(window.location.search);
@@ -3092,9 +3122,8 @@ function HomeContent() {
     setDashboardView(resolvedView);
     setInput('');
     setShowSuggestions(false);
-    const nextUrl = resolvedView === 'details'
-      ? `/?ticker=${encodeURIComponent(stock.ticker)}&view=details`
-      : `/?ticker=${encodeURIComponent(stock.ticker)}`;
+    const stockPath = `/stock/${encodeURIComponent(stock.ticker)}`;
+    const nextUrl = resolvedView === 'details' ? `${stockPath}?view=details` : stockPath;
     window.history.pushState({ view: 'stock', ticker: stock.ticker, dashboardView: resolvedView }, '', nextUrl);
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
   };
