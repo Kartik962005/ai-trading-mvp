@@ -324,3 +324,114 @@ def load_frontend_stock_universe(repo_root: Path | None = None, exchange: str = 
         seen.add(stock["ticker"])
         rows.append(stock)
     return rows
+
+
+# ── Sector peer comparison ────────────────────────────────────────────────────
+# A P/E of 17.9 means nothing on its own; against a sector median of 24.1 it
+# means "cheaper than its peers". The snapshot already holds the same ~45 metrics
+# for every stock, so this is a grouping over data we have, not a new fetch.
+
+PEER_METRICS: dict[str, str] = {
+    "trailing_pe": "P/E (trailing)",
+    "price_to_book": "Price / book",
+    "roe": "Return on equity %",
+    "debt_to_equity": "Debt / equity",
+    "operating_margin": "Operating margin %",
+    "profit_margin": "Profit margin %",
+    "revenue_growth": "Revenue growth %",
+    "dividend_yield": "Dividend yield %",
+}
+
+# Metrics where a LOWER value is the better read, used to phrase the comparison.
+LOWER_IS_BETTER = {"trailing_pe", "price_to_book", "debt_to_equity"}
+
+MIN_PEERS_FOR_MEDIAN = 5
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def sector_peer_comparison(ticker: str, *, max_peers: int = 8) -> dict[str, Any]:
+    """Compare one stock's fundamentals against the median of its sector.
+
+    Returns `available: False` with a reason rather than raising, so the UI can
+    say why there is no comparison (unknown sector, too few peers with data)
+    instead of rendering an empty panel.
+    """
+    ticker = (ticker or "").strip()
+    rows = get_snapshot_rows(max_age_hours=None) or []
+    by_ticker = {str(row.get("ticker")): row for row in rows}
+    subject = by_ticker.get(ticker)
+    if subject is None:
+        return {"available": False, "reason": "This stock is not in the daily snapshot yet.", "ticker": ticker}
+
+    sector = subject.get("sector")
+    if not sector:
+        return {"available": False, "reason": "No sector recorded for this stock.", "ticker": ticker}
+
+    peers = [
+        row for row in rows
+        if row.get("sector") == sector and str(row.get("ticker")) != ticker
+    ]
+    if len(peers) < MIN_PEERS_FOR_MEDIAN:
+        return {
+            "available": False,
+            "reason": f"Only {len(peers)} other {sector} stocks in the snapshot — too few for a meaningful median.",
+            "ticker": ticker,
+            "sector": sector,
+        }
+
+    metrics = []
+    for key, label in PEER_METRICS.items():
+        value = _num(subject.get(key))
+        peer_values = [v for v in (_num(row.get(key)) for row in peers) if v is not None]
+        median = _median(peer_values)
+        if value is None or median is None or len(peer_values) < MIN_PEERS_FOR_MEDIAN:
+            continue
+        # Percentile: share of peers this stock is above, so the UI can show
+        # position in the sector, not just better/worse than the midpoint.
+        below = sum(1 for v in peer_values if v < value)
+        metrics.append({
+            "key": key,
+            "label": label,
+            "value": round(value, 4),
+            "median": round(median, 4),
+            "peer_count": len(peer_values),
+            "percentile": round(below / len(peer_values), 4),
+            "lower_is_better": key in LOWER_IS_BETTER,
+            "better_than_median": (value < median) if key in LOWER_IS_BETTER else (value > median),
+        })
+
+    if not metrics:
+        return {
+            "available": False,
+            "reason": f"No comparable {sector} fundamentals in the snapshot.",
+            "ticker": ticker,
+            "sector": sector,
+        }
+
+    # A short peer list by market cap, so the reader can see who they are being
+    # compared against rather than trusting an anonymous median.
+    named = sorted(
+        ({"ticker": p.get("ticker"), "symbol": p.get("symbol"), "name": p.get("name"),
+          "market_cap_cr": _num(p.get("market_cap_cr")), "trailing_pe": _num(p.get("trailing_pe"))}
+         for p in peers),
+        key=lambda item: -(item["market_cap_cr"] or 0),
+    )[:max_peers]
+
+    return {
+        "available": True,
+        "ticker": ticker,
+        "symbol": subject.get("symbol"),
+        "sector": sector,
+        "peer_count": len(peers),
+        "metrics": metrics,
+        "peers": named,
+    }

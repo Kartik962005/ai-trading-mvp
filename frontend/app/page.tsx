@@ -8,6 +8,9 @@ import {
   DailySignalPreviewCard,
 } from '@/components/home';
 import { AscentExperience } from '@/components/home/ascent/AscentExperience';
+import { TrackRecord } from '@/components/stock/TrackRecord';
+import { PeerComparison } from '@/components/stock/PeerComparison';
+import { RangeBar } from '@/components/stock/RangeBar';
 import { SectionShell } from '@/components/home/SectionShell';
 import { LiveScanSection } from '@/components/home/LiveScanSection';
 import { AboutSection } from '@/components/home/AboutSection';
@@ -3979,6 +3982,67 @@ export function HomeContent({ initialTicker }: { initialTicker?: string } = {}) 
                         </div>
                       ))}
                     </div>
+
+                    {/* Why the engine landed here. Every one of these is already
+                        computed and returned by /analyze — it was just never
+                        surfaced, so the verdict read as an assertion rather than
+                        a result. `historical_hit_rate` carries its own sample
+                        size because a hit rate over 3 trades is not a hit rate. */}
+                    {(() => {
+                      const pct = (value: any) =>
+                        typeof value === 'number' ? `${Math.round(value * 100)}%` : null;
+                      const trades = Number(analysis?.historical_hit_rate_trades ?? 0);
+                      const why: Array<[string, string, string]> = [];
+                      const modelP = pct(analysis?.model_probability);
+                      if (modelP) why.push(['Model win probability', modelP, 'from the trained win-probability model']);
+                      const hit = pct(analysis?.historical_hit_rate);
+                      if (hit) {
+                        why.push([
+                          'This setup historically',
+                          hit,
+                          trades > 0 ? `over ${trades} recorded trade${trades === 1 ? '' : 's'}` : 'no recorded trades yet — treat as a prior',
+                        ]);
+                      }
+                      if (typeof analysis?.expected_r === 'number') {
+                        why.push(['Expected R', analysis.expected_r.toFixed(2), 'net of costs and slippage']);
+                      }
+                      const quality = pct(analysis?.chart_setup_quality);
+                      if (quality) why.push(['Chart setup quality', quality, 'trend, breakout, volume and momentum checks']);
+                      if (!why.length) return null;
+                      return (
+                        <div className="mt-6 border-t border-hairline pt-5">
+                          <div className="font-body text-[10px] font-medium uppercase tracking-[0.24em] text-accent">
+                            Why this call
+                          </div>
+                          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            {why.map(([label, value, note]) => (
+                              <div key={label}>
+                                <div className="font-numeric text-xl leading-none text-paper">{value}</div>
+                                <div className="mt-1.5 font-body text-[11px] text-paper">{label}</div>
+                                <div className="mt-0.5 font-body text-[10px] leading-relaxed text-paper-muted">{note}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {analysis?.signal_status === 'no_trade' && (
+                            <p className="mt-4 rounded-xl border border-accent/25 bg-accent/[0.06] px-4 py-3 font-body text-[11px] leading-relaxed text-paper-muted">
+                              This setup did not clear Bullseye&apos;s risk, reward and data-quality
+                              gates, so no target or stop is issued. The honest call is to sit this one out.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Where the price sits in its yearly range — context the
+                        entry/target/stop numbers above cannot give on their own. */}
+                    <div className="mt-6 border-t border-hairline pt-5">
+                      <RangeBar
+                        low={fundamentals?.summary?.low_52_week}
+                        high={fundamentals?.summary?.high_52_week}
+                        current={quote?.price ?? analysis?.current_price}
+                        currency={currency}
+                      />
+                    </div>
                   </div>
                 );
               })()}
@@ -4130,6 +4194,15 @@ export function HomeContent({ initialTicker }: { initialTicker?: string } = {}) 
                 quote={quote}
                 isLoading={fundamentalsLoading}
               />
+
+              {/* Context for the verdict above: how our previous calls on this
+                  stock actually resolved, and how its fundamentals sit against
+                  the sector. Both answer "compared to what?", which the raw
+                  numbers on their own do not. */}
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <TrackRecord symbol={selectedStock?.symbol ?? ticker} currency={currency} />
+                <PeerComparison ticker={ticker} />
+              </div>
               </div>
               )}
 

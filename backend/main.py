@@ -62,7 +62,7 @@ from app.services.ask_ai_history_service import (
     list_conversations,
     save_turn,
 )
-from app.services.stock_snapshot_service import enrich_metric_rows, is_snapshot_stale
+from app.services.stock_snapshot_service import enrich_metric_rows, is_snapshot_stale, sector_peer_comparison
 from app.services.strategy_engine import DISCLAIMER as STRATEGY_DISCLAIMER, backtest_nl_strategy, backtest_strategy, strategy_to_dict
 from app.services.strategy_store import (
     create_strategy as create_ai_strategy,
@@ -91,6 +91,7 @@ from app.services.daily_trade_service import (
     get_daily_update_preference,
     get_signals_history,
     get_signals_today,
+    get_stock_track_record,
     process_scheduled_daily_alerts,
     run_scheduled_tick,
     run_daily_prediction,
@@ -952,6 +953,28 @@ async def get_today_signals_endpoint(request: Request, market: str = "NSE", risk
         return get_signals_today(market=market, risk_level=risk_level, signal_type=signal_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/stocks/{symbol}/track-record")
+@limiter.limit("60/minute")
+async def get_stock_track_record_endpoint(request: Request, symbol: str, limit: int = 12):
+    """Past Bullseye calls on one stock and how they actually resolved."""
+    try:
+        return get_stock_track_record(symbol, limit=limit)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/stocks/{ticker}/peers")
+@limiter.limit("60/minute")
+async def get_stock_peers_endpoint(request: Request, ticker: str):
+    """This stock's fundamentals against the median of its sector."""
+    try:
+        return sector_peer_comparison(ticker)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

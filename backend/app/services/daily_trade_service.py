@@ -1339,6 +1339,107 @@ def get_signals_today(market: str | None = None, risk_level: str | None = None, 
     return {"model_run": existing, "signals": _load_signals_for_run(existing["id"])}
 
 
+def get_stock_track_record(symbol: str, limit: int = 12) -> dict[str, Any]:
+    """Every past Bullseye call on one stock, with how it actually resolved.
+
+    This is the honest counterpart to the verdict on the stock page: rather than
+    only ever showing the current call, show the closed ones and whether they
+    hit target or stopped out. `pending` signals (target date not yet evaluated)
+    are counted separately so the hit rate is computed only over resolved trades
+    and cannot be inflated by open positions.
+    """
+    clean = (symbol or "").strip().upper().replace(".NS", "").replace(".BO", "")
+    if not clean:
+        raise ValueError("Symbol is required.")
+
+    signals: list[dict[str, Any]] = []
+    outcomes_by_signal: dict[str, dict[str, Any]] = {}
+    if supabase:
+        try:
+            signal_rows = (
+                supabase.table(SIGNALS_TABLE)
+                .select("*")
+                .eq("symbol", clean)
+                .order("target_date", desc=True)
+                .limit(max(1, min(limit, 60)))
+                .execute()
+            )
+            signals = getattr(signal_rows, "data", None) or []
+            if signals:
+                outcome_rows = (
+                    supabase.table(OUTCOMES_TABLE)
+                    .select("*")
+                    .in_("stock_signal_id", [s["id"] for s in signals])
+                    .execute()
+                )
+                outcomes_by_signal = {
+                    row["stock_signal_id"]: row for row in getattr(outcome_rows, "data", None) or []
+                }
+        except Exception as exc:
+            if not (_should_use_memory_fallback(exc, SIGNALS_TABLE) or _should_use_memory_fallback(exc, OUTCOMES_TABLE)):
+                raise
+            print(f"[DailySignals] track-record tables missing, using in-memory fallback: {exc}")
+            signals = [s for s in _MEMORY_SIGNALS if s.get("symbol") == clean][:limit]
+            outcomes_by_signal = {o["stock_signal_id"]: o for o in _MEMORY_OUTCOMES}
+    else:
+        signals = [s for s in _MEMORY_SIGNALS if s.get("symbol") == clean][:limit]
+        outcomes_by_signal = {o["stock_signal_id"]: o for o in _MEMORY_OUTCOMES}
+
+    entries: list[dict[str, Any]] = []
+    wins = losses = neutral = pending = 0
+    realized: list[float] = []
+    for signal in signals:
+        outcome = outcomes_by_signal.get(signal.get("id"))
+        status = (outcome or {}).get("outcome")
+        if status == "WIN":
+            wins += 1
+        elif status == "LOSS":
+            losses += 1
+        elif status == "NEUTRAL":
+            neutral += 1
+        else:
+            pending += 1
+        realized_r = (outcome or {}).get("realized_r")
+        if isinstance(realized_r, (int, float)):
+            realized.append(float(realized_r))
+        entries.append(
+            {
+                "id": signal.get("id"),
+                "run_date": signal.get("run_date"),
+                "target_date": signal.get("target_date"),
+                "direction": signal.get("direction"),
+                "setup_type": signal.get("setup_type"),
+                "entry_low": signal.get("entry_low"),
+                "entry_high": signal.get("entry_high"),
+                "target_price": signal.get("target_price"),
+                "stop_loss": signal.get("stop_loss"),
+                "confidence": signal.get("confidence"),
+                "outcome": status or "PENDING",
+                "realized_r": realized_r,
+                "hit_sequence": (outcome or {}).get("hit_sequence"),
+            }
+        )
+
+    resolved = wins + losses + neutral
+    return {
+        "symbol": clean,
+        "signals": entries,
+        "summary": {
+            "total": len(entries),
+            "resolved": resolved,
+            "pending": pending,
+            "wins": wins,
+            "losses": losses,
+            "neutral": neutral,
+            # Only over resolved trades. None (not 0) when nothing has closed yet,
+            # so the UI can say "no closed calls" instead of showing a 0% hit rate
+            # that would read as "we always lose".
+            "hit_rate": round(wins / resolved, 4) if resolved else None,
+            "avg_realized_r": round(sum(realized) / len(realized), 4) if realized else None,
+        },
+    }
+
+
 def get_signals_history(limit: int = 20) -> dict[str, Any]:
     if supabase:
         try:
