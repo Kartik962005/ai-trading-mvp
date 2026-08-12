@@ -26,7 +26,8 @@ from app.services.daily_signal_engine import (
     compute_final_score,
     detect_market_regime,
     diversify_candidates,
-    evaluate_signal_outcome,
+    HOLD_SESSIONS,
+    evaluate_signal_outcome_window,
     evaluate_technical_setup,
     fetch_market_context,
     get_universe,
@@ -1268,12 +1269,25 @@ def run_scheduled_tick(force: bool = False) -> dict[str, Any]:
 
 
 def _load_pending_signals(target_day: str) -> list[dict[str, Any]]:
+    """Every signal whose target date has passed and has no recorded outcome.
+
+    This used to filter `target_date == target_day` — one exact date. Outcome
+    tracking runs once per day, so any day the tick did not fire (host asleep,
+    cron failing, a restart at the wrong moment) left that day's signals
+    permanently unevaluated: the next run only looked at the NEW target date and
+    never went back. That is why 229 signals had produced 2 outcomes.
+
+    Selecting everything still pending on or before the review day makes the job
+    self-healing — a missed day is simply picked up on the next run.
+    """
     if supabase:
         try:
             response = (
                 supabase.table(SIGNALS_TABLE)
                 .select("*")
-                .eq("target_date", target_day)
+                .lte("target_date", target_day)
+                .order("target_date", desc=True)
+                .limit(500)
                 .execute()
             )
             all_signals = getattr(response, "data", None) or []
@@ -1289,22 +1303,44 @@ def _load_pending_signals(target_day: str) -> list[dict[str, Any]]:
                 raise
             print(f"[DailySignals] pending signal tables missing, using in-memory fallback: {exc}")
     processed = {row["stock_signal_id"] for row in _MEMORY_OUTCOMES}
-    return [signal for signal in _MEMORY_SIGNALS if signal["target_date"] == target_day and signal["id"] not in processed]
+    return [
+        signal for signal in _MEMORY_SIGNALS
+        if signal["target_date"] <= target_day and signal["id"] not in processed
+    ]
 
 
 def run_outcome_tracking(review_day: date | None = None) -> dict[str, Any]:
     day = review_day or _previous_trading_day(_next_trading_day(_today_ist()) if _is_market_holiday(_today_ist()) else _today_ist())
     pending = _load_pending_signals(day.isoformat())
     stored: list[dict[str, Any]] = []
+    # Price history is fetched once per ticker, not once per signal: the backfill
+    # can now span months, and several signals usually share a ticker.
+    history_by_ticker: dict[str, pd.DataFrame] = {}
     for signal in pending:
         ticker = signal["symbol"] if signal["market"] == "US" else f"{signal['symbol']}.NS"
-        history = fetch_price_history(ticker, days=12)
-        history["date"] = pd.to_datetime(history["date"], errors="coerce")
-        day_rows = history[history["date"].dt.date == day]
-        if day_rows.empty:
+        if ticker not in history_by_ticker:
+            frame = fetch_price_history(ticker, days=400)
+            if not frame.empty:
+                frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+            history_by_ticker[ticker] = frame
+        history = history_by_ticker[ticker]
+        if history.empty:
             continue
-        bar = day_rows.iloc[-1].to_dict()
-        outcome = evaluate_signal_outcome(signal, bar)
+        # Each signal is judged on ITS OWN target date. Using the review day here
+        # was only correct while this processed a single date at a time.
+        try:
+            signal_day = pd.to_datetime(signal["target_date"]).date()
+        except Exception:  # noqa: BLE001 - a malformed row must not stop the batch
+            continue
+        # Every session from the target date onward, so the trade is judged over
+        # its holding window rather than on a single bar.
+        window_rows = history[history["date"].dt.date >= signal_day]
+        if window_rows.empty:
+            continue
+        bars = window_rows.to_dict("records")
+        outcome = evaluate_signal_outcome_window(signal, bars)
+        if outcome is None:
+            continue  # still open — leave it pending rather than recording a verdict
         record = {
             "id": str(uuid4()),
             "stock_signal_id": signal["id"],
@@ -1312,7 +1348,11 @@ def run_outcome_tracking(review_day: date | None = None) -> dict[str, Any]:
             "realized_r": outcome["realized_r"],
             "evaluated_at": _utc_now_iso(),
             "hit_sequence": outcome["hit_sequence"],
-            "notes": {"day": day.isoformat(), "bar": {"high": bar["high"], "low": bar["low"], "close": bar["close"]}},
+            "notes": {
+                "target_date": signal_day.isoformat(),
+                "sessions_held": outcome.get("sessions_held"),
+                "window_sessions": HOLD_SESSIONS,
+            },
         }
         if supabase:
             try:

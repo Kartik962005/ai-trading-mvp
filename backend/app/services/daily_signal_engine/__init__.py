@@ -6,7 +6,7 @@ from .email_generation import build_signal_email
 from .feature_engineering import build_feature_frame
 from .market_regime import detect_market_regime
 from .ml_interface import build_live_feature_values, predict_signal_probabilities
-from .outcome_tracking import evaluate_signal_outcome
+from .outcome_tracking import HOLD_SESSIONS, evaluate_signal_outcome, evaluate_signal_outcome_window
 from .scoring import (
     adjusted_win_rate,
     compute_expected_r,
@@ -25,7 +25,9 @@ __all__ = [
     "compute_final_score",
     "detect_market_regime",
     "diversify_candidates",
+    "HOLD_SESSIONS",
     "evaluate_signal_outcome",
+    "evaluate_signal_outcome_window",
     "evaluate_technical_setup",
     "fetch_market_context",
     "get_universe",
