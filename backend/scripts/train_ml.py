@@ -31,6 +31,7 @@ import argparse
 import math
 import os
 import sys
+import time
 
 import joblib
 import numpy as np
@@ -52,7 +53,8 @@ from app.services.daily_signal_engine.ml_dataset import (  # noqa: E402
 from app.services.daily_signal_engine.scoring import wilson_lower_bound_placeholder  # noqa: E402
 from fetch_earnings import EARNINGS_CACHE, fetch_earnings_dates  # noqa: E402
 from ingest_history import fetch_nifty500_symbols  # noqa: E402
-from run_backtest import _connect, load_frames  # noqa: E402
+from run_backtest import _connect, _fetch_with_fallback  # noqa: E402
+from app.services.daily_signal_engine.config import MARKET_INDEX  # noqa: E402
 
 try:  # modern sklearn (>=1.6) way to freeze a fitted estimator for calibration
     from sklearn.frozen import FrozenEstimator
@@ -73,19 +75,104 @@ MODEL_ARTIFACT = os.path.join(
 )
 
 
+PARTIAL_FRAMES_CACHE = os.path.join(_HERE, "frames_5y.partial.pkl")
+FETCH_RETRIES = 4
+CHECKPOINT_EVERY = 25
+
+
+def _fetch_one_with_retry(sb, ticker: str):
+    """Fetch one symbol, retrying transient network failures.
+
+    Supabase drops long-running connections (WinError 10054) and DNS blips
+    (getaddrinfo failed) partway through a ~500-symbol pull. Retrying the single
+    symbol, with a fresh client on the last attempt, keeps one bad moment from
+    ending the run.
+    """
+    delay = 2.0
+    for attempt in range(1, FETCH_RETRIES + 1):
+        try:
+            return sb, _fetch_with_fallback(sb, ticker)
+        except Exception as exc:  # noqa: BLE001 - any transport error is retryable here
+            if attempt == FETCH_RETRIES:
+                print(f"    {ticker}: giving up after {FETCH_RETRIES} attempts ({exc})")
+                return sb, (ticker, pd.DataFrame())
+            print(f"    {ticker}: attempt {attempt} failed ({type(exc).__name__}), retrying in {delay:.0f}s")
+            time.sleep(delay)
+            delay *= 2
+            if attempt == FETCH_RETRIES - 1:
+                # Last try gets a brand-new client: the old one's connection
+                # pool may be the thing that is broken.
+                try:
+                    sb = _connect()
+                except Exception:  # noqa: BLE001
+                    pass
+    return sb, (ticker, pd.DataFrame())
+
+
 def get_frames(rebuild: bool):
+    """Load 5y frames for the universe, resumably.
+
+    This used to call load_frames() for the whole universe in one go and pickle
+    the result at the very end. Pulling ~500 symbols takes minutes, and a single
+    dropped connection anywhere in that window discarded everything — three
+    consecutive runs died that way without ever writing a cache.
+
+    Now each symbol is fetched with retries and progress is checkpointed to disk
+    every 25 symbols, so an interrupted run resumes where it stopped instead of
+    starting over.
+    """
     if not rebuild and os.path.exists(FRAMES_CACHE):
         print(f"Loading cached frames from {os.path.basename(FRAMES_CACHE)} ...")
         obj = pd.read_pickle(FRAMES_CACHE)
         return obj["price_frames"], obj["index_frame"]
+
     sb = _connect()
     symbols = sorted(set(fetch_nifty500_symbols()))
-    print(f"Loading {len(symbols)} symbols (5y) from Supabase — this paginates, "
-          "give it a minute ...")
-    price_frames, index_frame, missing, idx = load_frames(sb, "NSE", symbols=symbols, min_bars=250)
+
+    price_frames: dict[str, pd.DataFrame] = {}
+    done: set[str] = set()
+    if not rebuild and os.path.exists(PARTIAL_FRAMES_CACHE):
+        try:
+            partial = pd.read_pickle(PARTIAL_FRAMES_CACHE)
+            price_frames = partial.get("price_frames", {})
+            done = set(partial.get("attempted", []))
+            print(f"Resuming: {len(price_frames)} symbols already cached, "
+                  f"{len(symbols) - len(done)} still to fetch.")
+        except Exception as exc:  # noqa: BLE001 - a corrupt checkpoint just means starting over
+            print(f"Could not read checkpoint ({exc}); starting fresh.")
+
+    todo = [s for s in symbols if s not in done]
+    print(f"Loading {len(todo)} symbols (5y) from Supabase, checkpointing every "
+          f"{CHECKPOINT_EVERY} ...")
+
+    missing: list[str] = []
+    for index, ticker in enumerate(todo, start=1):
+        sb, (key, df) = _fetch_one_with_retry(sb, ticker)
+        done.add(ticker)
+        if df.empty or len(df) < 250:
+            missing.append(ticker)
+        else:
+            price_frames[key] = df
+        if index % CHECKPOINT_EVERY == 0 or index == len(todo):
+            pd.to_pickle({"price_frames": price_frames, "attempted": sorted(done)}, PARTIAL_FRAMES_CACHE)
+            print(f"  {index}/{len(todo)} fetched ({len(price_frames)} usable) — checkpointed")
+
+    index_symbol = MARKET_INDEX["NSE"]
+    sb, (_, index_frame) = _fetch_one_with_retry(sb, index_symbol)
+    if index_frame.empty:
+        for alias in ("NIFTY", "NIFTY50", "^NSEI"):
+            sb, (_, index_frame) = _fetch_one_with_retry(sb, alias)
+            if not index_frame.empty:
+                break
+
     print(f"Loaded {len(price_frames)} usable symbols ({len(missing)} dropped); "
-          f"index {idx} {len(index_frame)} bars.")
+          f"index {index_symbol} {len(index_frame)} bars.")
     pd.to_pickle({"price_frames": price_frames, "index_frame": index_frame}, FRAMES_CACHE)
+    # The full cache supersedes the checkpoint.
+    try:
+        os.remove(PARTIAL_FRAMES_CACHE)
+    except OSError:
+        pass
     return price_frames, index_frame
 
 
