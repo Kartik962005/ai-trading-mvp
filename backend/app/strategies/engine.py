@@ -509,25 +509,67 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         risk_penalties=risk_penalties,
     )
 
-    quality_failures: list[str] = []
-    if direction not in {"BUY", "SELL"}:
-        quality_failures.append("no clear directional edge")
-    if abs(int(technical_setup.get("directional_edge") or 0)) < DETAIL_MIN_DIRECTIONAL_EDGE:
-        quality_failures.append("directional score edge is too small")
-    if not validation["is_valid"]:
-        quality_failures.extend(validation.get("rejections") or ["data quality failed"])
-    if float(technical_setup["chart_setup_quality"]) < DETAIL_MIN_CHART_SETUP_QUALITY:
-        quality_failures.append("chart setup quality is below threshold")
-    if expected_r < DETAIL_MIN_EXPECTED_R:
-        quality_failures.append("expected reward after costs is too low")
-    if float(probabilities["confidence"]) < float(profile["confidence_threshold"]):
-        quality_failures.append("model confidence is below threshold")
-    if risk_reward < float(profile["min_risk_reward"]):
-        quality_failures.append("risk/reward is below threshold")
-    if final_score < float(profile["min_final_score"]):
-        quality_failures.append("final score is below threshold")
+    # ── Quality gates ────────────────────────────────────────────────────────
+    # These used to be a set of independent booleans collapsed with "any failure
+    # => Hold". That made the verdict a cliff: a metric a thousandth below its
+    # threshold flipped a Strong Buy to Hold overnight, and the Hold looked
+    # identical to a genuinely neutral stock — even when the model still put the
+    # win probability at 0.83 and the directional edge at +3. Users saw the
+    # verdict oscillate day to day and (reasonably) stopped trusting it.
+    #
+    # Same thresholds, but each gate now reports HOW FAR it is from passing, and
+    # a near-miss is separated from a real failure. A setup that only just misses
+    # is reported as "Watch": no entry/target/stop is issued (that part must stay
+    # strict), but the page states the lean and why it fell short instead of
+    # showing a neutral-looking Hold. The intermediate state is also what stops
+    # the flip-flop — a stock hovering at a boundary now reads Buy -> Watch ->
+    # Hold rather than snapping between the extremes.
+    NEAR_MISS_TOLERANCE = float(os.getenv("DETAIL_GATE_TOLERANCE", "0.12"))
 
+    gate_report: list[dict[str, Any]] = []
+
+    def _check(label: str, value: float, threshold: float) -> None:
+        """Record a >= threshold gate and how close it came."""
+        passed = value >= threshold
+        shortfall = 0.0 if passed else (threshold - value) / threshold if threshold else 1.0
+        gate_report.append({
+            "gate": label,
+            "value": round(float(value), 4),
+            "threshold": round(float(threshold), 4),
+            "passed": passed,
+            "shortfall_pct": round(shortfall * 100, 2),
+            "near_miss": (not passed) and shortfall <= NEAR_MISS_TOLERANCE,
+        })
+
+    hard_failures: list[str] = []
+    if direction not in {"BUY", "SELL"}:
+        hard_failures.append("no clear directional edge")
+    if not validation["is_valid"]:
+        # Data-quality problems are never a near miss: acting on bad data is not
+        # a marginal call, it is the thing that produces fabricated signals.
+        hard_failures.extend(validation.get("rejections") or ["data quality failed"])
+
+    _check("directional edge", abs(int(technical_setup.get("directional_edge") or 0)), DETAIL_MIN_DIRECTIONAL_EDGE)
+    _check("chart setup quality", float(technical_setup["chart_setup_quality"]), DETAIL_MIN_CHART_SETUP_QUALITY)
+    _check("expected reward after costs", expected_r, DETAIL_MIN_EXPECTED_R)
+    _check("model confidence", float(probabilities["confidence"]), float(profile["confidence_threshold"]))
+    _check("risk / reward", risk_reward, float(profile["min_risk_reward"]))
+    _check("final score", final_score, float(profile["min_final_score"]))
+
+    failed_gates = [g for g in gate_report if not g["passed"]]
+    near_misses = [g for g in failed_gates if g["near_miss"]]
+    hard_gate_failures = [g for g in failed_gates if not g["near_miss"]]
+
+    quality_failures = hard_failures + [
+        f"{g['gate']} is {g['shortfall_pct']}% below threshold" for g in hard_gate_failures
+    ] + [
+        f"{g['gate']} just missed by {g['shortfall_pct']}%" for g in near_misses
+    ]
+
+    # Levels are only issued when EVERY gate passes — a near miss is still not a
+    # trade. What changes is how it is described, not what is promised.
     tradable = not quality_failures
+    watching = (not tradable) and (not hard_failures) and (not hard_gate_failures) and bool(near_misses)
     # Enabled by default: with this off the stock page could only ever say Buy or
     # Hold, so a genuinely bearish stock produced a "Hold" that read as neutral
     # rather than as a warning. Sell means "exit or avoid" for a cash-equity
@@ -547,6 +589,9 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         verdict = "Strong Buy" if model_pwin >= 0.72 and final_score >= 0.70 else "Buy"
     elif tradable and direction == "SELL":
         verdict = "Strong Sell" if model_pwin >= 0.72 and final_score >= 0.70 else "Sell"
+    elif watching and direction in {"BUY", "SELL"}:
+        # Leaning, but short of the bar. Says which way without issuing levels.
+        verdict = "Watch (bullish)" if direction == "BUY" else "Watch (bearish)"
     else:
         verdict = "Hold"
 
@@ -569,7 +614,11 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         "fiso_score": round(fiso, 2),
         "legacy_fiso_score": round(min(100.0, max(0.0, raw_fiso)), 2),
         "verdict": verdict,
-        "signal_status": "trade" if tradable else "no_trade",
+        "signal_status": "trade" if tradable else ("watch" if watching else "no_trade"),
+        # Every gate with its value, threshold and shortfall, so the page can say
+        # exactly what fell short instead of only that something did.
+        "gate_report": gate_report,
+        "near_miss_gates": [g["gate"] for g in near_misses],
         "entry": round(entry, 2),
         "stop_loss": round(stop_loss, 2),
         "target": round(target, 2),

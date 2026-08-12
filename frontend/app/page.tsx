@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useState, useEffect, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import { usePathname, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { STOCKS } from './stocks';
@@ -2382,6 +2383,24 @@ export function HomeContent({ initialTicker }: { initialTicker?: string } = {}) 
     }
   };
 
+  // Lock the page behind the modal. Without this the scrollbar disappears when
+  // the overlay opens and the whole layout shifts sideways by its width, which
+  // reads as a flicker on top of the repaint. The padding compensates so the
+  // content does not jump when the bar is removed.
+  useEffect(() => {
+    if (!showAuthModal || typeof document === 'undefined') return;
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    const previousPadding = body.style.paddingRight;
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbar > 0) body.style.paddingRight = scrollbar + 'px';
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPadding;
+    };
+  }, [showAuthModal]);
+
   // Esc closes the prompt, same as "continue without signing in".
   useEffect(() => {
     if (!showAuthModal) return;
@@ -4301,10 +4320,19 @@ export function HomeContent({ initialTicker }: { initialTicker?: string } = {}) 
         />
       )}
 
-      {showAuthModal && (
+      {/* Portaled to <body>, not rendered inline.
+          `backdrop-blur` forces the browser to re-rasterise everything beneath
+          the overlay on each frame. Inline, "beneath" meant the entire page —
+          the live WebGL canvas, the animated index tape and every card — so
+          opening sign-in visibly flickered the boxes behind it. Portaling moves
+          the overlay out of that subtree, `isolation` gives it its own stacking
+          context, and `translateZ(0)` promotes it to its own compositor layer so
+          the blur samples a static snapshot instead of thrashing live content. */}
+      {showAuthModal && typeof document !== 'undefined' && createPortal(
         <div
           onClick={dismissAuthModal}
           role="presentation"
+          style={{ isolation: 'isolate', transform: 'translateZ(0)' }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
         >
           <div
@@ -4418,7 +4446,8 @@ export function HomeContent({ initialTicker }: { initialTicker?: string } = {}) 
               By signing in you agree that Bullseye is not a SEBI-registered advisor. Invest at your own risk.
             </p>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
