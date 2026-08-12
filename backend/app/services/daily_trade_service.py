@@ -69,7 +69,12 @@ _MEMORY_EMAIL_LOGS: list[dict[str, Any]] = []
 MIN_DIRECTIONAL_EDGE = int(os.getenv("DAILY_MIN_DIRECTIONAL_EDGE", "2"))
 MIN_CHART_SETUP_QUALITY = float(os.getenv("DAILY_MIN_CHART_SETUP_QUALITY", "0.60"))
 MIN_EXPECTED_R = float(os.getenv("DAILY_MIN_EXPECTED_R", "0.08"))
-MIN_HISTORICAL_HIT_RATE = float(os.getenv("DAILY_MIN_HISTORICAL_HIT_RATE", "0.45"))
+# Absolute floor only. The real gate is derived from each setup's reward:risk
+# (see _build_candidate) — a hit rate is meaningless without the payoff it is
+# being paid at. This is the "something is broken" backstop: below 30% no
+# plausible reward:risk in these profiles produces positive expectancy.
+# It was 0.45, which silently rejected every signal once real outcomes existed.
+MIN_HISTORICAL_HIT_RATE = float(os.getenv("DAILY_MIN_HISTORICAL_HIT_RATE", "0.30"))
 MIN_HISTORICAL_TRADES_FOR_REJECTION = int(os.getenv("DAILY_MIN_HIT_RATE_TRADES", "10"))
 # "ranked" (default): keep every structurally-sound setup and let final-score
 # ranking + top-N pick the day's best — this is the selection the walk-forward
@@ -653,10 +658,37 @@ def _build_candidate(
         risk_penalties=penalties,
     )
 
-    allow_sell_signals = os.getenv("DAILY_SIGNALS_ALLOW_SELL", "false").lower() in {"1", "true", "yes"}
+    # Sell-side calls are ON by default now. While they were disabled, every one
+    # of 229 stored signals was a BUY: in a falling market the engine could only
+    # ever be long, and had no way to say "this one is going down". The rule
+    # engine already scores both directions and ml_dataset emits SELL rows with
+    # dir_buy = 0, so the model has trained on short setups rather than
+    # extrapolating into them.
+    #
+    # Read a SELL as "exit or avoid", not "short it" — shorting Indian cash
+    # equities overnight is not available to most retail accounts.
+    allow_sell_signals = os.getenv("DAILY_SIGNALS_ALLOW_SELL", "true").lower() in {"1", "true", "yes"}
     if technical_setup["direction"] == "SELL" and not allow_sell_signals:
         return None
-    if historical_hit_rate_trades >= MIN_HISTORICAL_TRADES_FOR_REJECTION and historical_hit_rate < MIN_HISTORICAL_HIT_RATE:
+    # Reject a setup whose realised hit rate cannot pay for its own risk/reward.
+    #
+    # This used to compare against a flat 0.45. That number was arbitrary, and
+    # once real outcomes existed it rejected EVERYTHING: the two live setups sit
+    # at 39.2% and 40.0%, so a 45% floor produced zero signals every day. But a
+    # hit rate is only good or bad relative to the payoff — at 1.74 reward:risk,
+    # break-even is 1/(1+1.74) = 36.6%, and 38.3% once the 0.05R of costs and
+    # slippage are covered. Both setups clear that; neither clears 45%.
+    #
+    # So the bar is derived rather than guessed:
+    #     required = (1 + cost_r) / (1 + reward:risk)
+    # which is exactly the win rate at which expectancy turns positive. A wider
+    # target has to earn its lower hit rate, a tighter one is allowed a worse
+    # one, and the gate stays honest as the risk profile changes.
+    # DAILY_MIN_HISTORICAL_HIT_RATE remains an absolute floor beneath this.
+    round_trip_cost_r = 0.05
+    breakeven_hit_rate = (1.0 + round_trip_cost_r) / (1.0 + max(risk_reward, 0.01))
+    required_hit_rate = max(breakeven_hit_rate, MIN_HISTORICAL_HIT_RATE)
+    if historical_hit_rate_trades >= MIN_HISTORICAL_TRADES_FOR_REJECTION and historical_hit_rate < required_hit_rate:
         return None
     # Sanity floors applied in every mode: never surface a structurally broken
     # setup (poor reward:risk geometry or a low-quality chart pattern).
@@ -1268,7 +1300,7 @@ def run_scheduled_tick(force: bool = False) -> dict[str, Any]:
     return {"emails": emails, "outcomes": outcomes}
 
 
-def _load_pending_signals(target_day: str) -> list[dict[str, Any]]:
+def _load_pending_signals(target_day: str, *, include_evaluated: bool = False) -> list[dict[str, Any]]:
     """Every signal whose target date has passed and has no recorded outcome.
 
     This used to filter `target_date == target_day` — one exact date. Outcome
@@ -1297,6 +1329,8 @@ def _load_pending_signals(target_day: str) -> list[dict[str, Any]]:
                 .execute()
             )
             processed = {row["stock_signal_id"] for row in getattr(outcomes, "data", None) or []}
+            if include_evaluated:
+                return all_signals
             return [signal for signal in all_signals if signal["id"] not in processed]
         except Exception as exc:
             if not (_should_use_memory_fallback(exc, SIGNALS_TABLE) or _should_use_memory_fallback(exc, OUTCOMES_TABLE)):
@@ -1305,13 +1339,22 @@ def _load_pending_signals(target_day: str) -> list[dict[str, Any]]:
     processed = {row["stock_signal_id"] for row in _MEMORY_OUTCOMES}
     return [
         signal for signal in _MEMORY_SIGNALS
-        if signal["target_date"] <= target_day and signal["id"] not in processed
+        if signal["target_date"] <= target_day
+        and (include_evaluated or signal["id"] not in processed)
     ]
 
 
-def run_outcome_tracking(review_day: date | None = None) -> dict[str, Any]:
+def run_outcome_tracking(review_day: date | None = None, *, recompute: bool = False) -> dict[str, Any]:
+    """Record outcomes for signals whose target date has passed.
+
+    `recompute=True` re-evaluates signals that ALREADY have an outcome and
+    upserts over them. Needed whenever the evaluation rule itself changes —
+    otherwise the table holds a mix of verdicts produced by different methods,
+    which quietly corrupts the ML hit-rate calibration that reads it. The upsert
+    is keyed on stock_signal_id, so a re-run replaces rather than duplicates.
+    """
     day = review_day or _previous_trading_day(_next_trading_day(_today_ist()) if _is_market_holiday(_today_ist()) else _today_ist())
-    pending = _load_pending_signals(day.isoformat())
+    pending = _load_pending_signals(day.isoformat(), include_evaluated=recompute)
     stored: list[dict[str, Any]] = []
     # Price history is fetched once per ticker, not once per signal: the backfill
     # can now span months, and several signals usually share a ticker.

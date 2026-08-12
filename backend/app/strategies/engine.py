@@ -528,7 +528,11 @@ def run_analysis(df: pd.DataFrame, ticker: str):
         quality_failures.append("final score is below threshold")
 
     tradable = not quality_failures
-    if direction == "SELL" and os.getenv("DETAIL_ANALYSIS_ALLOW_SELL", "false").lower() not in {"1", "true", "yes"}:
+    # Enabled by default: with this off the stock page could only ever say Buy or
+    # Hold, so a genuinely bearish stock produced a "Hold" that read as neutral
+    # rather than as a warning. Sell means "exit or avoid" for a cash-equity
+    # holder, not an instruction to short.
+    if direction == "SELL" and os.getenv("DETAIL_ANALYSIS_ALLOW_SELL", "true").lower() not in {"1", "true", "yes"}:
         quality_failures.append("sell-side calls are disabled by default")
         tradable = False
 
