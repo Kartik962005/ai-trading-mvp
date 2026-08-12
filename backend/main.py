@@ -957,6 +957,27 @@ async def get_today_signals_endpoint(request: Request, market: str = "NSE", risk
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/admin/model-status")
+@limiter.limit("30/minute")
+async def get_model_status(request: Request):
+    """Is the trained model actually loaded, or is this the fallback?
+
+    A model that fails to unpickle degrades silently to a logistic
+    approximation, so "the API is up" says nothing about whether predictions are
+    coming from the validated model. This makes that answerable in production
+    without reading startup logs.
+    """
+    from app.services.daily_signal_engine.ml_interface import model_status
+
+    status = model_status()
+    if not status["using_trained_model"]:
+        status["warning"] = (
+            "Predictions are using the logistic fallback, not the trained model. "
+            "Retrain with scripts/train_ml.py or align the scikit-learn version."
+        )
+    return status
+
+
 @app.get("/api/v1/stocks/{symbol}/track-record")
 @limiter.limit("60/minute")
 async def get_stock_track_record_endpoint(request: Request, symbol: str, limit: int = 12):

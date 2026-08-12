@@ -52,8 +52,54 @@ def _load_artifact() -> dict[str, Any] | None:
         return _ARTIFACT
     except Exception as exc:
         _LOAD_ERROR = str(exc)
-        print(f"[ML] Runtime model load failed; using logistic fallback ({exc}).")
+        # Loud, and specific about the usual cause. This failure is silent by
+        # design — callers fall back to a logistic approximation and keep
+        # returning predictions — so a rebuilt machine ran for weeks on the
+        # fallback while the trained model never loaded once. The banner exists
+        # so that cannot happen again without somebody seeing it.
+        hint = ""
+        if "No module named" in str(exc) or "version" in str(exc).lower():
+            try:
+                import sklearn
+
+                hint = (
+                    f" This usually means the artifact was trained on a different scikit-learn "
+                    f"than the installed {sklearn.__version__}. Retrain with "
+                    f"scripts/train_ml.py, or install the version it was trained on."
+                )
+            except Exception:  # noqa: BLE001
+                hint = " This usually means a scikit-learn version mismatch; retrain with scripts/train_ml.py."
+        print("=" * 78)
+        print(f"[ML] TRAINED MODEL NOT LOADED — running on the logistic fallback.{hint}")
+        print(f"[ML] Reason: {exc}")
+        print("[ML] Predictions will be materially worse than the backtested model.")
+        print("=" * 78)
         return None
+
+
+def model_status() -> dict[str, Any]:
+    """Whether predictions are coming from the trained model or the fallback.
+
+    Exposed so the running app can be asked, rather than the answer living only
+    in a startup log nobody reads.
+    """
+    _load_artifact()
+    try:
+        import sklearn
+
+        sklearn_version = sklearn.__version__
+    except Exception:  # noqa: BLE001
+        sklearn_version = "unknown"
+    return {
+        "using_trained_model": _ARTIFACT is not None,
+        "source": _MODEL_SOURCE,
+        "load_error": _LOAD_ERROR,
+        "artifact_path": str(os.getenv("ML_MODEL_PATH") or DEFAULT_MODEL_PATH),
+        "artifact_exists": Path(os.getenv("ML_MODEL_PATH") or DEFAULT_MODEL_PATH).exists(),
+        "sklearn_version": sklearn_version,
+        "trained_with_sklearn": (_ARTIFACT or {}).get("sklearn_version"),
+        "feature_count": len(FEATURE_COLUMNS),
+    }
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
