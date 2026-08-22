@@ -1,7 +1,7 @@
 # Bullseye — Phased Upgrade Prompt (resumable)
 
 > **How to use this file.** Each phase below is a self-contained prompt. Start a
-> Claude Code session, paste **§0 CONTEXT** first, then paste the one **PHASE**
+> new working session, paste **§0 CONTEXT** first, then paste the one **PHASE**
 > you want to do. If a session runs out of context, come back later, paste
 > §0 CONTEXT + the next unfinished PHASE, and continue. Phases are ordered but
 > independently shippable — do them in any order, each ends in its own commit.

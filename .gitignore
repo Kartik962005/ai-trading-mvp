@@ -13,3 +13,6 @@ venv/
 # Generated ML data caches and run logs (regenerable, too large for git)
 *.pkl
 backend/scripts/*.log
+
+# Local editor/tooling config
+.claude/
